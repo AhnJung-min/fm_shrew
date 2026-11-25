@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react'
 import { FIELDS, GROUP_LABEL, GROUP_ORDER } from '@shared/fields'
 import type { AppStatus, ColumnInfo, Settings as SettingsData, SnapshotMeta } from '@shared/types'
 import { api } from '@/api'
+import { RoleWeights } from '@/components/RoleWeights'
 
 export function Settings(props: {
   status: AppStatus | null
@@ -96,6 +97,15 @@ export function Settings(props: {
                 <FolderPlus size={16} />
                 폴더 추가
               </button>
+            </div>
+          </section>
+
+          <section className="panel">
+            <div className="panel-head">
+              <h2>역할 가중치</h2>
+            </div>
+            <div className="panel-body">
+              <RoleWeights settings={settings} onChange={onChange} />
             </div>
           </section>
 

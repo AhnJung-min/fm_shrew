@@ -1,6 +1,6 @@
 import { X } from 'lucide-react'
 import { useCallback, useEffect, useRef, useState } from 'react'
-import type { AppStatus, Density, ImportResult, Settings as SettingsData, SnapshotMeta } from '@shared/types'
+import type { AppStatus, ImportResult, Settings as SettingsData, SnapshotMeta } from '@shared/types'
 import { api } from './api'
 import { Sidebar, type Route } from './components/Sidebar'
 import { isFromSave, KIND_LABEL } from './lib/format'
@@ -113,8 +113,8 @@ export function App() {
             selectedId={selectedId}
             onSelectSnapshot={setSelectedId}
             onChanged={() => void refresh()}
-            density={settings.density}
-            onDensity={(density: Density) => void changeSettings({ density })}
+            settings={settings}
+            onSettings={(patch) => void changeSettings(patch)}
             onGoHome={() => setRoute('home')}
           />
         )}

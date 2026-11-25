@@ -60,6 +60,12 @@ export interface Settings {
   /** 세이브 파일 이름 → 내 팀 id (한 번 찾으면 기억한다) */
   saveTeams: Record<string, number>
   density: Density
+  /** 뎁스 차트에 쓰는 포메이션 id */
+  formation: string
+  /** "포메이션:자리 순번" → 역할 id. 자리마다 고른 역할을 기억한다 */
+  slotRoles: Record<string, string>
+  /** 역할 id → (능력치 id → 가중치). 기본 프리셋에서 고친 것만 담는다 */
+  roleWeights: Record<string, Record<string, number>>
   /** 열 이름 → 항목 id. 자동 인식이 틀렸거나 못 알아본 열을 직접 지정 */
   columnOverrides: Record<string, string>
 }

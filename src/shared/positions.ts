@@ -40,6 +40,31 @@ export function positionsLabel(ratings: number[]): string {
   return parts.map((part) => (part.sides ? `${part.labels.join('/')} (${part.sides})` : part.labels.join('/'))).join(', ')
 }
 
+/**
+ * 게임 표기("D (RC), WB (R)", "DM, M/AM (C)")를 뛸 수 있는 자리 목록으로 되돌린다.
+ * 세이브에서 읽은 기록과 게임에서 내보낸 기록이 같은 표기를 쓰므로 둘 다 이것으로 읽는다.
+ */
+export function parsePositions(label: string): string[] {
+  const found = new Set<string>()
+  // 괄호 안의 쉼표를 건드리지 않도록, 괄호가 닫힌 뒤의 쉼표에서만 나눈다
+  for (const part of label.split(/,(?![^(]*\))/)) {
+    const match = /^\s*([A-Za-z/]+)\s*(?:\(([A-Za-z]+)\))?\s*$/.exec(part)
+    if (!match) continue
+    const sides = (match[2] ?? '').toUpperCase().split('')
+    for (const line of match[1].toUpperCase().split('/')) {
+      if (line === 'GK' || line === 'DM') found.add(line)
+      else if (line === 'ST') found.add('ST')
+      else if (line === 'D' || line === 'WB' || line === 'M' || line === 'AM') {
+        for (const side of sides) {
+          if (line === 'WB' && side === 'C') continue
+          found.add(`${line}${side}`)
+        }
+      }
+    }
+  }
+  return [...found]
+}
+
 /** 정렬용: 가장 숙련도가 높은 자리를 골키퍼→수비→미드→공격 순서의 번호로 */
 export function positionOrder(ratings: number[]): number {
   const order = [0, 1, 3, 4, 2, 13, 14, 5, 7, 8, 6, 10, 11, 9, 12]

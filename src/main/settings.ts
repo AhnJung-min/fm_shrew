@@ -22,6 +22,9 @@ export class SettingsStore {
       saveDir: saveDirOverride ?? join(documentsDir, 'Sports Interactive', 'Football Manager 26', 'games'),
       saveTeams: {},
       density: 'compact',
+      formation: '4-2-3-1',
+      slotRoles: {},
+      roleWeights: {},
       columnOverrides: {}
     }
     let saved: Partial<Settings> = {}

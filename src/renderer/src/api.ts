@@ -21,6 +21,9 @@ function createMockApi(): Api {
     saveDir: 'C:\\Users\\me\\Documents\\Sports Interactive\\Football Manager 26\\games',
     saveTeams: {},
     density: 'compact',
+    formation: '4-2-3-1',
+    slotRoles: {},
+    roleWeights: {},
     columnOverrides: {}
   }
   const empty = new URLSearchParams(location.search).has('empty')
