@@ -337,10 +337,13 @@ internal static class TalkBox
         style.borderRightColor = new StyleColor(color);
     });
 
+    /// <summary>경기 중 칸은 경기장을 덜 가리게 대화 화면의 칸보다 작게 그린다.</summary>
+    private static float Sized(float value) => mode == Mode.Match ? MathF.Round(value * 0.8f) : value;
+
     private static Label Text(string text, float size, Color color)
     {
         var label = new Label(text);
-        Try(() => label.style.fontSize = new StyleLength(size));
+        Try(() => label.style.fontSize = new StyleLength(MathF.Max(11f, Sized(size))));
         // 게임 쪽 기본값(가운데 정렬)을 물려받지 않게 왼쪽 위로 맞춘다
         Try(() => label.style.unityTextAlign = new StyleEnum<TextAnchor>(TextAnchor.UpperLeft));
         Try(() => label.style.color = new StyleColor(color));
@@ -355,7 +358,7 @@ internal static class TalkBox
         Try(() => button.style.unityTextAlign = new StyleEnum<TextAnchor>(TextAnchor.MiddleCenter));
         Try(() => button.style.flexShrink = new StyleFloat(0f));
         Try(() => button.style.marginLeft = new StyleLength(10f));
-        Pad(button, 8, 16);
+        Pad(button, Sized(8), Sized(16));
         Round(button, 6);
         button.RegisterCallback(
             DelegateSupport.ConvertDelegate<EventCallback<PointerDownEvent>>(new Action<PointerDownEvent>(evt =>
@@ -396,7 +399,7 @@ internal static class TalkBox
                 // 경기 화면: 왼쪽 위, 전술·외침 버튼 줄 바로 아래
                 style.left = new StyleLength(16f);
                 style.top = new StyleLength(56f);
-                style.width = new StyleLength(420f);
+                style.width = new StyleLength(300f);
             }
             else
             {
@@ -412,7 +415,7 @@ internal static class TalkBox
             box.style.borderLeftWidth = new StyleFloat(3f);
             box.style.borderLeftColor = new StyleColor(Blue);
         });
-        Pad(box, 12, 14);
+        Pad(box, Sized(12), Sized(14));
         Round(box, 8);
 
         // 제목 줄: "직접 답변"과 접기. 접으면 칸이 가리던 선택지를 볼 수 있다
@@ -445,7 +448,7 @@ internal static class TalkBox
             Plugin.Logger.LogWarning($"talk box: no scroll view ({error.Message})");
             log = new VisualElement();
         }
-        Try(() => log.style.maxHeight = new StyleLength(330f));
+        Try(() => log.style.maxHeight = new StyleLength(mode == Mode.Match ? 170f : 330f));
         Try(() => log.style.flexShrink = new StyleFloat(1f));
         Try(() => log.style.display = new StyleEnum<DisplayStyle>(DisplayStyle.None));
         body.Add(log);
@@ -518,8 +521,8 @@ internal static class TalkBox
         {
             Try(() => element.style.backgroundColor = new StyleColor(Field));
             Try(() => element.style.color = new StyleColor(Color.white));
-            Try(() => element.style.fontSize = new StyleLength(14f));
-            Try(() => element.style.minHeight = new StyleLength(34f));
+            Try(() => element.style.fontSize = new StyleLength(MathF.Max(11f, Sized(14f))));
+            Try(() => element.style.minHeight = new StyleLength(Sized(34f)));
             Pad(element, 6, 10);
             Round(element, 6);
             Border(element, Line);
@@ -690,7 +693,7 @@ internal static class TalkBox
         }
         var bubble = Text(text, 14, Color.white);
         Try(() => bubble.style.backgroundColor = new StyleColor(mine ? Blue : Theirs));
-        Pad(bubble, 8, 12);
+        Pad(bubble, Sized(8), Sized(12));
         Round(bubble, 12);
         wrap.Add(bubble);
         log.Add(wrap);

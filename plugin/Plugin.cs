@@ -12,7 +12,7 @@ namespace FmBojwagwan.Bridge;
 public class Plugin : BasePlugin
 {
     public const string Id = "fm.bojwagwan.bridge";
-    public const string Version = "0.3.2";
+    public const string Version = "0.3.3";
 
     internal static ManualLogSource Logger = null!;
 
