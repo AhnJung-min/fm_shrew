@@ -16,6 +16,8 @@ internal static class UiTree
         public int MaxDepth = 200;
         /// <summary>이 번호표의 요소부터 적는다(0이면 전체)</summary>
         public int RootId;
+        /// <summary>요소가 값을 받는 경로도 적는다(줄 끝에 bind{text=row.Player.Name}). 조사용</summary>
+        public bool WithPaths;
     }
 
     private static bool panelsBroken;
@@ -141,6 +143,12 @@ internal static class UiTree
 
             var label = Il2.TextOf(pointer);
             if (!string.IsNullOrEmpty(label)) text.Append(" text=").Append(Il2.Quote(label));
+
+            if (options.WithPaths)
+            {
+                var paths = Il2.BindingPaths(pointer);
+                if (paths.Length > 0) text.Append(" bind{").Append(paths, 1, paths.Length - 1).Append('}');
+            }
         }
         catch (Exception error)
         {

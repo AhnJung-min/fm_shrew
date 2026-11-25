@@ -86,7 +86,8 @@ internal static class Watcher
 
     public static string DumpToFile(string tag)
     {
-        var content = UiTree.Dump(new UiTree.Options { WithIds = false });
+        // 조사 단계에서는 요소가 값을 받는 경로도 함께 남긴다
+        var content = UiTree.Dump(new UiTree.Options { WithIds = false, WithPaths = true });
         return BridgeFiles.WriteDump(tag, content);
     }
 

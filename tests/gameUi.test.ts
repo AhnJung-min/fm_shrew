@@ -57,6 +57,16 @@ describe('parseTree: 플러그인이 보낸 화면 구조 읽기', () => {
   it('글자 꾸밈 표시를 뺀다', () => {
     expect(plainText(nodes.find((n) => n.id === 6)!.text)).toBe('상대 팀')
   })
+
+  it('조사용 기록의 줄 끝에 붙는 값 경로(bind{…})는 건너뛴다', () => {
+    const [text, image] = parseTree(
+      `SI.Bindable.SIText "Name" .sitext [0,0 10x10] text="이 \\"선수\\"" bind{textBinding=row.Player.Name}\n` +
+        ` SI.Bindable.SIImage [0,0 10x10] hidden bind{imageBinding=row.Player.Portrait}`
+    )
+    expect(text.text).toBe('이 "선수"')
+    expect(image.type).toBe('SI.Bindable.SIImage')
+    expect(image.parent).toBe(0)
+  })
 })
 
 describe('readGameScene: 토크 장면 찾기', () => {

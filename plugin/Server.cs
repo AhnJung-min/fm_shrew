@@ -142,6 +142,7 @@ internal static class Server
                     IncludeHidden = Flag("all"),
                     WithIds = !Flag("noids"),
                     MaxDepth = Number("depth", 200),
+                    WithPaths = Flag("paths"),
                     RootId = Number("root", 0)
                 }));
             case "/dump":
@@ -170,6 +171,22 @@ internal static class Server
                 return MainThread.Run(() => DataTree.Dump(query["path"], Number("depth", 3), Number("max", 600)), 30_000);
             case "/datadump":
                 return MainThread.Run(() => Watcher.DumpDataToFile(query["tag"] ?? "manual"), 30_000);
+
+            // 대상마다 달라고 할 수 있는 항목 이름(개발용, 읽기만)
+            case "/props":
+                return MainThread.Run(() => DataNames.Props(Need("type"), query["match"]), 60_000);
+            case "/owners":
+                return MainThread.Run(() => DataNames.Owners(Need("match"), Il2.Classes("^FM[.]UI[.][A-Za-z0-9]+Reference$", 3000)), 60_000);
+
+            // 화면에 없는 값을 게임에 청해 보기(개발용)
+            case "/bind":
+                return MainThread.Run(() => DataProbe.Bind(Need("path")));
+            case "/bound":
+                return MainThread.Run(DataProbe.Bound);
+            case "/alias":
+                return MainThread.Run(() => DataProbe.Alias(Need("name"), Need("from"), Number("index", -1)));
+            case "/probe/clear":
+                return MainThread.Run(DataProbe.Clear);
 
             // 견본 카드 띄우기(개발용): kind = goal, multi, hat, best
             case "/card/test":

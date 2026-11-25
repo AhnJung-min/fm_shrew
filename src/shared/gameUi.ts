@@ -34,7 +34,7 @@ export interface UiNode {
 }
 
 const LINE =
-  /^( *)(?:#(\d+) )?(\S+)(?: "([^"]*)")?((?: \.\S+)*) \[(-?[\d.NaInfity-]+),(-?[\d.NaInfity-]+) (-?[\d.NaInfity-]+)x(-?[\d.NaInfity-]+)\]((?: (?:hidden|invisible|disabled|focusable))*)(?: text="(.*)")?(?: !\w+)?$/
+  /^( *)(?:#(\d+) )?(\S+)(?: "([^"]*)")?((?: \.\S+)*) \[(-?[\d.NaInfity-]+),(-?[\d.NaInfity-]+) (-?[\d.NaInfity-]+)x(-?[\d.NaInfity-]+)\]((?: (?:hidden|invisible|disabled|focusable))*)(?: text="(.*)")?(?: bind\{.*\})?(?: !\w+)?$/
 
 function unescape(text: string): string {
   return text.replace(/\\(["\\n])/g, (_, c: string) => (c === 'n' ? '\n' : c))

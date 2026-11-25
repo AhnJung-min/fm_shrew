@@ -531,6 +531,7 @@ internal static unsafe class Il2
         var counter = FindMethod(klass, "get_Count", 0);
         var indexer = FindMethod(klass, "get_Item", 1);
         if (counter == IntPtr.Zero || indexer == IntPtr.Zero) return items;
+        if (TypeName(IL2CPP.il2cpp_method_get_param(indexer, 0)) != "System.Int32") return items;
         var boxed = Invoke(counter, list, Array.Empty<string>(), out var error);
         if (error != null || boxed == IntPtr.Zero) return items;
         var count = *(int*)IL2CPP.il2cpp_object_unbox(boxed);
@@ -542,6 +543,101 @@ internal static unsafe class Il2
         }
         return items;
     }
+
+    private static readonly Dictionary<IntPtr, List<(IntPtr field, string name, int kind)>> PathFields = new();
+
+    /// <summary>
+    /// 화면 요소가 데이터 나무의 어느 경로에서 값을 받는지("text=row.Player.InitialSurname").
+    /// 요소의 필드 가운데 경로를 담는 것(BindingMethod, DirectBinding, BindingPath, 이름에 path가 든 문자열)을 읽는다.
+    /// </summary>
+    public static string BindingPaths(IntPtr obj)
+    {
+        var klass = ClassOf(obj);
+        if (!PathFields.TryGetValue(klass, out var fields))
+        {
+            fields = new List<(IntPtr, string, int)>();
+            foreach (var k in Chain(klass))
+            {
+                var owner = ClassName(k);
+                if (owner.StartsWith("UnityEngine.") || owner == "System.Object") break;
+                foreach (var field in Fields(k))
+                {
+                    if (IsStaticField(field)) continue;
+                    var type = TypeName(IL2CPP.il2cpp_field_get_type(field));
+                    var name = Utf8(IL2CPP.il2cpp_field_get_name(field));
+                    var kind = type.StartsWith("SI.Bindable.BindingMethod") ? 1
+                        : type == "SI.Bindable.DirectBinding" ? 2
+                        : type == "SI.Bindable.BindingPath" ? 3
+                        : type == "System.String" && name.Contains("path", StringComparison.OrdinalIgnoreCase) ? 4
+                        : 0;
+                    if (kind != 0) fields.Add((field, name, kind));
+                }
+            }
+            PathFields[klass] = fields;
+        }
+        if (fields.Count == 0) return "";
+
+        var text = new StringBuilder();
+        foreach (var (field, name, kind) in fields)
+        {
+            try
+            {
+                var value = IL2CPP.il2cpp_field_get_value_object(field, obj);
+                if (kind == 1 && value != IntPtr.Zero) value = FieldObject(value, "m_direct");
+                if (kind is 1 or 2 && value != IntPtr.Zero) value = FieldObject(value, "Path");
+                if (kind is 1 or 2 or 3 && value != IntPtr.Zero) value = FieldObject(value, "m_path");
+                var path = Str(value);
+                if (string.IsNullOrEmpty(path)) continue;
+                var label = name.TrimStart('m', '_');
+                text.Append(' ').Append(label.Length > 0 ? label : name).Append('=').Append(path);
+            }
+            catch
+            {
+                // 읽을 수 없는 필드는 건너뛴다
+            }
+        }
+        return text.ToString();
+    }
+
+    /// <summary>모음(사전 등, GetEnumerator가 있는 것)을 돌며 항목을 준다. 값 종류 항목은 상자에 담겨 온다.</summary>
+    public static List<IntPtr> Enumerate(IntPtr collection, int max)
+    {
+        var items = new List<IntPtr>();
+        if (collection == IntPtr.Zero) return items;
+        var enumerate = FindMethod(ClassOf(collection), "GetEnumerator", 0);
+        if (enumerate == IntPtr.Zero) return items;
+        var enumerator = Invoke(enumerate, collection, Array.Empty<string>(), out var error);
+        if (error != null || enumerator == IntPtr.Zero) return items;
+        var klass = ClassOf(enumerator);
+        var next = FindMethod(klass, "MoveNext", 0);
+        var current = FindMethod(klass, "get_Current", 0);
+        if (next == IntPtr.Zero || current == IntPtr.Zero) return items;
+        while (items.Count < max)
+        {
+            var moved = Invoke(next, enumerator, Array.Empty<string>(), out error);
+            if (error != null || moved == IntPtr.Zero || *(byte*)IL2CPP.il2cpp_object_unbox(moved) == 0) break;
+            var item = Invoke(current, enumerator, Array.Empty<string>(), out error);
+            if (error != null) break;
+            items.Add(item);
+        }
+        return items;
+    }
+
+    /// <summary>클래스의 정적 메서드를 부른다(인자는 글로). 돌려준 객체를 준다. 게임 쪽 예외는 던진다.</summary>
+    public static IntPtr CallStatic(IntPtr klass, string method, params string[] arguments)
+    {
+        var found = FindMethod(klass, method, arguments.Length);
+        if (found == IntPtr.Zero) throw new MissingMethodException(method);
+        var result = Invoke(found, IntPtr.Zero, arguments, out var error);
+        if (error != null) throw new InvalidOperationException(error);
+        return result;
+    }
+
+    /// <summary>상자에 담긴 참·거짓을 꺼낸다.</summary>
+    public static bool Bool(IntPtr boxed) => boxed != IntPtr.Zero && *(byte*)IL2CPP.il2cpp_object_unbox(boxed) != 0;
+
+    /// <summary>상자에 담긴 부호 없는 32비트 수(또는 그것 하나만 든 구조체)를 꺼낸다.</summary>
+    public static uint Uint(IntPtr boxed) => boxed == IntPtr.Zero ? 0 : *(uint*)IL2CPP.il2cpp_object_unbox(boxed);
 
     /// <summary>이름이 정규식에 맞는 클래스를 모든 어셈블리에서 찾는다.</summary>
     public static string Classes(string pattern, int max)

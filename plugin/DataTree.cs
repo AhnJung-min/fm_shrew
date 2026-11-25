@@ -13,15 +13,50 @@ namespace FmBojwagwan.Bridge;
 /// </summary>
 internal static class DataTree
 {
-    private static IntPtr Root()
+    /// <summary>게임의 데이터 나무를 맡은 객체(SI.Bindable.BindingSubsystem). 아직 없으면 0.</summary>
+    public static IntPtr Subsystem()
     {
         var subsystems = Il2.StaticObject("SI.Core.GameSubsystems", "s_subsystems");
         foreach (var item in Il2.Items(subsystems, 200))
+            if (item != IntPtr.Zero && Il2.ClassName(Il2.ClassOf(item)) == "SI.Bindable.BindingSubsystem")
+                return item;
+        return IntPtr.Zero;
+    }
+
+    private static IntPtr Root()
+    {
+        var subsystem = Subsystem();
+        return subsystem == IntPtr.Zero ? IntPtr.Zero : Il2.FieldObject(subsystem, "m_root");
+    }
+
+    private static IntPtr Child(IntPtr node, string part)
+    {
+        for (var child = Il2.FieldObject(node, "m_firstChild"); child != IntPtr.Zero; child = Il2.FieldObject(child, "m_nextSibling"))
         {
-            if (item == IntPtr.Zero || Il2.ClassName(Il2.ClassOf(item)) != "SI.Bindable.BindingSubsystem") continue;
-            return Il2.FieldObject(item, "m_root");
+            var name = NameOf(child);
+            var hit = part.EndsWith("*")
+                ? name.StartsWith(part[..^1], StringComparison.OrdinalIgnoreCase)
+                : name.Equals(part, StringComparison.OrdinalIgnoreCase);
+            if (hit) return child;
         }
         return IntPtr.Zero;
+    }
+
+    /// <summary>
+    /// "MatchUI*.MatchPlayers"처럼 *가 든 경로를 나무에 실제로 있는 이름으로 바꾼다("MatchUI2D.MatchPlayers").
+    /// 아직 나무에 없는 뒷부분은 적힌 그대로 둔다.
+    /// </summary>
+    public static string Resolve(string path)
+    {
+        var parts = (path ?? "").Split('.', StringSplitOptions.RemoveEmptyEntries);
+        var node = Root();
+        for (var i = 0; i < parts.Length; i++)
+        {
+            if (node != IntPtr.Zero) node = Child(node, parts[i]);
+            if (node != IntPtr.Zero) parts[i] = NameOf(node);
+            else if (parts[i].EndsWith("*")) throw new HttpError(404, $"no node '{parts[i]}'");
+        }
+        return string.Join(".", parts);
     }
 
     private static string NameOf(IntPtr node) => Il2.Str(Il2.FieldObject(node, "m_name")) ?? "";
@@ -58,17 +93,7 @@ internal static class DataTree
         if (node == IntPtr.Zero) return "no data tree";
         foreach (var part in (path ?? "").Split('.', StringSplitOptions.RemoveEmptyEntries))
         {
-            var found = IntPtr.Zero;
-            for (var child = Il2.FieldObject(node, "m_firstChild"); child != IntPtr.Zero; child = Il2.FieldObject(child, "m_nextSibling"))
-            {
-                var name = NameOf(child);
-                var hit = part.EndsWith("*")
-                    ? name.StartsWith(part[..^1], StringComparison.OrdinalIgnoreCase)
-                    : name.Equals(part, StringComparison.OrdinalIgnoreCase);
-                if (!hit) continue;
-                found = child;
-                break;
-            }
+            var found = Child(node, part);
             if (found == IntPtr.Zero) return $"no node '{part}'";
             node = found;
         }
