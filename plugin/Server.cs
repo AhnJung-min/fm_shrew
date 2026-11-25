@@ -77,7 +77,13 @@ internal static class Server
             var given = request.Headers["X-Bridge-Token"] ?? request.QueryString["token"] ?? "";
             if (!CryptographicOperations.FixedTimeEquals(Encoding.ASCII.GetBytes(given), token))
                 throw new HttpError(401, "bad token");
-            body = Route(request.Url?.AbsolutePath ?? "/", request.QueryString);
+            var sent = "";
+            if (request.HasEntityBody)
+            {
+                using var reader = new StreamReader(request.InputStream, Encoding.UTF8);
+                sent = reader.ReadToEnd();
+            }
+            body = Route(request.Url?.AbsolutePath ?? "/", request.QueryString, sent);
         }
         catch (HttpError error)
         {
@@ -110,7 +116,7 @@ internal static class Server
         }
     }
 
-    private static string Route(string path, NameValueCollection query)
+    private static string Route(string path, NameValueCollection query, string sent)
     {
         bool Flag(string name) => query[name] is "1" or "true";
         int Number(string name, int fallback) => int.TryParse(query[name], out var value) ? value : fallback;
@@ -120,6 +126,12 @@ internal static class Server
         {
             case "/ping":
                 return $"fm-bojwagwan-bridge {Plugin.Version}";
+
+            // 게임 안 "직접 답변" 칸과 앱 사이의 통로. poll은 새 말이 생길 때까지 이 스레드에서 기다린다
+            case "/talk/poll":
+                return TalkBox.Poll(Number("after", 0), Number("wait", 25));
+            case "/talk/reply":
+                return TalkBox.Reply(Number("seq", 0), sent);
 
             // 화면 구조
             case "/tree":

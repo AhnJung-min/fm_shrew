@@ -34,6 +34,7 @@
     <GameReference Include="$(GameDir)\BepInEx\interop\UnityEngine.CoreModule.dll" />
     <GameReference Include="$(GameDir)\BepInEx\interop\UnityEngine.UIElementsModule.dll" />
     <GameReference Include="$(GameDir)\BepInEx\interop\UnityEngine.IMGUIModule.dll" />
+    <GameReference Include="$(GameDir)\BepInEx\interop\UnityEngine.TextRenderingModule.dll" />
     <GameReference Include="$(GameDir)\BepInEx\interop\UnityEngine.InputLegacyModule.dll" />
     <GameReference Include="$(GameDir)\BepInEx\interop\Unity.InputSystem.dll" />
     <Reference Include="@(GameReference)" Private="false" />

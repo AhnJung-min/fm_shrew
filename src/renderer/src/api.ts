@@ -80,12 +80,12 @@ function createMockApi(): Api {
     onImported: () => () => undefined,
 
     // 토크 도우미: 미리보기에서는 정해 둔 답을 돌려준다
-    talkStatus: async () => ({ hasKey: mockHasKey, hotkey: 'Ctrl+Shift+Space' }),
-    talkSetKey: async () => ({ hasKey: (mockHasKey = true), hotkey: 'Ctrl+Shift+Space' }),
-    talkClearKey: async () => ({ hasKey: (mockHasKey = false), hotkey: 'Ctrl+Shift+Space' }),
+    talkStatus: async () => ({ hasKey: mockHasKey, hotkey: 'Ctrl+Shift+Space', game: true }),
+    talkSetKey: async () => ({ hasKey: (mockHasKey = true), hotkey: 'Ctrl+Shift+Space', game: true }),
+    talkClearKey: async () => ({ hasKey: (mockHasKey = false), hotkey: 'Ctrl+Shift+Space', game: true }),
     talkCapture: async () => ({
       ok: true,
-      capture: { id: 1, preview: '', capturedAt: new Date().toISOString(), source: 'window', width: 1920, height: 1080 }
+      capture: { id: 1, preview: '', capturedAt: new Date().toISOString(), source: 'game', width: 0, height: 0 }
     }),
     talkRead: async (captureId) => ({
       ok: true,
@@ -97,12 +97,13 @@ function createMockApi(): Api {
         speaker: '제임스 피어스 (디 애슬레틱)',
         question: '최근 세 경기에서 실점이 많았습니다. 수비진에 변화를 줄 계획이 있습니까?',
         options: [
-          { text: '수비진을 전적으로 신뢰한다.', tone: '차분하게' },
-          { text: '몇 자리는 경쟁이 필요하다.', tone: '단호하게' },
-          { text: '그 질문에는 답하지 않겠다.', tone: '' },
-          { text: '기자회견장을 떠난다', tone: '' }
+          { text: '수비진을 전적으로 신뢰한다.', tone: '긍정적', ref: 11 },
+          { text: '몇 자리는 경쟁이 필요하다.', tone: '중립적', ref: 12 },
+          { text: '그 질문에는 답하지 않겠다.', tone: '부정적', ref: 13 },
+          { text: '기자회견장을 떠난다', tone: '', ref: 14 }
         ],
-        facts: []
+        facts: [],
+        source: 'game'
       },
       usage: { inputTokens: 2140, outputTokens: 310, model: 'claude-sonnet-5-5' }
     }),
@@ -119,6 +120,10 @@ function createMockApi(): Api {
       },
       usage: { inputTokens: 640, outputTokens: 180, model: 'claude-sonnet-5-5' }
     }),
+    talkPress: async () => {
+      await new Promise((resolve) => setTimeout(resolve, 500))
+      return { ok: true }
+    },
     onTalkCaptured: () => () => undefined,
     hideWindow: async () => undefined
   }

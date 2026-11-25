@@ -1,4 +1,4 @@
-import { Camera, CircleAlert, CornerDownLeft, Undo2 } from 'lucide-react'
+import { Camera, Check, CircleAlert, CornerDownLeft, Undo2 } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import {
   estimateCostUsd,
@@ -119,11 +119,12 @@ function Entry(props: { entry: TalkEntry }) {
         {capture.preview && <img src={capture.preview} alt="찍어 둔 게임 화면" />}
         <div className="scene-body">
           {entry.reading ? (
-            <p className="muted">화면을 읽는 중입니다. 몇 초 걸립니다.</p>
+            <p className="muted">{capture.source === 'game' ? '게임에서 읽는 중입니다.' : '화면을 읽는 중입니다. 몇 초 걸립니다.'}</p>
           ) : scene ? (
             <>
               <p>
                 <span className="tag squad">{TALK_SCREEN_LABEL[scene.screen]}</span> <span className="muted">{scene.situation}</span>
+                {scene.source === 'game' && <span className="faint"> · 게임에서 직접 읽음</span>}
               </p>
               {!scene.readable && (
                 <p className="chat-caution">
@@ -168,6 +169,8 @@ function Entry(props: { entry: TalkEntry }) {
   const { scene, turn } = entry
   const deal = isNegotiation(scene.screen)
   const picked = turn.pickIndex === null ? null : scene.options[turn.pickIndex]
+  /** 게임에서 직접 읽은 장면이면 앱에서 바로 누를 수 있다 */
+  const pressable = picked?.ref !== undefined
   return (
     <div className="pick">
       {deal ? (
@@ -189,10 +192,25 @@ function Entry(props: { entry: TalkEntry }) {
         </>
       ) : picked ? (
         <>
-          <h3>게임에서 이 선택지를 누르세요 (화면에서 {turn.pickIndex! + 1}번째)</h3>
+          <h3>
+            {pressable ? '이 선택지를 골랐습니다' : '게임에서 이 선택지를 누르세요'} (화면에서 {turn.pickIndex! + 1}번째)
+          </h3>
           <p className="pick-option">{picked.text}</p>
           {picked.tone && <p className="pick-tone">어조: {picked.tone}</p>}
           <p className="muted">{turn.reason}</p>
+          {pressable && (
+            <p className="pick-press">
+              {entry.pressed === 'done' ? (
+                <span className="pick-pressed">
+                  <Check size={15} /> 게임에서 눌렀습니다
+                </span>
+              ) : (
+                <button className="btn primary" disabled={entry.pressed === 'busy'} onClick={() => void talkStore.press(entry.key)}>
+                  {entry.pressed === 'busy' ? '누르는 중…' : '게임에서 누르기'}
+                </button>
+              )}
+            </p>
+          )}
           {turn.confidence < LOW_CONFIDENCE && (
             <p className="chat-caution">
               <CircleAlert size={15} />딱 맞는 선택지가 없어 가장 가까운 것을 골랐습니다. 위의 선택지 목록을 직접 확인해 보세요.

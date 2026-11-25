@@ -1806,3 +1806,16 @@ a {
     }
   }
 }
+
+/* 고른 선택지를 게임에서 누르기 */
+.pick-press {
+  margin-top: 10px;
+}
+
+.pick-pressed {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--good, #7fd3a0);
+  font-weight: 600;
+}

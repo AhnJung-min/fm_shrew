@@ -190,6 +190,7 @@ function registerIpc(): void {
   ipcMain.handle('talk:say', (_event, sceneId: number, history: TalkLine[], words: string) =>
     talk.say(sceneId, history, words)
   )
+  ipcMain.handle('talk:press', (_event, sceneId: number, optionIndex: number) => talk.press(sceneId, optionIndex))
   ipcMain.handle('window:hide', () => talk.hideWindow())
 }
 
@@ -242,6 +243,8 @@ app.whenReady().then(async () => {
   registerIpc()
   createWindow()
   talk.registerHotkey()
+  // 게임 안 "직접 답변" 칸을 맡는다(검사용 실행에서는 돌리지 않는다)
+  if (!process.env.FMB_SMOKE_OUT) void talk.serveGame()
   await watcher.start(settings.get().watchDirs)
   await saveWatcher.start(settings.get().saveDir)
   // 창이 먼저 뜬 뒤에 읽는다(세이브 하나를 읽는 데 몇 초 걸린다)

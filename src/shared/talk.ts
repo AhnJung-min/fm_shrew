@@ -37,10 +37,12 @@ export interface TalkScene {
   speaker: string
   /** 상대가 한 말이나 질문. 화면에 적힌 그대로 */
   question: string
-  /** 화면에 보이는 선택지 전부, 놓인 순서대로 */
-  options: Array<{ text: string; tone: string }>
+  /** 화면에 보이는 선택지 전부, 놓인 순서대로. ref는 게임에서 직접 읽었을 때만 있고, 그 선택지를 누를 때 쓴다 */
+  options: Array<{ text: string; tone: string; ref?: number }>
   /** 협상 화면에서 읽은 숫자와 조건(예: "요구 이적료 950억 원") */
   facts: string[]
+  /** 'game'은 게임 안 플러그인이 직접 읽은 것, 'screen'은 캡처를 AI가 읽은 것 */
+  source?: 'game' | 'screen'
 }
 
 /** 대화 한 줄 */
@@ -95,8 +97,8 @@ export interface TalkCapture {
   /** 화면에 보여 줄 축소 이미지(data URL) */
   preview: string
   capturedAt: string
-  /** 게임 창을 찍었는지, 화면 전체를 찍었는지 */
-  source: 'window' | 'screen'
+  /** 게임 창을 찍었는지, 화면 전체를 찍었는지, 찍지 않고 게임에서 직접 읽었는지 */
+  source: 'window' | 'screen' | 'game'
   width: number
   height: number
 }
@@ -106,6 +108,16 @@ export interface TalkStatus {
   /** 등록된 단축키. 등록에 실패했으면 null */
   hotkey: string | null
   hotkeyError?: string
+  /** 게임 안 플러그인과 연결돼 있는지(게임이 켜져 있어야 한다) */
+  game: boolean
+}
+
+/** 선택지를 게임에서 누른 결과 */
+export interface TalkPressResult {
+  ok: boolean
+  message?: string
+  /** 누른 뒤 게임이 다음 질문으로 넘어갔으면 그 장면 */
+  next?: TalkCapture
 }
 
 /** 누적 사용량 */

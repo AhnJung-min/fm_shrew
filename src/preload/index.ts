@@ -26,6 +26,7 @@ const api: Api = {
   talkCapture: () => ipcRenderer.invoke('talk:capture'),
   talkRead: (captureId) => ipcRenderer.invoke('talk:read', captureId),
   talkSay: (sceneId, history, words) => ipcRenderer.invoke('talk:say', sceneId, history, words),
+  talkPress: (sceneId, optionIndex) => ipcRenderer.invoke('talk:press', sceneId, optionIndex),
   onTalkCaptured: (cb) => {
     const listener = (_event: unknown, payload: Parameters<typeof cb>[0]): void => cb(payload)
     ipcRenderer.on('talk:captured', listener)

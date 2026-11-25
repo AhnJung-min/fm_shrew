@@ -7,7 +7,15 @@ export type TalkEntry =
   | { key: number; kind: 'scene'; capture: TalkCapture; scene: TalkScene | null; reading: boolean; usage?: TalkUsage }
   | { key: number; kind: 'me'; text: string }
   | { key: number; kind: 'them'; speaker: string; text: string; staged: boolean }
-  | { key: number; kind: 'pick'; scene: TalkScene; turn: TalkTurn; usage?: TalkUsage }
+  | {
+      key: number
+      kind: 'pick'
+      scene: TalkScene
+      turn: TalkTurn
+      usage?: TalkUsage
+      /** 게임에서 누르는 중이거나 이미 눌렀는지 */
+      pressed?: 'busy' | 'done'
+    }
   | { key: number; kind: 'error'; text: string }
 
 interface TalkState {
@@ -98,6 +106,22 @@ export const talkStore = {
       )
     }
     update({ busy: null })
+  },
+
+  /** 고른 선택지를 게임에서 누른다. 게임이 다음 질문으로 넘어가면 그 장면을 이어서 읽는다 */
+  async press(key: number): Promise<void> {
+    const entry = state.entries.find((e) => e.key === key)
+    if (!entry || entry.kind !== 'pick' || entry.pressed || entry.turn.pickIndex === null) return
+    replace(key, { pressed: 'busy' })
+    const result = await api.talkPress(entry.scene.id, entry.turn.pickIndex)
+    if (!result.ok) {
+      replace(key, { pressed: undefined })
+      push({ kind: 'error', text: result.message ?? '게임에서 누르지 못했습니다.' })
+      return
+    }
+    replace(key, { pressed: 'done' })
+    if (result.next) await talkStore.addCapture(result.next)
+    else update({ scene: null })
   },
 
   clear(): void {

@@ -4,6 +4,7 @@ import type {
   TalkLine,
   TalkReadResult,
   TalkSayResult,
+  TalkPressResult,
   TalkStats,
   TalkStatus
 } from './talk'
@@ -143,6 +144,8 @@ export interface Api {
   talkRead(captureId: number): Promise<TalkReadResult>
   /** 읽어 둔 장면을 놓고 내 말을 보낸다. 고른 선택지와 상대의 반응이 돌아온다 */
   talkSay(sceneId: number, history: TalkLine[], words: string): Promise<TalkSayResult>
+  /** 장면의 선택지 하나를 게임에서 누른다(게임 안 플러그인이 있을 때만) */
+  talkPress(sceneId: number, optionIndex: number): Promise<TalkPressResult>
   /** 단축키로 화면이 찍혔을 때 */
   onTalkCaptured(cb: (event: { capture?: TalkCapture; message?: string }) => void): () => void
   /** 앱 창을 내려 게임으로 돌아간다 */

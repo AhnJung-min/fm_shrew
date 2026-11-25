@@ -451,6 +451,33 @@ internal static unsafe class Il2
         return text.ToString();
     }
 
+    private static readonly Dictionary<string, Il2CppSystem.Type> UnityTypes = new();
+
+    /// <summary>지금 살아 있는 Unity 객체 하나를 종류 이름으로 찾는다. 없으면 0.</summary>
+    public static IntPtr FindUnityObject(string typeName)
+    {
+        if (!UnityTypes.TryGetValue(typeName, out var type))
+        {
+            var klass = FindClass(typeName);
+            type = new Il2CppSystem.Type(IL2CPP.il2cpp_type_get_object(IL2CPP.il2cpp_class_get_type(klass)));
+            UnityTypes[typeName] = type;
+        }
+        var found = UnityEngine.Resources.FindObjectsOfTypeAll(type);
+        for (var i = 0; i < found.Length; i++)
+            if (found[i] != null)
+                return found[i].Pointer;
+        return IntPtr.Zero;
+    }
+
+    /// <summary>인자 없는 메서드를 이름으로 부른다. 게임 쪽에서 예외가 나면 그 내용을 던진다.</summary>
+    public static void Call(IntPtr obj, string method)
+    {
+        var found = FindMethod(ClassOf(obj), method, 0);
+        if (found == IntPtr.Zero) throw new MissingMethodException(method);
+        Invoke(found, obj, Array.Empty<string>(), out var error);
+        if (error != null) throw new InvalidOperationException(error);
+    }
+
     /// <summary>이름이 정규식에 맞는 클래스를 모든 어셈블리에서 찾는다.</summary>
     public static string Classes(string pattern, int max)
     {

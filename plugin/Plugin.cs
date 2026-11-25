@@ -12,7 +12,7 @@ namespace FmBojwagwan.Bridge;
 public class Plugin : BasePlugin
 {
     public const string Id = "fm.bojwagwan.bridge";
-    public const string Version = "0.1.0";
+    public const string Version = "0.2.0";
 
     internal static ManualLogSource Logger = null!;
 
@@ -41,6 +41,7 @@ public class BridgeBehaviour : MonoBehaviour
     public void Update()
     {
         MainThread.Pump();
+        TalkBox.Tick();
         Watcher.Tick();
     }
 }
