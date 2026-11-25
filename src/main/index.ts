@@ -19,6 +19,13 @@ const SAVE_DIR_OVERRIDE = process.env.FMB_SAVE_DIR
 
 if (USER_DATA_OVERRIDE) app.setPath('userData', USER_DATA_OVERRIDE)
 
+// 프로젝트 폴더의 .env 파일이 있으면 읽는다(ANTHROPIC_API_KEY=...). 이 파일은 git에 올리지 않는다.
+try {
+  process.loadEnvFile(join(app.getAppPath(), '.env'))
+} catch {
+  // 파일이 없으면 앱 설정에 저장한 키를 쓴다
+}
+
 let mainWindow: BrowserWindow | null = null
 let store: Store
 let settings: SettingsStore
