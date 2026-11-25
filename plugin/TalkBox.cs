@@ -353,7 +353,6 @@ internal static class TalkBox
         var button = Text(text, 14, Color.white);
         Try(() => button.style.backgroundColor = new StyleColor(color));
         Try(() => button.style.unityTextAlign = new StyleEnum<TextAnchor>(TextAnchor.MiddleCenter));
-        Try(() => button.style.unityFontStyleAndWeight = new StyleEnum<FontStyle>(FontStyle.Bold));
         Try(() => button.style.flexShrink = new StyleFloat(0f));
         Try(() => button.style.marginLeft = new StyleLength(10f));
         Pad(button, 8, 16);
@@ -480,11 +479,36 @@ internal static class TalkBox
         body.Add(footer);
 
         host.Add(box);
+        UseGameFont();
         SetFolded(Folded);
         StyleInput(input);
         WatchRoot();
         state = State.Idle;
         pickId = 0;
+    }
+
+    /// <summary>
+    /// 칸의 글꼴을 게임 글자와 같은 것으로 맞춘다.
+    /// 그냥 두면 Unity 기본 글꼴이 쓰이는데, 그 글꼴은 굵게 하면 한글 일부가 빠져 보인다(그래서 굵은 글씨는 쓰지 않는다).
+    /// </summary>
+    private static void UseGameFont()
+    {
+        VisualElement sample = null;
+        Walk(mode == Mode.Match ? shouts : host, element =>
+        {
+            if (box != null && element.Pointer == box.Pointer) return false;
+            if (Il2.ClassName(Il2.ClassOf(element.Pointer)) != "SI.Bindable.SIText") return false;
+            if (string.IsNullOrEmpty(Il2.TextOf(element.Pointer))) return false;
+            sample = element;
+            // 선택지 문장(이름이 text)이 본문 글꼴이다. 없으면 처음 본 글자를 쓴다
+            return element.name == "text";
+        });
+        if (sample == null) return;
+        Try(() =>
+        {
+            var font = sample.resolvedStyle.unityFontDefinition;
+            box.style.unityFontDefinition = new StyleFontDefinition(font);
+        });
     }
 
     /// <summary>입력칸 안쪽(글자가 찍히는 부분)을 어두운 바탕에 밝은 글자로 맞춘다.</summary>
@@ -661,7 +685,6 @@ internal static class TalkBox
         if (!string.IsNullOrEmpty(speaker))
         {
             var name = Text(speaker, 12, Name);
-            Try(() => name.style.unityFontStyleAndWeight = new StyleEnum<FontStyle>(FontStyle.Bold));
             Try(() => name.style.marginBottom = new StyleLength(4f));
             wrap.Add(name);
         }
