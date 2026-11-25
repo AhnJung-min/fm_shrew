@@ -36,6 +36,8 @@ internal static class TalkBox
     // 화면 요소
     private static VisualElement host;
     private static VisualElement box;
+    private static VisualElement body;
+    private static Label foldButton;
     private static VisualElement log;
     private static TextField input;
     private static Label status;
@@ -46,6 +48,8 @@ internal static class TalkBox
     private static State state = State.Idle;
     private static int sceneHash;
     private static bool wantFocus;
+    /** 접어 두면 제목 줄만 남는다. 게임을 끌 때까지 기억한다 */
+    private static bool folded;
     private static bool exclusive;
     private static long nextTick;
     private static long submitAt = -1;
@@ -346,10 +350,26 @@ internal static class TalkBox
         Pad(box, 12, 14);
         Round(box, 8);
 
-        var title = Text("직접 답변", 14, Title);
-        Try(() => title.style.unityTextAlign = new StyleEnum<TextAnchor>(TextAnchor.MiddleCenter));
-        Try(() => title.style.marginBottom = new StyleLength(8f));
-        box.Add(title);
+        // 제목 줄: "직접 답변"과 접기. 접으면 칸이 가리던 선택지를 볼 수 있다
+        var header = Row();
+        Try(() => header.style.justifyContent = new StyleEnum<Justify>(Justify.Center));
+        header.Add(Text("직접 답변", 14, Title));
+        foldButton = Text("", 14, Soft);
+        Try(() => foldButton.style.marginLeft = new StyleLength(10f));
+        foldButton.RegisterCallback(
+            DelegateSupport.ConvertDelegate<EventCallback<PointerDownEvent>>(new Action<PointerDownEvent>(evt =>
+            {
+                evt.StopPropagation();
+                SetFolded(!folded);
+            })),
+            TrickleDown.NoTrickleDown);
+        header.Add(foldButton);
+        box.Add(header);
+
+        body = new VisualElement();
+        Try(() => body.style.marginTop = new StyleLength(8f));
+        Try(() => body.style.flexShrink = new StyleFloat(1f));
+        box.Add(body);
 
         try
         {
@@ -363,7 +383,7 @@ internal static class TalkBox
         Try(() => log.style.maxHeight = new StyleLength(330f));
         Try(() => log.style.flexShrink = new StyleFloat(1f));
         Try(() => log.style.display = new StyleEnum<DisplayStyle>(DisplayStyle.None));
-        box.Add(log);
+        body.Add(log);
 
         var entry = Row();
         input = new TextField();
@@ -378,7 +398,7 @@ internal static class TalkBox
             TrickleDown.TrickleDown);
         entry.Add(input);
         entry.Add(ButtonLike("말하기", Blue, () => submitAt = Clock.ElapsedMilliseconds));
-        box.Add(entry);
+        body.Add(entry);
 
         // 적용할 선택지는 문장이 길 수 있어 한 줄을 통째로 쓰고, 버튼은 그 아래 오른쪽에 둔다
         var footer = new VisualElement();
@@ -391,9 +411,10 @@ internal static class TalkBox
         Try(() => applyButton.style.marginTop = new StyleLength(8f));
         Try(() => applyButton.style.display = new StyleEnum<DisplayStyle>(DisplayStyle.None));
         footer.Add(applyButton);
-        box.Add(footer);
+        body.Add(footer);
 
         host.Add(box);
+        SetFolded(folded);
         StyleInput(input);
         WatchRoot();
         state = State.Idle;
@@ -441,6 +462,14 @@ internal static class TalkBox
             TrickleDown.TrickleDown);
     }
 
+    private static void SetFolded(bool fold)
+    {
+        folded = fold;
+        if (fold) SetTyping(false);
+        foldButton.text = fold ? "[펼치기]" : "[접기]";
+        Try(() => body.style.display = new StyleEnum<DisplayStyle>(fold ? DisplayStyle.None : DisplayStyle.Flex));
+    }
+
     private static void Detach()
     {
         SetTyping(false);
@@ -454,6 +483,8 @@ internal static class TalkBox
         }
         host = null;
         box = null;
+        body = null;
+        foldButton = null;
         log = null;
         input = null;
         status = null;
