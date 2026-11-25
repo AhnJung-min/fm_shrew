@@ -2,15 +2,16 @@ import { Camera, CircleAlert, CornerDownLeft, Undo2 } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import {
   estimateCostUsd,
+  isNegotiation,
   LOW_CONFIDENCE,
+  TALK_MODELS,
   TALK_SCREEN_LABEL,
-  type TalkCapture,
-  type TalkResult,
-  type TalkStatus
+  type TalkStatus,
+  type TalkUsage
 } from '@shared/talk'
 import type { Settings } from '@shared/types'
 import { api } from '@/api'
-import { formatTime } from '@/lib/format'
+import { talkStore, useTalk, type TalkEntry } from '@/lib/talkStore'
 
 /** Electron 가속기 표기를 사람이 읽는 키 이름으로 */
 export function hotkeyLabel(accelerator: string | null): string {
@@ -60,145 +61,179 @@ function KeySetup(props: { onSaved: (status: TalkStatus) => void }) {
             키 저장
           </button>
         </div>
-        {error && <p className="talk-error">{error}</p>}
+        {error && <p className="chat-error">{error}</p>}
       </div>
     </section>
   )
 }
 
-function ResultCard(props: { result: TalkResult; model: string }) {
-  const { result } = props
-  if (!result.ok || !result.advice) {
-    return (
-      <div className="talk-error" role="alert">
-        <CircleAlert size={16} />
-        <span>{result.message ?? '답을 받지 못했습니다.'}</span>
-      </div>
-    )
-  }
-  const { advice, usage } = result
-  const isDeal = advice.offer.opening !== '' || advice.offer.structure !== '' || advice.offer.walkAway !== ''
-  const cost = usage ? estimateCostUsd(usage.model, usage.inputTokens, usage.outputTokens) : null
-
+function UsageNote(props: { usage?: TalkUsage }) {
+  if (!props.usage) return null
+  const { inputTokens, outputTokens, model } = props.usage
+  const cost = estimateCostUsd(model, inputTokens, outputTokens)
   return (
-    <article className="talk-result">
-      <header>
-        <span className="tag squad">{TALK_SCREEN_LABEL[advice.screen]}</span>
-        <p className="muted">{advice.situation}</p>
-      </header>
-
-      {!advice.readable && (
-        <div className="talk-error" role="alert">
-          <CircleAlert size={16} />
-          <span>화면을 다 읽지 못했습니다. 아래 추천은 참고만 하고, 선택지가 다 보이게 한 뒤 다시 캡처해 보세요.</span>
-        </div>
-      )}
-
-      <section className="talk-pick">
-        <h2>
-          {isDeal
-            ? '지금 할 일'
-            : advice.pickIndex !== null
-              ? `이 선택지를 고르세요 (화면에서 ${advice.pickIndex + 1}번째)`
-              : '고를 선택지를 찾지 못했습니다'}
-        </h2>
-        {advice.recommendation.option && <p className="talk-option">{advice.recommendation.option}</p>}
-        {advice.recommendation.tone && <p className="talk-tone">어조: {advice.recommendation.tone}</p>}
-        <p className="muted">{advice.recommendation.reason}</p>
-        {!isDeal && advice.pickIndex !== null && advice.confidence < LOW_CONFIDENCE && (
-          <p className="talk-caution">
-            <CircleAlert size={15} />딱 맞는 선택지가 없어 가장 가까운 것을 골랐습니다. 아래 목록에서 직접 확인해 보세요.
-          </p>
-        )}
-      </section>
-
-      {advice.options.length > 1 && (
-        <section className="talk-alts">
-          <h3>화면에서 읽은 선택지</h3>
-          <ol className="talk-options">
-            {advice.options.map((option, i) => (
-              <li key={i} className={i === advice.pickIndex ? 'picked' : undefined}>
-                <span>{option.text}</span>
-                {option.tone && <span className="faint"> ({option.tone})</span>}
-              </li>
-            ))}
-          </ol>
-        </section>
-      )}
-
-      {isDeal && (
-        <dl className="talk-offer">
-          <dt>처음 제안</dt>
-          <dd>{advice.offer.opening || '–'}</dd>
-          <dt>구성</dt>
-          <dd>{advice.offer.structure || '–'}</dd>
-          <dt>물러설 선</dt>
-          <dd>{advice.offer.walkAway || '–'}</dd>
-        </dl>
-      )}
-
-      {advice.alternatives.length > 0 && (
-        <section className="talk-alts">
-          <h3>뜻이 조금 다른 차선책</h3>
-          <ul>
-            {advice.alternatives.map((alt) => (
-              <li key={alt.index}>
-                <strong>
-                  {alt.index + 1}번째: {alt.option}
-                </strong>
-                {alt.tone && <span className="talk-tone"> (어조: {alt.tone})</span>}
-                <span className="muted"> {alt.reason}</span>
-              </li>
-            ))}
-          </ul>
-        </section>
-      )}
-
-      {advice.caution && (
-        <p className="talk-caution">
-          <CircleAlert size={15} />
-          {advice.caution}
-        </p>
-      )}
-
-      {isDeal && (
-        <p className="faint talk-note">
-          게임의 협상 계산식을 아는 것이 아니라 화면에 보이는 숫자로 판단한 제안입니다. 그대로 해도 거절될 수 있습니다.
-        </p>
-      )}
-      {usage && (
-        <p className="faint talk-note num">
-          이번 요청: 입력 {usage.inputTokens.toLocaleString()} + 출력 {usage.outputTokens.toLocaleString()} 토큰
-          {cost !== null && `, 약 $${cost.toFixed(4)}`}
-        </p>
-      )}
-    </article>
+    <span className="chat-usage num">
+      토큰 {inputTokens.toLocaleString()} + {outputTokens.toLocaleString()}
+      {cost !== null && `, 약 $${cost.toFixed(4)}`}
+    </span>
   )
 }
 
-export function Talk(props: {
-  settings: Settings
-  capture: TalkCapture | null
-  captureError: string | null
-  onCapture: (capture: TalkCapture | null, error: string | null) => void
-  onGoSettings: () => void
-}) {
-  const { settings, capture, captureError, onCapture, onGoSettings } = props
+function Entry(props: { entry: TalkEntry }) {
+  const { entry } = props
+
+  if (entry.kind === 'me') {
+    return (
+      <div className="msg me">
+        <span className="who">감독</span>
+        <p>{entry.text}</p>
+      </div>
+    )
+  }
+
+  if (entry.kind === 'them') {
+    return (
+      <div className="msg them">
+        <span className="who">
+          {entry.speaker || '상대'}
+          {entry.staged && <span className="staged" title="분위기를 위해 AI가 만든 반응입니다. 게임에는 반영되지 않습니다."> 연출</span>}
+        </span>
+        <p>{entry.text}</p>
+      </div>
+    )
+  }
+
+  if (entry.kind === 'error') {
+    return (
+      <div className="chat-error" role="alert">
+        <CircleAlert size={16} />
+        <span>{entry.text}</span>
+      </div>
+    )
+  }
+
+  if (entry.kind === 'scene') {
+    const { scene, capture } = entry
+    return (
+      <div className="scene">
+        {capture.preview && <img src={capture.preview} alt="찍어 둔 게임 화면" />}
+        <div className="scene-body">
+          {entry.reading ? (
+            <p className="muted">화면을 읽는 중입니다. 몇 초 걸립니다.</p>
+          ) : scene ? (
+            <>
+              <p>
+                <span className="tag squad">{TALK_SCREEN_LABEL[scene.screen]}</span> <span className="muted">{scene.situation}</span>
+              </p>
+              {!scene.readable && (
+                <p className="chat-caution">
+                  <CircleAlert size={15} />
+                  화면을 다 읽지 못했습니다. 선택지가 다 보이게 한 뒤 다시 캡처해 보세요.
+                </p>
+              )}
+              {scene.options.length > 0 && (
+                <details>
+                  <summary>화면의 선택지 {scene.options.length}개</summary>
+                  <ol>
+                    {scene.options.map((option, i) => (
+                      <li key={i}>
+                        {option.text}
+                        {option.tone && <span className="faint"> ({option.tone})</span>}
+                      </li>
+                    ))}
+                  </ol>
+                </details>
+              )}
+              {scene.facts.length > 0 && (
+                <details open>
+                  <summary>화면에서 읽은 조건</summary>
+                  <ul>
+                    {scene.facts.map((fact, i) => (
+                      <li key={i}>{fact}</li>
+                    ))}
+                  </ul>
+                </details>
+              )}
+              <UsageNote usage={entry.usage} />
+            </>
+          ) : (
+            <p className="muted">이 화면은 읽지 못했습니다.</p>
+          )}
+        </div>
+      </div>
+    )
+  }
+
+  // 고른 선택지(게임에 실제로 반영되는 부분)
+  const { scene, turn } = entry
+  const deal = isNegotiation(scene.screen)
+  const picked = turn.pickIndex === null ? null : scene.options[turn.pickIndex]
+  return (
+    <div className="pick">
+      {deal ? (
+        <>
+          <h3>지금 할 일</h3>
+          {turn.nextAction && <p className="pick-option">{turn.nextAction}</p>}
+          <dl className="pick-offer">
+            <dt>처음 제안</dt>
+            <dd>{turn.offer.opening || '–'}</dd>
+            <dt>구성</dt>
+            <dd>{turn.offer.structure || '–'}</dd>
+            <dt>물러설 선</dt>
+            <dd>{turn.offer.walkAway || '–'}</dd>
+          </dl>
+          <p className="muted">{turn.reason}</p>
+          <p className="faint pick-note">
+            게임의 협상 계산식을 아는 것이 아니라 화면에 보이는 숫자로 판단한 제안입니다. 그대로 해도 거절될 수 있습니다.
+          </p>
+        </>
+      ) : picked ? (
+        <>
+          <h3>게임에서 이 선택지를 누르세요 (화면에서 {turn.pickIndex! + 1}번째)</h3>
+          <p className="pick-option">{picked.text}</p>
+          {picked.tone && <p className="pick-tone">어조: {picked.tone}</p>}
+          <p className="muted">{turn.reason}</p>
+          {turn.confidence < LOW_CONFIDENCE && (
+            <p className="chat-caution">
+              <CircleAlert size={15} />딱 맞는 선택지가 없어 가장 가까운 것을 골랐습니다. 위의 선택지 목록을 직접 확인해 보세요.
+            </p>
+          )}
+        </>
+      ) : (
+        <>
+          <h3>고를 선택지를 찾지 못했습니다</h3>
+          <p className="muted">{turn.reason || '선택지가 보이게 화면을 다시 캡처해 보세요.'}</p>
+        </>
+      )}
+      {turn.caution && (
+        <p className="chat-caution">
+          <CircleAlert size={15} />
+          {turn.caution}
+        </p>
+      )}
+      <UsageNote usage={entry.usage} />
+    </div>
+  )
+}
+
+/** 대화형 토크 도우미. 상대의 말이 말풍선으로 뜨고, 감독으로서 자유롭게 답하면 맞는 선택지를 알려 준다. */
+export function Talk(props: { settings: Settings; onGoSettings: () => void }) {
+  const { settings, onGoSettings } = props
+  const { entries, scene, busy } = useTalk()
   const [status, setStatus] = useState<TalkStatus | null>(null)
-  const [intent, setIntent] = useState('')
-  const [busy, setBusy] = useState(false)
-  const [result, setResult] = useState<TalkResult | null>(null)
+  const [words, setWords] = useState('')
   const input = useRef<HTMLTextAreaElement>(null)
+  const log = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     void api.talkStatus().then(setStatus)
   }, [])
 
-  // 새 화면이 찍히면 이전 답은 지우고 바로 입력할 수 있게 한다
+  // 새 말이 오면 맨 아래로 내리고, 대답을 기다리는 동안이 아니면 바로 입력할 수 있게 한다
   useEffect(() => {
-    setResult(null)
-    input.current?.focus()
-  }, [capture?.id])
+    log.current?.scrollTo({ top: log.current.scrollHeight })
+    if (!busy) input.current?.focus()
+  }, [entries.length, busy])
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent): void => {
@@ -208,139 +243,114 @@ export function Talk(props: {
     return () => window.removeEventListener('keydown', onKey)
   }, [])
 
-  const shoot = async (): Promise<void> => {
-    const shot = await api.talkCapture()
-    onCapture(shot.capture ?? null, shot.ok ? null : (shot.message ?? '화면을 캡처하지 못했습니다.'))
-  }
-
-  const ask = async (text = intent): Promise<void> => {
-    if (!capture || !text.trim() || busy) return
-    setBusy(true)
-    setResult(null)
-    try {
-      setResult(await api.talkAsk(capture.id, text))
-    } finally {
-      setBusy(false)
-    }
+  const send = (text = words): void => {
+    if (!text.trim() || !scene || busy) return
+    setWords('')
+    void talkStore.say(text)
   }
 
   const hotkey = hotkeyLabel(status?.hotkey ?? settings.talkHotkey)
+  const modelLabel = TALK_MODELS.find((m) => m.id === settings.talkModel)?.label.split(' (')[0] ?? settings.talkModel
 
   return (
     <>
       <header className="page-head">
         <h1>토크 도우미</h1>
-        <span className="page-sub">
-          게임에서 <kbd>{hotkey}</kbd>를 누르면 그 화면을 찍어 여기로 가져옵니다.
+        <span className="pill">
+          <kbd>{hotkey}</kbd> 게임 화면 가져오기
         </span>
+        <button className="pill" onClick={onGoSettings} title="모델과 생각의 깊이 바꾸기">
+          {modelLabel}
+        </button>
+        {status?.hotkeyError && <span className="pill bad">{status.hotkeyError}</span>}
         <div className="spacer" />
+        <button className="btn" disabled={busy !== null} onClick={() => void talkStore.capture()}>
+          <Camera size={16} />
+          지금 캡처
+        </button>
         <button className="btn ghost" onClick={() => void api.hideWindow()} title="Esc">
           <Undo2 size={16} />
-          게임으로 돌아가기
+          게임으로
         </button>
       </header>
 
-      <div className="page-body">
-        {status && !status.hasKey ? (
+      {status && !status.hasKey ? (
+        <div className="page-body">
           <KeySetup onSaved={setStatus} />
-        ) : (
-          <div className="talk">
-            <section className="panel talk-shot">
-              <div className="panel-head">
-                <h2>찍어 둔 화면</h2>
-                <div className="spacer" />
-                <button className="btn" onClick={() => void shoot()}>
-                  <Camera size={16} />
-                  지금 캡처
-                </button>
+        </div>
+      ) : (
+        <div className="chat">
+          <div className="chat-log" ref={log} aria-live="polite">
+            {entries.length === 0 ? (
+              <div className="chat-ready">
+                <h2>감독으로서 하고 싶은 말을 그대로 하세요</h2>
+                <ol className="steps">
+                  <li>
+                    게임에서 기자회견, 선수 면담, 락커룸 토크, 외치기, 협상 화면을 띄우고 <kbd>{hotkey}</kbd>를 누릅니다.
+                  </li>
+                  <li>상대의 말이 여기에 뜨면, 아래 칸에 하고 싶은 말을 자유롭게 적습니다.</li>
+                  <li>가장 가까운 선택지를 알려 드리면 게임에서 그것을 누릅니다. 다음 질문이 나오면 다시 단축키를 누릅니다.</li>
+                </ol>
+                <p className="muted">
+                  상대의 반응 대사는 분위기를 위한 연출이고, 게임에 실제로 반영되는 것은 고른 선택지입니다.
+                </p>
               </div>
-              <div className="panel-body">
-                {capture ? (
-                  <>
-                    {capture.preview ? (
-                      <img src={capture.preview} alt="찍어 둔 게임 화면" />
-                    ) : (
-                      <div className="talk-shot-empty">미리보기 없음</div>
-                    )}
-                    <p className="faint num">
-                      {formatTime(capture.capturedAt)}, {capture.source === 'window' ? '게임 창만' : '화면 전체'}, {capture.width}×
-                      {capture.height}
-                    </p>
-                  </>
-                ) : (
-                  <div className="talk-shot-empty">
-                    <strong>아직 찍은 화면이 없습니다</strong>
-                    게임에서 기자회견, 락커룸 토크, 외치기, 협상 화면을 띄우고 <kbd>{hotkey}</kbd>를 누르세요.
-                  </div>
-                )}
-                {captureError && (
-                  <div className="talk-error" role="alert">
-                    <CircleAlert size={16} />
-                    <span>{captureError}</span>
-                  </div>
-                )}
-                {status?.hotkeyError && (
-                  <div className="talk-error" role="alert">
-                    <CircleAlert size={16} />
-                    <span>
-                      {status.hotkeyError}{' '}
-                      <button className="link" onClick={onGoSettings}>
-                        설정에서 바꾸기
-                      </button>
-                    </span>
-                  </div>
-                )}
-              </div>
-            </section>
-
-            <section className="talk-ask">
-              <label className="talk-label" htmlFor="talk-intent">
-                이 장면에서 하고 싶은 말이나 조건
-              </label>
-              <textarea
-                id="talk-intent"
-                ref={input}
-                className="field talk-input"
-                rows={3}
-                placeholder="예: 실망했지만 후반에 뒤집을 수 있다고 믿는다 / 최대 800억까지, 분할 지급을 선호"
-                value={intent}
-                onChange={(event) => setIntent(event.target.value)}
-                onKeyDown={(event) => {
-                  if (event.key === 'Enter' && !event.shiftKey) {
-                    event.preventDefault()
-                    void ask()
-                  }
-                }}
-              />
-              <div className="talk-actions">
-                <div className="chips">
-                  {settings.talkPhrases.map((phrase) => (
-                    <button
-                      key={phrase}
-                      className="chip"
-                      disabled={!capture || busy}
-                      title="이 말로 바로 물어보기"
-                      onClick={() => {
-                        setIntent(phrase)
-                        void ask(phrase)
-                      }}
-                    >
-                      {phrase}
-                    </button>
-                  ))}
-                </div>
-                <button className="btn primary" disabled={!capture || !intent.trim() || busy} onClick={() => void ask()}>
-                  <CornerDownLeft size={16} />
-                  {busy ? '화면을 읽는 중' : '선택지 찾기'}
-                </button>
-              </div>
-
-              {busy && <p className="muted talk-wait">AI가 화면을 읽고 있습니다. 몇 초 걸립니다.</p>}
-              {result && <ResultCard result={result} model={settings.talkModel} />}
-            </section>
+            ) : (
+              entries.map((entry) => <Entry key={entry.key} entry={entry} />)
+            )}
+            {busy === 'replying' && <p className="chat-wait muted">상대가 대답하는 중…</p>}
           </div>
-        )}
-      </div>
+
+          <form
+            className="composer"
+            onSubmit={(event) => {
+              event.preventDefault()
+              send()
+            }}
+          >
+            {scene && settings.talkPhrases.length > 0 && (
+              <div className="chips">
+                {settings.talkPhrases.map((phrase) => (
+                  <button key={phrase} type="button" className="chip" disabled={busy !== null} onClick={() => send(phrase)}>
+                    {phrase}
+                  </button>
+                ))}
+              </div>
+            )}
+            <textarea
+              ref={input}
+              className="field"
+              rows={3}
+              placeholder={
+                scene
+                  ? '감독으로서 하고 싶은 말을 자유롭게 적으세요. 괄호 안은 행동으로 봅니다: (고개를 저으며) 그 질문엔 답하지 않겠습니다'
+                  : '먼저 게임 화면을 가져와 주세요.'
+              }
+              aria-label="하고 싶은 말"
+              disabled={!scene}
+              value={words}
+              onChange={(event) => setWords(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter' && !event.shiftKey) {
+                  event.preventDefault()
+                  send()
+                }
+              }}
+            />
+            <div className="composer-actions">
+              <button type="button" className="btn ghost" disabled={entries.length === 0 || busy !== null} onClick={() => talkStore.clear()}>
+                기록 지우기
+              </button>
+              <span className="faint">Enter로 보내고, Shift + Enter로 줄을 바꿉니다.</span>
+              <div className="spacer" />
+              <button type="submit" className="btn primary" disabled={!scene || !words.trim() || busy !== null}>
+                <CornerDownLeft size={16} />
+                말하기
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
     </>
   )
 }

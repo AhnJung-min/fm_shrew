@@ -1,10 +1,10 @@
 import { X } from 'lucide-react'
 import { useCallback, useEffect, useRef, useState } from 'react'
-import type { TalkCapture } from '@shared/talk'
 import type { AppStatus, ImportResult, Settings as SettingsData, SnapshotMeta } from '@shared/types'
 import { api } from './api'
 import { Sidebar, type Route } from './components/Sidebar'
 import { isFromSave, KIND_LABEL } from './lib/format'
+import { talkStore } from './lib/talkStore'
 import { Compare, MAX_COMPARE, type CompareState } from './screens/Compare'
 import { Home } from './screens/Home'
 import { Settings } from './screens/Settings'
@@ -36,16 +36,13 @@ export function App() {
   const [toasts, setToasts] = useState<Toast[]>([])
   const [compare, setCompare] = useState<CompareState>({ snapshotId: null, idxs: [] })
   const nextToastId = useRef(1)
-  const [talkCapture, setTalkCapture] = useState<TalkCapture | null>(null)
-  const [talkError, setTalkError] = useState<string | null>(null)
-
-  // 게임에서 단축키를 누르면 화면이 찍혀 오고, 토크 도우미로 바로 넘어간다
+  // 게임에서 단축키를 누르면 화면이 찍혀 오고, 토크 도우미로 넘어가 그 화면을 바로 읽는다
   useEffect(
     () =>
       api.onTalkCaptured((event) => {
-        if (event.capture) setTalkCapture(event.capture)
-        setTalkError(event.message ?? null)
         setRoute('talk')
+        if (event.capture) void talkStore.addCapture(event.capture)
+        else talkStore.addError(event.message ?? '화면을 캡처하지 못했습니다.')
       }),
     []
   )
@@ -159,16 +156,7 @@ export function App() {
           />
         )}
         {route === 'talk' && (
-          <Talk
-            settings={settings}
-            capture={talkCapture}
-            captureError={talkError}
-            onCapture={(capture, error) => {
-              if (capture) setTalkCapture(capture)
-              setTalkError(error)
-            }}
-            onGoSettings={() => setRoute('settings')}
-          />
+          <Talk settings={settings} onGoSettings={() => setRoute('settings')} />
         )}
         {route === 'settings' && (
           <Settings status={status} settings={settings} latest={snapshots[0] ?? null} onChange={changeSettings} />

@@ -1,18 +1,16 @@
 import { globalShortcut, type BrowserWindow } from 'electron'
-import type { TalkCapture, TalkResult, TalkStatus } from '@shared/talk'
+import type { TalkCapture, TalkLine, TalkReadResult, TalkSayResult, TalkScene, TalkStatus, TalkUsage } from '@shared/talk'
 import type { SettingsStore } from '../settings'
-import { advise } from './advisor'
+import { readScene, respond, type AdvisorConfig } from './advisor'
 import { captureGame, previewOf } from './capture'
 import type { KeyStore } from './keyStore'
 
-interface Held {
-  meta: TalkCapture
-  jpeg: Buffer
-}
-
 /** 토크·협상 도우미의 메인 프로세스 쪽: 단축키, 화면 캡처, AI 호출을 묶는다. */
 export class TalkController {
-  private held: Held | null = null
+  /** 가장 최근에 찍은 화면. 메모리에만 두고 파일로 남기지 않는다 */
+  private held: { meta: TalkCapture; jpeg: Buffer } | null = null
+  /** 읽어 둔 장면들(대화가 참조한다). 오래된 것은 버린다 */
+  private scenes = new Map<number, TalkScene>()
   private nextId = 1
   private registered: string | null = null
   private hotkeyError: string | undefined
@@ -77,33 +75,56 @@ export class TalkController {
     }
   }
 
-  async ask(captureId: number, intent: string): Promise<TalkResult> {
-    const text = intent.trim()
-    if (!text) return { ok: false, message: '하고 싶은 말을 적어 주세요.' }
+  private config(): AdvisorConfig | null {
+    const apiKey = this.keys.read()
+    if (!apiKey) return null
+    const { talkModel, talkEffort } = this.settings.get()
+    return { apiKey, model: talkModel, effort: talkEffort }
+  }
+
+  private count(usage: TalkUsage | undefined): void {
+    if (!usage) return
+    const stats = this.settings.get().talkStats
+    this.settings.set({
+      talkStats: {
+        requests: stats.requests + 1,
+        inputTokens: stats.inputTokens + usage.inputTokens,
+        outputTokens: stats.outputTokens + usage.outputTokens
+      }
+    })
+  }
+
+  /** 찍어 둔 화면에서 상대의 말과 선택지를 읽는다. */
+  async read(captureId: number): Promise<TalkReadResult> {
     if (!this.held || this.held.meta.id !== captureId) {
       return { ok: false, message: '찍어 둔 화면이 없습니다. 게임 화면을 다시 캡처해 주세요.' }
     }
-    const apiKey = this.keys.read()
-    if (!apiKey) return { ok: false, message: 'Claude API 키가 없습니다. 설정에서 키를 입력해 주세요.' }
+    const config = this.config()
+    if (!config) return { ok: false, message: 'Claude API 키가 없습니다. 키를 먼저 넣어 주세요.' }
 
-    const result = await advise({
-      apiKey,
-      model: this.settings.get().talkModel,
-      effort: this.settings.get().talkEffort,
-      imageJpeg: this.held.jpeg,
-      intent: text,
-      squadNames: this.getSquadNames()
-    })
-    if (result.ok && result.usage) {
-      const stats = this.settings.get().talkStats
-      this.settings.set({
-        talkStats: {
-          requests: stats.requests + 1,
-          inputTokens: stats.inputTokens + result.usage.inputTokens,
-          outputTokens: stats.outputTokens + result.usage.outputTokens
-        }
-      })
+    const result = await readScene(config, this.held.jpeg, captureId)
+    if (result.ok && result.scene) {
+      this.scenes.set(result.scene.id, result.scene)
+      for (const id of this.scenes.keys()) {
+        if (this.scenes.size <= 8) break
+        this.scenes.delete(id)
+      }
     }
+    if (result.ok) this.count(result.usage)
+    return result
+  }
+
+  /** 읽어 둔 장면을 놓고, 내가 한 말을 선택지로 옮기고 상대의 반응을 받는다. */
+  async say(sceneId: number, history: TalkLine[], words: string): Promise<TalkSayResult> {
+    const text = words.trim()
+    if (!text) return { ok: false, message: '하고 싶은 말을 적어 주세요.' }
+    const scene = this.scenes.get(sceneId)
+    if (!scene) return { ok: false, message: '이 장면을 다시 읽어야 합니다. 게임 화면을 다시 캡처해 주세요.' }
+    const config = this.config()
+    if (!config) return { ok: false, message: 'Claude API 키가 없습니다. 키를 먼저 넣어 주세요.' }
+
+    const result = await respond(config, scene, history, text, this.getSquadNames())
+    if (result.ok) this.count(result.usage)
     return result
   }
 

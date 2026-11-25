@@ -1,4 +1,12 @@
-import type { TalkCapture, TalkEffort, TalkResult, TalkStats, TalkStatus } from './talk'
+import type {
+  TalkCapture,
+  TalkEffort,
+  TalkLine,
+  TalkReadResult,
+  TalkSayResult,
+  TalkStats,
+  TalkStatus
+} from './talk'
 
 /** 스냅샷 종류: 내 스쿼드인지, 선수 검색(영입 후보) 결과인지 */
 export type SnapshotKind = 'squad' | 'search'
@@ -131,8 +139,10 @@ export interface Api {
   talkClearKey(): Promise<TalkStatus>
   /** 지금 게임 화면을 찍는다 */
   talkCapture(): Promise<{ ok: boolean; capture?: TalkCapture; message?: string }>
-  /** 찍어 둔 화면과 하고 싶은 말을 AI에 보낸다 */
-  talkAsk(captureId: number, intent: string): Promise<TalkResult>
+  /** 찍어 둔 화면에서 상대의 말과 선택지를 읽는다(이미지를 AI에 보낸다) */
+  talkRead(captureId: number): Promise<TalkReadResult>
+  /** 읽어 둔 장면을 놓고 내 말을 보낸다. 고른 선택지와 상대의 반응이 돌아온다 */
+  talkSay(sceneId: number, history: TalkLine[], words: string): Promise<TalkSayResult>
   /** 단축키로 화면이 찍혔을 때 */
   onTalkCaptured(cb: (event: { capture?: TalkCapture; message?: string }) => void): () => void
   /** 앱 창을 내려 게임으로 돌아간다 */

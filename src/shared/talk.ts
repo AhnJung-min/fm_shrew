@@ -1,6 +1,7 @@
 /** 토크·협상 도우미가 화면에서 알아본 장면 */
 export type TalkScreen =
   | 'press_conference'
+  | 'player_talk'
   | 'team_talk'
   | 'touchline_shout'
   | 'transfer_negotiation'
@@ -9,6 +10,7 @@ export type TalkScreen =
 
 export const TALK_SCREEN_LABEL: Record<TalkScreen, string> = {
   press_conference: '기자회견',
+  player_talk: '선수 면담',
   team_talk: '락커룸 토크',
   touchline_shout: '경기 중 외치기',
   transfer_negotiation: '이적 협상',
@@ -16,42 +18,54 @@ export const TALK_SCREEN_LABEL: Record<TalkScreen, string> = {
   other: '그 밖의 화면'
 }
 
+export function isNegotiation(screen: TalkScreen): boolean {
+  return screen === 'transfer_negotiation' || screen === 'contract_negotiation'
+}
+
 /** 확신도가 이 값보다 낮으면 "딱 맞는 선택지가 없었다"고 알린다 */
 export const LOW_CONFIDENCE = 0.4
 
-export interface TalkOption {
-  /** 화면에 적힌 선택지 문구 그대로 */
-  option: string
-  /** 어조가 따로 있으면(예: 단호하게) 그 이름, 없으면 빈 문자열 */
-  tone: string
-  /** 왜 이 선택지인지 */
-  reason: string
+/** AI가 캡처에서 읽어 낸 장면. 대화는 이 장면을 놓고 이어진다 */
+export interface TalkScene {
+  id: number
+  screen: TalkScreen
+  /** 질문과 선택지(또는 협상 조건)를 읽을 수 있었는지 */
+  readable: boolean
+  /** 상황 요약 */
+  situation: string
+  /** 말을 거는 상대(기자·매체, 선수, 에이전트). 없으면 빈 문자열 */
+  speaker: string
+  /** 상대가 한 말이나 질문. 화면에 적힌 그대로 */
+  question: string
+  /** 화면에 보이는 선택지 전부, 놓인 순서대로 */
+  options: Array<{ text: string; tone: string }>
+  /** 협상 화면에서 읽은 숫자와 조건(예: "요구 이적료 950억 원") */
+  facts: string[]
 }
 
-export interface TalkAdvice {
-  screen: TalkScreen
-  /** 화면에서 읽은 상황 요약 */
-  situation: string
-  /** 화면의 질문과 선택지를 읽을 수 있었는지 */
-  readable: boolean
-  /** 화면에 보이는 선택지 전부, 놓인 순서대로. 협상 화면이면 비어 있다 */
-  options: Array<{ text: string; tone: string }>
-  /** options에서 고른 순번. 고른 것이 없으면 null */
+/** 대화 한 줄 */
+export interface TalkLine {
+  /** 'me'는 감독(사용자), 'them'은 상대 */
+  from: 'me' | 'them'
+  speaker: string
+  text: string
+}
+
+/** 내 말에 대한 AI의 처리 결과 */
+export interface TalkTurn {
+  /** 장면의 options에서 고른 순번. 고를 것이 없으면 null */
   pickIndex: number | null
-  /** 고른 선택지가 내 뜻과 얼마나 맞는지(0~1) */
+  /** 고른 선택지가 내 말과 얼마나 맞는지(0~1) */
   confidence: number
-  recommendation: TalkOption
-  alternatives: Array<TalkOption & { index: number }>
-  /** 협상 화면일 때의 제안. 협상이 아니면 빈 문자열들 */
-  offer: {
-    /** 처음 부를 금액이나 조건 */
-    opening: string
-    /** 분할 지급, 옵션, 조항 구성 */
-    structure: string
-    /** 여기까지 오면 물러설 선 */
-    walkAway: string
-  }
-  /** 사용자가 알아야 할 주의점. 없으면 빈 문자열 */
+  /** 왜 그 선택지인지, 내 말과 다른 점 */
+  reason: string
+  /** 상대의 반응 대사. 분위기를 위한 연출이고 게임에는 반영되지 않는다 */
+  replies: Array<{ speaker: string; text: string }>
+  /** 협상 화면에서 지금 할 일. 아니면 빈 문자열 */
+  nextAction: string
+  /** 협상 제안. 협상이 아니면 빈 문자열들 */
+  offer: { opening: string; structure: string; walkAway: string }
+  /** 알아야 할 주의점. 없으면 빈 문자열 */
   caution: string
 }
 
@@ -62,11 +76,17 @@ export interface TalkUsage {
   model: string
 }
 
-export interface TalkResult {
+export interface TalkReadResult {
   ok: boolean
-  advice?: TalkAdvice
+  scene?: TalkScene
   usage?: TalkUsage
-  /** 실패했을 때 사용자에게 보여 줄 말 */
+  message?: string
+}
+
+export interface TalkSayResult {
+  ok: boolean
+  turn?: TalkTurn
+  usage?: TalkUsage
   message?: string
 }
 

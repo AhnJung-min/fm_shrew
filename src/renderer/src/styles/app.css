@@ -1088,7 +1088,254 @@ kbd {
   }
 }
 
-/* ---------- 토크 도우미 ---------- */
+/* ---------- 토크 도우미: 대화 ---------- */
+
+.pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 26px;
+  padding: 0 10px;
+  border: 1px solid var(--line-strong);
+  border-radius: 13px;
+  background: transparent;
+  color: var(--text-2);
+  font-size: 12px;
+}
+button.pill {
+  cursor: pointer;
+}
+button.pill:hover {
+  color: var(--text);
+}
+.pill.bad {
+  border-color: var(--bad);
+  color: var(--bad);
+}
+
+.chat {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  max-width: 860px;
+  margin: 0 auto;
+}
+.chat-log {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 18px 24px 12px;
+}
+.chat-ready {
+  margin: auto 0;
+  padding: 8px 4px;
+}
+.chat-ready h2 {
+  margin-bottom: 14px;
+  font-size: 18px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+.chat-ready p {
+  margin-top: 14px;
+  font-size: 13px;
+}
+
+/* 말풍선: 상대는 왼쪽, 감독(나)은 오른쪽 */
+.msg {
+  max-width: 78%;
+  padding: 9px 13px 10px;
+  border-radius: 12px;
+  line-height: 1.5;
+}
+.msg .who {
+  display: block;
+  margin-bottom: 2px;
+  color: var(--text-3);
+  font-size: 12px;
+  font-weight: 600;
+}
+.msg p {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.msg.them {
+  align-self: flex-start;
+  border: 1px solid var(--line);
+  border-top-left-radius: 3px;
+  background: var(--surface);
+}
+.msg.me {
+  align-self: flex-end;
+  border-top-right-radius: 3px;
+  background: var(--raised);
+}
+.msg.me .who {
+  text-align: right;
+}
+.staged {
+  margin-left: 6px;
+  font-weight: 400;
+  color: var(--text-3);
+}
+
+/* 가져온 화면: 대화의 구분선 구실을 한다 */
+.scene {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  margin-top: 6px;
+  padding-top: 14px;
+  border-top: 1px solid var(--line);
+  font-size: 13px;
+}
+.chat-log > .scene:first-child {
+  margin-top: 0;
+  padding-top: 0;
+  border-top: 0;
+}
+.scene img {
+  flex: none;
+  width: 168px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-s);
+}
+.scene-body {
+  flex: 1;
+  min-width: 0;
+  display: grid;
+  gap: 6px;
+}
+.scene details {
+  color: var(--text-2);
+}
+.scene summary {
+  cursor: pointer;
+  color: var(--text-3);
+}
+.scene ol,
+.scene ul {
+  margin: 4px 0 0;
+  padding-left: 20px;
+}
+
+/* 게임에서 눌러야 하는 선택지: 대화에서 가장 눈에 띄어야 한다 */
+.pick {
+  align-self: stretch;
+  padding: 12px 14px;
+  border: 1px solid var(--line-strong);
+  border-left: 3px solid var(--accent);
+  border-radius: var(--radius-m);
+  background: var(--surface);
+}
+.pick h3 {
+  color: var(--text-2);
+  font-size: 12px;
+  font-weight: 600;
+}
+.pick-option {
+  margin: 4px 0 6px;
+  font-size: 18px;
+  font-weight: 700;
+  line-height: 1.4;
+  letter-spacing: -0.01em;
+}
+.pick-tone {
+  margin-bottom: 4px;
+  color: var(--accent);
+  font-weight: 600;
+}
+.pick-offer {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 5px 16px;
+  margin: 8px 0;
+}
+.pick-offer dt {
+  color: var(--text-3);
+}
+.pick-offer dd {
+  margin: 0;
+}
+.pick-note {
+  margin-top: 6px;
+  font-size: 12px;
+}
+.chat-usage {
+  display: block;
+  margin-top: 6px;
+  color: var(--text-3);
+  font-size: 11.5px;
+}
+.chat-caution {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  margin-top: 6px;
+  color: var(--bad);
+  font-size: 13px;
+}
+.chat-caution svg {
+  flex: none;
+  margin-top: 3px;
+}
+.chat-error {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 9px 12px;
+  border: 1px solid var(--bad);
+  border-radius: var(--radius-s);
+  font-size: 13px;
+}
+.chat-error svg {
+  flex: none;
+  margin-top: 2px;
+  color: var(--bad);
+}
+.chat-wait {
+  align-self: flex-start;
+  font-size: 13px;
+}
+
+.composer {
+  display: grid;
+  gap: 8px;
+  padding: 10px 24px 16px;
+  border-top: 1px solid var(--line);
+}
+.composer textarea {
+  display: block;
+  width: 100%;
+  height: auto;
+  padding: 10px 12px;
+  font-size: 15px;
+  line-height: 1.5;
+  resize: none;
+}
+.composer .chip {
+  max-width: 260px;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.composer .chip:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.composer-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 12px;
+}
+
+/* ---------- 토크 도우미: 설정 ---------- */
 
 .talk {
   display: grid;

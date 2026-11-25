@@ -87,32 +87,37 @@ function createMockApi(): Api {
       ok: true,
       capture: { id: 1, preview: '', capturedAt: new Date().toISOString(), source: 'window', width: 1920, height: 1080 }
     }),
-    talkAsk: async () => ({
+    talkRead: async (captureId) => ({
       ok: true,
-      advice: {
-        screen: 'team_talk',
-        situation: '하프타임, 0-1로 지고 있습니다. 어조와 말을 고르는 락커룸 토크 화면입니다.',
+      scene: {
+        id: captureId,
+        screen: 'press_conference',
         readable: true,
+        situation: '경기 전 기자회견입니다. 다음 상대는 브라이턴입니다.',
+        speaker: '제임스 피어스 (디 애슬레틱)',
+        question: '최근 세 경기에서 실점이 많았습니다. 수비진에 변화를 줄 계획이 있습니까?',
         options: [
-          { text: '이런 경기력은 받아들일 수 없다.', tone: '공격적으로' },
-          { text: '아직 끝나지 않았다. 후반에 뒤집을 수 있다고 믿는다.', tone: '단호하게' },
-          { text: '부담 갖지 말고 하던 대로 해라.', tone: '차분하게' },
-          { text: '아무 말도 하지 않는다', tone: '' }
+          { text: '수비진을 전적으로 신뢰한다.', tone: '차분하게' },
+          { text: '몇 자리는 경쟁이 필요하다.', tone: '단호하게' },
+          { text: '그 질문에는 답하지 않겠다.', tone: '' },
+          { text: '기자회견장을 떠난다', tone: '' }
         ],
+        facts: []
+      },
+      usage: { inputTokens: 2140, outputTokens: 310, model: 'claude-sonnet-5-5' }
+    }),
+    talkSay: async () => ({
+      ok: true,
+      turn: {
         pickIndex: 1,
-        confidence: 0.86,
-        recommendation: {
-          option: '아직 끝나지 않았다. 후반에 뒤집을 수 있다고 믿는다.',
-          tone: '단호하게',
-          reason: '실망을 드러내되 믿음을 주고 싶다는 뜻과 가장 가깝습니다.'
-        },
-        alternatives: [
-          { index: 0, option: '이런 경기력은 받아들일 수 없다.', tone: '공격적으로', reason: '실망은 전하지만 믿음의 뜻은 빠집니다.' }
-        ],
+        confidence: 0.82,
+        reason: '믿지만 긴장감은 필요하다는 말이라, 경쟁을 언급하는 선택지가 가장 가깝습니다.',
+        replies: [{ speaker: '제임스 피어스 (디 애슬레틱)', text: '그렇다면 브라이턴전 선발 명단에 변화가 있다고 봐도 되겠습니까?' }],
+        nextAction: '',
         offer: { opening: '', structure: '', walkAway: '' },
         caution: ''
       },
-      usage: { inputTokens: 1830, outputTokens: 260, model: 'claude-sonnet-5-5' }
+      usage: { inputTokens: 640, outputTokens: 180, model: 'claude-sonnet-5-5' }
     }),
     onTalkCaptured: () => () => undefined,
     hideWindow: async () => undefined

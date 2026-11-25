@@ -24,7 +24,8 @@ const api: Api = {
   talkSetKey: (key) => ipcRenderer.invoke('talk:setKey', key),
   talkClearKey: () => ipcRenderer.invoke('talk:clearKey'),
   talkCapture: () => ipcRenderer.invoke('talk:capture'),
-  talkAsk: (captureId, intent) => ipcRenderer.invoke('talk:ask', captureId, intent),
+  talkRead: (captureId) => ipcRenderer.invoke('talk:read', captureId),
+  talkSay: (sceneId, history, words) => ipcRenderer.invoke('talk:say', sceneId, history, words),
   onTalkCaptured: (cb) => {
     const listener = (_event: unknown, payload: Parameters<typeof cb>[0]): void => cb(payload)
     ipcRenderer.on('talk:captured', listener)

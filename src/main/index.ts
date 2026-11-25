@@ -2,6 +2,7 @@ import { existsSync, mkdirSync, readdirSync, statSync, writeFileSync } from 'nod
 import { basename, join } from 'node:path'
 import { app, BrowserWindow, dialog, ipcMain, shell } from 'electron'
 import { deriveColumns } from '@shared/parse'
+import type { TalkLine } from '@shared/talk'
 import type { AppStatus, ImportResult, Settings, SnapshotKind } from '@shared/types'
 import { Store } from './db'
 import { importFile } from './importer'
@@ -185,7 +186,10 @@ function registerIpc(): void {
     return talk.status()
   })
   ipcMain.handle('talk:capture', () => talk.capture())
-  ipcMain.handle('talk:ask', (_event, captureId: number, intent: string) => talk.ask(captureId, intent))
+  ipcMain.handle('talk:read', (_event, captureId: number) => talk.read(captureId))
+  ipcMain.handle('talk:say', (_event, sceneId: number, history: TalkLine[], words: string) =>
+    talk.say(sceneId, history, words)
+  )
   ipcMain.handle('window:hide', () => talk.hideWindow())
 }
 
