@@ -10,6 +10,9 @@ namespace FmBojwagwan.Bridge;
 ///
 /// FM26의 화면은 모두 같은 종류의 요소(SI.Bindable.*)로 만들어져 있어 종류만으로는 어떤 화면인지 알 수 없다.
 /// 화면마다 붙은 이름(SI.Bindable.Panel의 name, 예: TeamTalkPanel)으로 구분한다.
+///
+/// 경기 중에는 점수가 바뀐 순간(골)과 그 직후의 화면도 남긴다. 골 알림 카드를 만들려면
+/// 그 순간 게임이 득점자를 어디에 어떻게 보여 주는지 알아야 하기 때문이다.
 /// </summary>
 internal static class Watcher
 {
@@ -17,6 +20,7 @@ internal static class Watcher
     private const int MinGapMs = 6000;
     private const int MaxAutoDumps = 60;
     private const int MaxPerTalkScreen = 6;
+    private const int MaxGoalDumps = 24;
 
     private static readonly Stopwatch Clock = Stopwatch.StartNew();
     private static readonly HashSet<string> SeenPanels = new()
@@ -26,12 +30,16 @@ internal static class Watcher
     };
     private static readonly HashSet<int> SeenTalks = new();
     private static readonly Dictionary<string, int> TalkDumps = new();
+    /// <summary>골 직후에 한 번 더 남길 시각과 이름표</summary>
+    private static readonly List<(long at, string tag)> Scheduled = new();
 
     private static long nextScan = 5000;
     private static long lastDump = -MinGapMs;
     private static int autoDumps;
+    private static int goalDumps;
     private static int errors;
     private static bool hotkeyBroken;
+    private static string lastScore;
 
     public static void Tick()
     {
@@ -51,11 +59,18 @@ internal static class Watcher
         }
 
         var now = Clock.ElapsedMilliseconds;
-        if (now < nextScan) return;
-        nextScan = now + ScanEveryMs;
         if (errors > 5) return;
         try
         {
+            for (var i = Scheduled.Count - 1; i >= 0; i--)
+            {
+                if (now < Scheduled[i].at) continue;
+                var tag = Scheduled[i].tag;
+                Scheduled.RemoveAt(i);
+                Plugin.Logger.LogInfo("UI dump: " + DumpToFile(tag));
+            }
+            if (now < nextScan) return;
+            nextScan = now + ScanEveryMs;
             Scan(now);
         }
         catch (Exception error)
@@ -74,7 +89,9 @@ internal static class Watcher
     private static void Scan(long now)
     {
         var panels = new List<string>();
-        foreach (var root in UiTree.Roots()) FindPanels(root, 0, panels);
+        VisualElement matchHeader = null;
+        foreach (var root in UiTree.Roots()) FindPanels(root, 0, panels, ref matchHeader);
+        WatchScore(now, matchHeader);
         if (autoDumps >= MaxAutoDumps || now - lastDump < MinGapMs) return;
 
         string tag = null;
@@ -100,14 +117,65 @@ internal static class Watcher
         Plugin.Logger.LogInfo("UI dump: " + DumpToFile(tag));
     }
 
+    /// <summary>경기 점수판의 점수가 바뀌면(골) 그 순간과 3초·8초 뒤의 화면을 남긴다.</summary>
+    private static void WatchScore(long now, VisualElement matchHeader)
+    {
+        if (matchHeader == null)
+        {
+            lastScore = null;
+            return;
+        }
+        string home = null, away = null;
+        ReadScore(matchHeader, 0, ref home, ref away);
+        if (home == null || away == null) return;
+        var score = home + "-" + away;
+        var before = lastScore;
+        lastScore = score;
+        if (before == null || before == score || goalDumps >= MaxGoalDumps) return;
+
+        goalDumps += 3;
+        var tag = "goal-" + score;
+        Plugin.Logger.LogInfo("UI dump: " + DumpToFile(tag + "-a"));
+        Scheduled.Add((now + 3000, tag + "-b"));
+        Scheduled.Add((now + 8000, tag + "-c"));
+    }
+
+    private static void ReadScore(VisualElement element, int depth, ref string home, ref string away)
+    {
+        if (home != null && away != null) return;
+        if (!UiTree.Displayed(element)) return;
+        var name = element.name;
+        if (name == "HomeScore" || name == "AwayScore")
+        {
+            var text = Il2.TextOf(element.Pointer);
+            if (!string.IsNullOrEmpty(text))
+            {
+                if (name == "HomeScore") home = text;
+                else away = text;
+            }
+            return;
+        }
+        if (depth > 30) return;
+        var children = element.m_Children;
+        if (children == null) return;
+        var total = children.Count;
+        for (var i = 0; i < total; i++)
+        {
+            var child = children[i];
+            if (child != null) ReadScore(child, depth + 1, ref home, ref away);
+        }
+    }
+
     /// <summary>보이는 화면(SI.Bindable.Panel)의 이름을 모은다. 화면 안쪽까지는 내려가지 않는다.</summary>
-    private static void FindPanels(VisualElement element, int depth, List<string> panels)
+    private static void FindPanels(VisualElement element, int depth, List<string> panels, ref VisualElement matchHeader)
     {
         if (!UiTree.Displayed(element)) return;
         if (Il2.ClassName(Il2.ClassOf(element.Pointer)) == "SI.Bindable.Panel")
         {
             var name = element.name;
             if (!string.IsNullOrEmpty(name)) panels.Add(name);
+            // 경기 화면의 윗줄(점수판, 전술·외침 버튼)
+            if (name == "OverviewHeader") matchHeader = element;
             return;
         }
         if (depth > 12) return;
@@ -117,7 +185,7 @@ internal static class Watcher
         for (var i = 0; i < total; i++)
         {
             var child = children[i];
-            if (child != null) FindPanels(child, depth + 1, panels);
+            if (child != null) FindPanels(child, depth + 1, panels, ref matchHeader);
         }
     }
 }
