@@ -4,9 +4,11 @@ import type { AppStatus, ImportResult, Settings as SettingsData, SnapshotMeta } 
 import { api } from './api'
 import { Sidebar, type Route } from './components/Sidebar'
 import { isFromSave, KIND_LABEL } from './lib/format'
+import { Compare, MAX_COMPARE, type CompareState } from './screens/Compare'
 import { Home } from './screens/Home'
 import { Settings } from './screens/Settings'
 import { Squad } from './screens/Squad'
+import { Targets } from './screens/Targets'
 
 interface Toast {
   id: number
@@ -16,7 +18,7 @@ interface Toast {
   snapshotId?: number
 }
 
-const ROUTES: Route[] = ['home', 'squad', 'settings']
+const ROUTES: Route[] = ['home', 'squad', 'targets', 'compare', 'settings']
 
 function initialRoute(): Route {
   const fromHash = location.hash.replace('#', '') as Route
@@ -30,7 +32,17 @@ export function App() {
   const [snapshots, setSnapshots] = useState<SnapshotMeta[]>([])
   const [selectedId, setSelectedId] = useState<number | null>(null)
   const [toasts, setToasts] = useState<Toast[]>([])
+  const [compare, setCompare] = useState<CompareState>({ snapshotId: null, idxs: [] })
   const nextToastId = useRef(1)
+
+  /** 스쿼드 표에서 선수를 비교에 담거나 뺀다. 다른 기록의 선수를 담으면 새로 시작한다. */
+  const toggleCompare = (snapshotId: number, idx: number): void => {
+    setCompare((current) => {
+      const idxs = current.snapshotId === snapshotId ? current.idxs : []
+      if (idxs.includes(idx)) return { snapshotId, idxs: idxs.filter((i) => i !== idx) }
+      return idxs.length >= MAX_COMPARE ? { snapshotId, idxs } : { snapshotId, idxs: [...idxs, idx] }
+    })
+  }
 
   const refresh = useCallback(async (): Promise<SnapshotMeta[]> => {
     const [nextStatus, list] = await Promise.all([api.getStatus(), api.listSnapshots()])
@@ -116,6 +128,19 @@ export function App() {
             settings={settings}
             onSettings={(patch) => void changeSettings(patch)}
             onGoHome={() => setRoute('home')}
+            compare={compare}
+            onToggleCompare={toggleCompare}
+            onOpenCompare={() => setRoute('compare')}
+          />
+        )}
+        {route === 'targets' && <Targets snapshots={snapshots} settings={settings} />}
+        {route === 'compare' && (
+          <Compare
+            snapshots={snapshots}
+            state={compare}
+            onState={setCompare}
+            settings={settings}
+            onGoSquad={() => setRoute('squad')}
           />
         )}
         {route === 'settings' && (

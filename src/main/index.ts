@@ -164,9 +164,13 @@ async function runSmoke(outFile: string): Promise<void> {
   await new Promise((resolve) => setTimeout(resolve, delay))
   // 검증할 때 특정 상태(행 선택 등)를 만들기 위한 스크립트
   if (process.env.FMB_SMOKE_JS) {
-    await mainWindow.webContents.executeJavaScript(process.env.FMB_SMOKE_JS, true)
+    const result: unknown = await mainWindow.webContents.executeJavaScript(process.env.FMB_SMOKE_JS, true)
+    console.log('[smoke] script result:', JSON.stringify(result))
     await new Promise((resolve) => setTimeout(resolve, 500))
   }
+  // 창이 다른 창에 가려 있으면 예전 화면이 찍힐 수 있어, 다시 그리게 한 뒤 찍는다
+  mainWindow.webContents.invalidate()
+  await new Promise((resolve) => setTimeout(resolve, 300))
   const image = await mainWindow.webContents.capturePage()
   writeFileSync(outFile, image.toPNG())
   console.log('[smoke] snapshots:', JSON.stringify(store.listSnapshots().map((s) => [s.fileName, s.rowCount, s.kind])))

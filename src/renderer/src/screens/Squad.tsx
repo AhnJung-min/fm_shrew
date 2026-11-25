@@ -8,6 +8,7 @@ import { DepthChart } from '@/components/DepthChart'
 import { PlayerDrawer } from '@/components/PlayerDrawer'
 import { PlayerTable, sortRows, type SortState } from '@/components/PlayerTable'
 import { formatTime, isFromSave, KIND_LABEL } from '@/lib/format'
+import { MAX_COMPARE, type CompareState } from './Compare'
 
 type View = 'table' | 'depth'
 
@@ -48,8 +49,12 @@ export function Squad(props: {
   settings: Settings
   onSettings: (patch: Partial<Settings>) => void
   onGoHome: () => void
+  compare: CompareState
+  onToggleCompare: (snapshotId: number, idx: number) => void
+  onOpenCompare: () => void
 }) {
   const { snapshots, selectedId, onSelectSnapshot, onChanged, settings, onSettings, onGoHome } = props
+  const { compare, onToggleCompare, onOpenCompare } = props
   const [snapshot, setSnapshot] = useState<Snapshot | null>(null)
   const [view, setView] = useState<View>('table')
   const [query, setQuery] = useState('')
@@ -139,6 +144,7 @@ export function Squad(props: {
   const unknownCount = snapshot?.columns.filter((col) => col.field === null).length ?? 0
   const hasAttrs = snapshot?.columns.some((col) => col.isAttr) ?? false
   const selected = selectedIdx === null ? null : (fitted?.rows.find((row) => row.idx === selectedIdx) ?? null)
+  const inCompare = snapshot && compare.snapshotId === snapshot.id ? compare.idxs : []
 
   return (
     <>
@@ -268,8 +274,19 @@ export function Squad(props: {
             onPick={(idx) => setSelectedIdx(selectedIdx === idx ? null : idx)}
           />
         )}
-        {fitted && selected && (
-          <PlayerDrawer columns={fitted.columns} row={selected} onClose={() => setSelectedIdx(null)} />
+        {fitted && snapshot && selected && (
+          <PlayerDrawer
+            columns={fitted.columns}
+            row={selected}
+            onClose={() => setSelectedIdx(null)}
+            compare={{
+              included: inCompare.includes(selected.idx),
+              count: inCompare.length,
+              full: inCompare.length >= MAX_COMPARE,
+              onToggle: () => onToggleCompare(snapshot.id, selected.idx),
+              onOpen: onOpenCompare
+            }}
+          />
         )}
       </div>
     </>

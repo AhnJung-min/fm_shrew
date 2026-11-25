@@ -10,7 +10,7 @@ import {
 } from 'lucide-react'
 import type { AppStatus } from '@shared/types'
 
-export type Route = 'home' | 'squad' | 'settings'
+export type Route = 'home' | 'squad' | 'targets' | 'compare' | 'settings'
 
 interface NavEntry {
   id: Route | null
@@ -23,8 +23,8 @@ interface NavEntry {
 const ENTRIES: NavEntry[] = [
   { id: 'home', label: '홈', icon: House },
   { id: 'squad', label: '스쿼드', icon: Users },
-  { id: null, label: '영입 후보', icon: UserSearch, later: '2단계' },
-  { id: null, label: '선수 비교', icon: Scale, later: '2단계' },
+  { id: 'targets', label: '영입 후보', icon: UserSearch },
+  { id: 'compare', label: '선수 비교', icon: Scale },
   { id: null, label: '토크 도우미', icon: MessageSquareText, later: '3단계' },
   { id: null, label: '백업', icon: Archive, later: '4단계' }
 ]

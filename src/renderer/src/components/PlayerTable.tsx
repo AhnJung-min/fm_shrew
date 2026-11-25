@@ -142,7 +142,8 @@ export function PlayerTable(props: {
           <tr className="heads">
             {ordered.map((col, i) => {
               const active = sort?.header === col.header
-              const right = col.numeric
+              // 이름 열은 값이 숫자처럼 보여도 왼쪽에 맞춘다
+              const right = col.numeric && i > 0
               const classes = [i === 0 ? 'sticky-col' : '', groupStart(i) ? 'group-start' : '', right ? 'right' : '']
               return (
                 <th

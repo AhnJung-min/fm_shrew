@@ -6,8 +6,22 @@ import { attrBand, attrText, attrTitle, plainText } from '@/lib/format'
 const ATTR_GROUPS: ColumnGroup[] = ['technical', 'mental', 'physical', 'goalkeeping']
 
 /** 선수 한 명의 상세. 게임의 선수 프로필처럼 능력치를 묶음별로 나란히 보여 준다. */
-export function PlayerDrawer(props: { columns: ColumnInfo[]; row: PlayerRow; onClose: () => void }) {
-  const { columns, row, onClose } = props
+export interface DrawerCompare {
+  included: boolean
+  count: number
+  full: boolean
+  onToggle: () => void
+  onOpen: () => void
+}
+
+export function PlayerDrawer(props: {
+  columns: ColumnInfo[]
+  row: PlayerRow
+  onClose: () => void
+  /** 선수 비교에 담는 버튼을 보여 줄 때만 넘긴다 */
+  compare?: DrawerCompare
+}) {
+  const { columns, row, onClose, compare } = props
   const byField = (field: string): string | undefined => {
     const col = columns.find((c) => c.field === field)
     return col ? row.cells[col.header]?.raw || undefined : undefined
@@ -32,6 +46,23 @@ export function PlayerDrawer(props: { columns: ColumnInfo[]; row: PlayerRow; onC
       </div>
 
       <div className="drawer-body">
+        {compare && (
+          <div className="drawer-actions">
+            <button
+              className="btn"
+              disabled={!compare.included && compare.full}
+              onClick={compare.onToggle}
+              title={!compare.included && compare.full ? '비교는 세 명까지 담을 수 있습니다' : undefined}
+            >
+              {compare.included ? '비교에서 빼기' : '비교에 담기'}
+            </button>
+            {compare.count > 0 && (
+              <button className="btn ghost" onClick={compare.onOpen}>
+                비교 보기 ({compare.count}명)
+              </button>
+            )}
+          </div>
+        )}
         <dl className="facts">
           {facts.map((col) => (
             <div key={col.header} style={{ display: 'contents' }}>
