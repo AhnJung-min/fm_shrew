@@ -1,5 +1,6 @@
 import { X } from 'lucide-react'
 import { useCallback, useEffect, useRef, useState } from 'react'
+import type { TalkCapture } from '@shared/talk'
 import type { AppStatus, ImportResult, Settings as SettingsData, SnapshotMeta } from '@shared/types'
 import { api } from './api'
 import { Sidebar, type Route } from './components/Sidebar'
@@ -8,6 +9,7 @@ import { Compare, MAX_COMPARE, type CompareState } from './screens/Compare'
 import { Home } from './screens/Home'
 import { Settings } from './screens/Settings'
 import { Squad } from './screens/Squad'
+import { Talk } from './screens/Talk'
 import { Targets } from './screens/Targets'
 
 interface Toast {
@@ -18,7 +20,7 @@ interface Toast {
   snapshotId?: number
 }
 
-const ROUTES: Route[] = ['home', 'squad', 'targets', 'compare', 'settings']
+const ROUTES: Route[] = ['home', 'squad', 'targets', 'compare', 'talk', 'settings']
 
 function initialRoute(): Route {
   const fromHash = location.hash.replace('#', '') as Route
@@ -34,6 +36,19 @@ export function App() {
   const [toasts, setToasts] = useState<Toast[]>([])
   const [compare, setCompare] = useState<CompareState>({ snapshotId: null, idxs: [] })
   const nextToastId = useRef(1)
+  const [talkCapture, setTalkCapture] = useState<TalkCapture | null>(null)
+  const [talkError, setTalkError] = useState<string | null>(null)
+
+  // 게임에서 단축키를 누르면 화면이 찍혀 오고, 토크 도우미로 바로 넘어간다
+  useEffect(
+    () =>
+      api.onTalkCaptured((event) => {
+        if (event.capture) setTalkCapture(event.capture)
+        setTalkError(event.message ?? null)
+        setRoute('talk')
+      }),
+    []
+  )
 
   /** 스쿼드 표에서 선수를 비교에 담거나 뺀다. 다른 기록의 선수를 담으면 새로 시작한다. */
   const toggleCompare = (snapshotId: number, idx: number): void => {
@@ -141,6 +156,18 @@ export function App() {
             onState={setCompare}
             settings={settings}
             onGoSquad={() => setRoute('squad')}
+          />
+        )}
+        {route === 'talk' && (
+          <Talk
+            settings={settings}
+            capture={talkCapture}
+            captureError={talkError}
+            onCapture={(capture, error) => {
+              if (capture) setTalkCapture(capture)
+              setTalkError(error)
+            }}
+            onGoSettings={() => setRoute('settings')}
           />
         )}
         {route === 'settings' && (

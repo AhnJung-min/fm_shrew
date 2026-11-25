@@ -63,7 +63,8 @@ p {
 
 button,
 input,
-select {
+select,
+textarea {
   font: inherit;
   color: inherit;
 }
@@ -1083,6 +1084,242 @@ kbd {
 
 @media (max-width: 1100px) {
   .compare {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+/* ---------- 토크 도우미 ---------- */
+
+.talk {
+  display: grid;
+  grid-template-columns: minmax(280px, 400px) minmax(0, 1fr);
+  gap: 16px;
+  align-items: start;
+  max-width: 1180px;
+}
+.talk-setup {
+  max-width: 640px;
+}
+.talk-key-row {
+  display: flex;
+  gap: 8px;
+  margin-top: 16px;
+}
+.talk-key-row .field {
+  flex: 1;
+}
+.talk-shot img {
+  display: block;
+  width: 100%;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-s);
+}
+.talk-shot p {
+  margin-top: 8px;
+  font-size: 12px;
+}
+.talk-shot-empty {
+  padding: 28px 12px;
+  border: 1px dashed var(--line-strong);
+  border-radius: var(--radius-s);
+  color: var(--text-2);
+  text-align: center;
+}
+.talk-shot-empty strong {
+  display: block;
+  margin-bottom: 6px;
+  color: var(--text);
+}
+
+.talk-label {
+  display: block;
+  margin-bottom: 6px;
+  font-weight: 600;
+}
+.talk-input {
+  display: block;
+  width: 100%;
+  height: auto;
+  padding: 10px 12px;
+  font-size: 15px;
+  line-height: 1.5;
+  resize: vertical;
+}
+.talk-actions {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  margin-top: 10px;
+}
+.talk-actions .chips {
+  flex: 1;
+}
+.talk-actions .chip {
+  max-width: 260px;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.talk-actions .chip:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.talk-wait {
+  margin-top: 16px;
+}
+
+.talk-result {
+  margin-top: 16px;
+  padding: 16px 18px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-m);
+  background: var(--surface);
+}
+.talk-result header {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+.talk-pick h2 {
+  color: var(--text-2);
+  font-size: 12px;
+  font-weight: 600;
+}
+/* 화면에서 찾아 눌러야 하는 문구라 이 화면에서 가장 크게 보여 준다 */
+.talk-option {
+  margin: 4px 0 6px;
+  padding-left: 12px;
+  border-left: 3px solid var(--accent);
+  font-size: 19px;
+  font-weight: 700;
+  line-height: 1.4;
+  letter-spacing: -0.01em;
+}
+.talk-tone {
+  color: var(--accent);
+  font-weight: 600;
+}
+.talk-offer {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 6px 16px;
+  margin: 14px 0 0;
+  padding-top: 12px;
+  border-top: 1px solid var(--line);
+}
+.talk-offer dt {
+  color: var(--text-3);
+}
+.talk-offer dd {
+  margin: 0;
+}
+.talk-alts {
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px solid var(--line);
+}
+.talk-alts h3 {
+  color: var(--text-3);
+  font-size: 12px;
+  font-weight: 600;
+}
+.talk-alts ul {
+  margin: 6px 0 0;
+  padding-left: 18px;
+}
+.talk-alts li {
+  margin-top: 4px;
+}
+.talk-caution {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  margin-top: 14px;
+  color: var(--bad);
+}
+.talk-caution svg {
+  flex: none;
+  margin-top: 3px;
+}
+.talk-note {
+  margin-top: 10px;
+  font-size: 12px;
+}
+.talk-error {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin-top: 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--bad);
+  border-radius: var(--radius-s);
+  color: var(--text);
+  font-size: 13px;
+}
+.talk-error svg {
+  flex: none;
+  margin-top: 2px;
+  color: var(--bad);
+}
+.talk-error-text {
+  color: var(--bad);
+}
+.link {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--accent);
+  text-decoration: underline;
+  cursor: pointer;
+}
+a {
+  color: var(--accent);
+}
+
+.talk-settings {
+  display: grid;
+  gap: 16px;
+}
+.setting-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 16px;
+  align-items: center;
+}
+.setting-row p {
+  font-size: 13px;
+}
+.setting-control {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.setting-control .field {
+  min-width: 220px;
+}
+.phrase-list {
+  margin: 8px 0;
+  padding: 0;
+  list-style: none;
+}
+.phrase-list li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 2px 0;
+  border-top: 1px solid var(--line);
+  font-size: 13px;
+}
+.phrase-list li span {
+  flex: 1;
+}
+
+@media (max-width: 1000px) {
+  .talk {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .setting-row {
     grid-template-columns: minmax(0, 1fr);
   }
 }

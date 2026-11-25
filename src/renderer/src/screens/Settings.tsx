@@ -4,6 +4,7 @@ import { FIELDS, GROUP_LABEL, GROUP_ORDER } from '@shared/fields'
 import type { AppStatus, ColumnInfo, Settings as SettingsData, SnapshotMeta } from '@shared/types'
 import { api } from '@/api'
 import { RoleWeights } from '@/components/RoleWeights'
+import { TalkSettings } from '@/components/TalkSettings'
 
 export function Settings(props: {
   status: AppStatus | null
@@ -97,6 +98,15 @@ export function Settings(props: {
                 <FolderPlus size={16} />
                 폴더 추가
               </button>
+            </div>
+          </section>
+
+          <section className="panel">
+            <div className="panel-head">
+              <h2>토크·협상 도우미</h2>
+            </div>
+            <div className="panel-body">
+              <TalkSettings settings={settings} onChange={onChange} />
             </div>
           </section>
 

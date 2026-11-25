@@ -14,8 +14,10 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^1.14.0",
     "chokidar": "^6.0.0",
-    "papaparse": "^5.7.1"
+    "papaparse": "^5.7.1",
+    "zod": "^4.6.7"
   },
   "devDependencies": {
     "@tanstack/react-virtual": "^3.14.28",

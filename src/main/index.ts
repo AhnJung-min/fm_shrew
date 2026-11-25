@@ -7,6 +7,8 @@ import { Store } from './db'
 import { importFile } from './importer'
 import { importSave } from './saveImporter'
 import { SettingsStore } from './settings'
+import { TalkController } from './talk/controller'
+import { KeyStore } from './talk/keyStore'
 import { ExportWatcher, isSaveFile, SaveWatcher } from './watcher'
 
 // 검증용 환경 변수: 데이터 폴더와 감시 폴더를 바꾸고, 화면을 PNG로 찍은 뒤 종료한다
@@ -22,6 +24,8 @@ let store: Store
 let settings: SettingsStore
 let watcher: ExportWatcher
 let saveWatcher: SaveWatcher
+let talk: TalkController
+let keys: KeyStore
 /** 내 팀을 몰라 미뤄 둔 세이브. 스쿼드 명단이 들어오면 다시 읽는다. */
 let pendingSave: string | null = null
 
@@ -114,6 +118,7 @@ function registerIpc(): void {
     const next = settings.set(patch)
     if (next.watchDirs.join('|') !== before.watchDirs.join('|')) await watcher.start(next.watchDirs)
     if (next.saveDir !== before.saveDir) await saveWatcher.start(next.saveDir)
+    if (next.talkHotkey !== before.talkHotkey) talk.registerHotkey()
     return next
   })
   ipcMain.handle('snapshots:list', () => store.listSnapshots())
@@ -156,6 +161,19 @@ function registerIpc(): void {
   ipcMain.handle('shell:openPath', async (_event, path: string) => {
     if (existsSync(path)) await shell.openPath(path)
   })
+
+  ipcMain.handle('talk:status', () => talk.status())
+  ipcMain.handle('talk:setKey', (_event, key: string) => {
+    keys.save(key)
+    return talk.status()
+  })
+  ipcMain.handle('talk:clearKey', () => {
+    keys.clear()
+    return talk.status()
+  })
+  ipcMain.handle('talk:capture', () => talk.capture())
+  ipcMain.handle('talk:ask', (_event, captureId: number, intent: string) => talk.ask(captureId, intent))
+  ipcMain.handle('window:hide', () => talk.hideWindow())
 }
 
 async function runSmoke(outFile: string): Promise<void> {
@@ -190,9 +208,12 @@ app.whenReady().then(async () => {
   )
   watcher = new ExportWatcher((path) => void handleExportFile(path))
   saveWatcher = new SaveWatcher((path) => void handleSaveFile(path))
+  keys = new KeyStore(join(dataDir, 'claude-key.bin'))
+  talk = new TalkController(keys, settings, () => mainWindow)
 
   registerIpc()
   createWindow()
+  talk.registerHotkey()
   await watcher.start(settings.get().watchDirs)
   await saveWatcher.start(settings.get().saveDir)
   // 창이 먼저 뜬 뒤에 읽는다(세이브 하나를 읽는 데 몇 초 걸린다)
@@ -208,6 +229,7 @@ app.whenReady().then(async () => {
 app.on('window-all-closed', () => {
   void watcher?.stop()
   void saveWatcher?.stop()
+  talk?.dispose()
   store?.close()
   app.quit()
 })
