@@ -91,6 +91,31 @@ export interface Settings {
   talkStats: TalkStats
   /** 열 이름 → 항목 id. 자동 인식이 틀렸거나 못 알아본 열을 직접 지정 */
   columnOverrides: Record<string, string>
+  /** 게임이 저장할 때마다 세이브 사본을 남길지 */
+  backupEnabled: boolean
+  /** 세이브마다 보관할 사본 개수. 넘으면 오래된 것부터 지운다 */
+  backupKeep: number
+}
+
+/** 세이브 사본 하나 */
+export interface BackupEntry {
+  /** 사본 파일 이름 */
+  id: string
+  /** 원래 세이브 파일 이름(예: 내 세이브.fm) */
+  saveName: string
+  /** 게임이 그 세이브를 저장한 시각 */
+  savedAt: string
+  /** 복원하기 직전에 있던 세이브를 남겨 둔 것인지 */
+  beforeRestore: boolean
+  bytes: number
+}
+
+export interface BackupList {
+  /** 사본을 두는 폴더 */
+  dir: string
+  /** 최근 것부터 */
+  entries: BackupEntry[]
+  totalBytes: number
 }
 
 export interface WatchDirStatus {
@@ -146,6 +171,16 @@ export interface Api {
   talkSay(sceneId: number, history: TalkLine[], words: string): Promise<TalkSayResult>
   /** 장면의 선택지 하나를 게임에서 누른다(게임 안 플러그인이 있을 때만) */
   talkPress(sceneId: number, optionIndex: number): Promise<TalkPressResult>
+  // 세이브 자동 백업
+  backupList(): Promise<BackupList>
+  /** 세이브 폴더의 가장 최근 세이브를 지금 사본으로 남긴다 */
+  backupNow(): Promise<{ ok: boolean; message?: string }>
+  /** 사본을 세이브 폴더로 되돌린다. 지금 있는 세이브는 먼저 사본으로 남긴다 */
+  backupRestore(id: string): Promise<{ ok: boolean; message?: string }>
+  backupDelete(id: string): Promise<void>
+  /** 사본이 생기거나 없어졌을 때 */
+  onBackupChanged(cb: () => void): () => void
+
   /** 단축키로 화면이 찍혔을 때 */
   onTalkCaptured(cb: (event: { capture?: TalkCapture; message?: string }) => void): () => void
   /** 앱 창을 내려 게임으로 돌아간다 */

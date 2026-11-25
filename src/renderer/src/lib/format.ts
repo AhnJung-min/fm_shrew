@@ -50,3 +50,9 @@ export function attrText(cell: CellValue | undefined): string {
   if (cell.range) return `${cell.range[0]}–${cell.range[1]}`
   return cell.raw
 }
+
+/** 파일 크기를 MB·GB로 */
+export function formatBytes(bytes: number): string {
+  if (bytes >= 1024 ** 3) return `${(bytes / 1024 ** 3).toFixed(1)}GB`
+  return `${Math.round(bytes / 1024 ** 2)}MB`
+}

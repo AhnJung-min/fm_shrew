@@ -1819,3 +1819,61 @@ a {
   color: var(--good, #7fd3a0);
   font-weight: 600;
 }
+
+/* 백업 */
+.backup-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 22px;
+}
+
+.backup-controls .btn {
+  margin-left: auto;
+}
+
+.backup-notice {
+  margin: 12px 0;
+  padding: 10px 12px;
+  border-left: 3px solid var(--good);
+  background: var(--surface);
+  border-radius: var(--radius-s);
+}
+
+.backup-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-variant-numeric: tabular-nums;
+}
+
+.backup-table th {
+  padding: 8px 14px;
+  text-align: left;
+  font-weight: 500;
+  color: var(--text-3);
+  border-bottom: 1px solid var(--line);
+}
+
+.backup-table td {
+  padding: 8px 14px;
+  border-bottom: 1px solid var(--line);
+  vertical-align: middle;
+}
+
+.backup-table tr:last-child td {
+  border-bottom: 0;
+}
+
+.backup-table .num {
+  text-align: right;
+}
+
+.backup-table .tag {
+  margin-left: 8px;
+}
+
+.backup-table .actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 6px;
+}

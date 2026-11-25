@@ -1,6 +1,6 @@
 import { FolderOpen, Trash2, Upload } from 'lucide-react'
-import { useState } from 'react'
-import type { AppStatus, ImportResult, SnapshotMeta } from '@shared/types'
+import { useEffect, useState } from 'react'
+import type { AppStatus, BackupEntry, ImportResult, SnapshotMeta } from '@shared/types'
 import { api } from '@/api'
 import { formatTime, isFromSave, KIND_LABEL } from '@/lib/format'
 
@@ -13,6 +13,13 @@ export function Home(props: {
 }) {
   const { status, snapshots, onOpenSnapshot, onImported, onChanged } = props
   const [over, setOver] = useState(false)
+  const [lastBackup, setLastBackup] = useState<BackupEntry | null>(null)
+
+  useEffect(() => {
+    const load = async (): Promise<void> => setLastBackup((await api.backupList()).entries[0] ?? null)
+    void load()
+    return api.onBackupChanged(() => void load())
+  }, [])
 
   const pick = async (): Promise<void> => onImported(await api.pickAndImport())
 
@@ -70,6 +77,11 @@ export function Home(props: {
                   </li>
                 )}
               </ul>
+              <p className="muted" style={{ marginTop: 10 }}>
+                {lastBackup
+                  ? `마지막 세이브 사본: ${formatTime(lastBackup.savedAt)} 저장분. 되돌리려면 백업 화면에서 복원하세요.`
+                  : '세이브 사본은 아직 없습니다. 게임에서 저장하면 자동으로 남습니다.'}
+              </p>
 
               <h2 style={{ fontSize: 15, fontWeight: 600, margin: '22px 0 10px' }}>다른 선수 목록: 게임에서 내보내기</h2>
               <ol className="steps">

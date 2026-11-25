@@ -5,6 +5,7 @@ import { api } from './api'
 import { Sidebar, type Route } from './components/Sidebar'
 import { isFromSave, KIND_LABEL } from './lib/format'
 import { talkStore } from './lib/talkStore'
+import { Backups } from './screens/Backups'
 import { Compare, MAX_COMPARE, type CompareState } from './screens/Compare'
 import { Home } from './screens/Home'
 import { Settings } from './screens/Settings'
@@ -20,7 +21,7 @@ interface Toast {
   snapshotId?: number
 }
 
-const ROUTES: Route[] = ['home', 'squad', 'targets', 'compare', 'talk', 'settings']
+const ROUTES: Route[] = ['home', 'squad', 'targets', 'compare', 'talk', 'backups', 'settings']
 
 function initialRoute(): Route {
   const fromHash = location.hash.replace('#', '') as Route
@@ -158,6 +159,7 @@ export function App() {
         {route === 'talk' && (
           <Talk settings={settings} onGoSettings={() => setRoute('settings')} />
         )}
+        {route === 'backups' && <Backups settings={settings} onChange={changeSettings} />}
         {route === 'settings' && (
           <Settings status={status} settings={settings} latest={snapshots[0] ?? null} onChange={changeSettings} />
         )}

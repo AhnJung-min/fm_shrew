@@ -36,7 +36,9 @@ export class SettingsStore {
       ],
       talkAllowScreen: false,
       talkStats: { requests: 0, inputTokens: 0, outputTokens: 0 },
-      columnOverrides: {}
+      columnOverrides: {},
+      backupEnabled: true,
+      backupKeep: 10
     }
     let saved: Partial<Settings> = {}
     if (existsSync(file)) {

@@ -4,6 +4,7 @@ import { app, BrowserWindow, dialog, ipcMain, shell } from 'electron'
 import { deriveColumns } from '@shared/parse'
 import type { TalkLine } from '@shared/talk'
 import type { AppStatus, ImportResult, Settings, SnapshotKind } from '@shared/types'
+import { BackupManager } from './backup'
 import { Store } from './db'
 import { importFile } from './importer'
 import { importSave } from './saveImporter'
@@ -34,6 +35,7 @@ let watcher: ExportWatcher
 let saveWatcher: SaveWatcher
 let talk: TalkController
 let keys: KeyStore
+let backups: BackupManager
 /** 내 팀을 몰라 미뤄 둔 세이브. 스쿼드 명단이 들어오면 다시 읽는다. */
 let pendingSave: string | null = null
 
@@ -82,15 +84,33 @@ async function handleSaveFile(path: string): Promise<void> {
   if (!result.skipped) mainWindow?.webContents.send('import:done', result)
 }
 
-/** 앱이 꺼져 있던 동안 저장된 것이 있으면 가장 최근 세이브 하나만 읽는다. */
-function importNewestSave(): void {
+/** 세이브 폴더에서 가장 최근에 저장된 세이브. 없으면 null */
+function newestSave(): string | null {
   const dir = settings.get().saveDir
-  if (!existsSync(dir)) return
+  if (!existsSync(dir)) return null
   const newest = readdirSync(dir)
     .filter(isSaveFile)
     .map((name) => ({ path: join(dir, name), mtime: statSync(join(dir, name)).mtimeMs }))
     .sort((a, b) => b.mtime - a.mtime)[0]
-  if (newest) void handleSaveFile(newest.path)
+  return newest?.path ?? null
+}
+
+/** 저장된 세이브의 사본을 남긴다(자동 백업이 켜져 있을 때). 같은 저장은 한 번만 남는다. */
+async function backupSave(path: string): Promise<void> {
+  if (!settings.get().backupEnabled) return
+  try {
+    if (await backups.backup(path)) mainWindow?.webContents.send('backup:changed')
+  } catch (error) {
+    console.error('[backup]', error)
+  }
+}
+
+/** 앱이 꺼져 있던 동안 저장된 것이 있으면 가장 최근 세이브 하나만 읽고, 사본도 남긴다. */
+function importNewestSave(): void {
+  const newest = newestSave()
+  if (!newest) return
+  void handleSaveFile(newest)
+  void backupSave(newest)
 }
 
 function createWindow(): void {
@@ -176,6 +196,28 @@ function registerIpc(): void {
     if (existsSync(path)) await shell.openPath(path)
   })
 
+  ipcMain.handle('backup:list', () => backups.list())
+  ipcMain.handle('backup:now', async () => {
+    const newest = newestSave()
+    if (!newest) return { ok: false, message: '세이브 폴더에 세이브가 없습니다.' }
+    try {
+      const made = await backups.backup(newest)
+      mainWindow?.webContents.send('backup:changed')
+      return { ok: true, message: made ? `“${basename(newest)}”의 사본을 남겼습니다.` : '가장 최근 저장은 이미 사본이 있습니다.' }
+    } catch (error) {
+      return { ok: false, message: error instanceof Error ? error.message : String(error) }
+    }
+  })
+  ipcMain.handle('backup:restore', async (_event, id: string) => {
+    const result = await backups.restore(id)
+    mainWindow?.webContents.send('backup:changed')
+    return { ok: result.ok, message: result.message }
+  })
+  ipcMain.handle('backup:delete', async (_event, id: string) => {
+    await backups.remove(id)
+    mainWindow?.webContents.send('backup:changed')
+  })
+
   ipcMain.handle('talk:status', () => talk.status())
   ipcMain.handle('talk:setKey', (_event, key: string) => {
     keys.save(key)
@@ -236,7 +278,15 @@ app.whenReady().then(async () => {
     SAVE_DIR_OVERRIDE
   )
   watcher = new ExportWatcher((path) => void handleExportFile(path))
-  saveWatcher = new SaveWatcher((path) => void handleSaveFile(path))
+  backups = new BackupManager(
+    join(dataDir, 'backups'),
+    () => settings.get().saveDir,
+    () => settings.get().backupKeep
+  )
+  saveWatcher = new SaveWatcher((path) => {
+    void handleSaveFile(path)
+    void backupSave(path)
+  })
   keys = new KeyStore(join(dataDir, 'claude-key.bin'))
   talk = new TalkController(keys, settings, () => mainWindow, latestSquadNames)
 

@@ -10,7 +10,7 @@ import {
 } from 'lucide-react'
 import type { AppStatus } from '@shared/types'
 
-export type Route = 'home' | 'squad' | 'targets' | 'compare' | 'talk' | 'settings'
+export type Route = 'home' | 'squad' | 'targets' | 'compare' | 'talk' | 'backups' | 'settings'
 
 interface NavEntry {
   id: Route | null
@@ -26,7 +26,7 @@ const ENTRIES: NavEntry[] = [
   { id: 'targets', label: '영입 후보', icon: UserSearch },
   { id: 'compare', label: '선수 비교', icon: Scale },
   { id: 'talk', label: '토크 도우미', icon: MessageSquareText },
-  { id: null, label: '백업', icon: Archive, later: '4단계' }
+  { id: 'backups', label: '백업', icon: Archive }
 ]
 
 /** 경기장 센터 서클을 딴 표식 */

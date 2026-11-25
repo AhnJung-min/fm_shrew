@@ -27,6 +27,15 @@ const api: Api = {
   talkRead: (captureId) => ipcRenderer.invoke('talk:read', captureId),
   talkSay: (sceneId, history, words) => ipcRenderer.invoke('talk:say', sceneId, history, words),
   talkPress: (sceneId, optionIndex) => ipcRenderer.invoke('talk:press', sceneId, optionIndex),
+  backupList: () => ipcRenderer.invoke('backup:list'),
+  backupNow: () => ipcRenderer.invoke('backup:now'),
+  backupRestore: (id) => ipcRenderer.invoke('backup:restore', id),
+  backupDelete: (id) => ipcRenderer.invoke('backup:delete', id),
+  onBackupChanged: (cb) => {
+    const listener = (): void => cb()
+    ipcRenderer.on('backup:changed', listener)
+    return () => ipcRenderer.removeListener('backup:changed', listener)
+  },
   onTalkCaptured: (cb) => {
     const listener = (_event: unknown, payload: Parameters<typeof cb>[0]): void => cb(payload)
     ipcRenderer.on('talk:captured', listener)

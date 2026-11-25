@@ -1,6 +1,6 @@
 import { parseExport } from '@shared/parse'
 import { sampleSquadCsv } from '@shared/sample'
-import type { Api, ImportResult, Settings, Snapshot } from '@shared/types'
+import type { Api, BackupEntry, ImportResult, Settings, Snapshot } from '@shared/types'
 
 declare global {
   interface Window {
@@ -30,8 +30,18 @@ function createMockApi(): Api {
     talkPhrases: ['잘하고 있다, 이대로 계속 가자', '실망스럽다, 더 집중해야 한다'],
     talkAllowScreen: false,
     talkStats: { requests: 3, inputTokens: 5400, outputTokens: 900 },
-    columnOverrides: {}
+    columnOverrides: {},
+    backupEnabled: true,
+    backupKeep: 10
   }
+  const hour = 3_600_000
+  let mockBackups: BackupEntry[] = [0.4, 2.1, 26, 27.5, 50].map((ago, i) => ({
+    id: `sample-${i}`,
+    saveName: '리버풀 2025.fm',
+    savedAt: new Date(Date.now() - ago * hour).toISOString(),
+    beforeRestore: i === 2,
+    bytes: 141_000_000 + i * 310_000
+  }))
   const empty = new URLSearchParams(location.search).has('empty')
   const snapshots: Snapshot[] = []
   if (!empty) {
@@ -124,6 +134,20 @@ function createMockApi(): Api {
       await new Promise((resolve) => setTimeout(resolve, 500))
       return { ok: true }
     },
+    backupList: async () => ({
+      dir: 'C:\\Users\\me\\AppData\\Roaming\\fm-bojwagwan\\backups',
+      entries: empty ? [] : mockBackups,
+      totalBytes: empty ? 0 : mockBackups.reduce((sum, entry) => sum + entry.bytes, 0)
+    }),
+    backupNow: async () => ({ ok: true, message: '가장 최근 저장은 이미 사본이 있습니다.' }),
+    backupRestore: async () => {
+      await new Promise((resolve) => setTimeout(resolve, 600))
+      return { ok: true }
+    },
+    backupDelete: async (id) => {
+      mockBackups = mockBackups.filter((entry) => entry.id !== id)
+    },
+    onBackupChanged: () => () => undefined,
     onTalkCaptured: () => () => undefined,
     hideWindow: async () => undefined
   }
