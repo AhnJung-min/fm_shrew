@@ -25,6 +25,8 @@ export interface UiNode {
   width: number
   height: number
   disabled: boolean
+  /** 자리는 차지하지만 그려지지 않는 요소(지나간 중계 문구 등) */
+  invisible: boolean
   /** 글자가 없으면 빈 문자열 */
   text: string
   /** 부모의 nodes 안 순번. 뿌리는 -1 */
@@ -69,6 +71,7 @@ export function parseTree(text: string): UiNode[] {
       width: Number(m[8]),
       height: Number(m[9]),
       disabled: m[10].includes('disabled'),
+      invisible: m[10].includes('invisible'),
       text: m[11] === undefined ? '' : unescape(m[11]),
       parent: depth > 0 ? (lastAt[depth - 1] ?? -1) : -1
     }
@@ -216,4 +219,31 @@ export function readGameScene(nodes: UiNode[]): GameScene | null {
     options,
     facts
   }
+}
+
+/**
+ * 경기 화면에서 점수판과 방금 나온 중계 문구를 읽는다. 경기 중 외침을 고를 때 AI에게 상황으로 알려 준다.
+ * 경기 화면이 아니면 빈 값.
+ */
+export function readMatchInfo(nodes: UiNode[]): { situation: string; facts: string[] } {
+  const byName = (name: string): string => plainText(nodes.find((n) => n.name === name && n.text !== '')?.text ?? '')
+  const home = byName('HomeTeamText')
+  const away = byName('AwayTeamText')
+  const time = byName('Time')
+  if (!home || !away) return { situation: '', facts: [] }
+
+  const facts: string[] = []
+  const commentary = nodes.findIndex((n) => n.name === 'BindingExpect_MatchCommentary')
+  if (commentary >= 0) {
+    for (let i = commentary + 1; i < nodes.length && nodes[i].depth > nodes[commentary].depth; i++) {
+      const text = plainText(nodes[i].text)
+      // 선수단 표(포지션, 평점)는 중계가 아니다. 문장만 고른다
+      if (text.length >= 8 && !nodes[i].invisible && !nodes[i].disabled && /\s/.test(text)) {
+        facts.push(`중계: ${text}`)
+        break
+      }
+    }
+  }
+  const score = `${home} ${byName('HomeScore')}-${byName('AwayScore')} ${away}`
+  return { situation: time ? `${score}, 경기 시간 ${time}` : score, facts }
 }

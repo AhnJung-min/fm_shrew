@@ -110,3 +110,28 @@ describe('readGameScene: 토크 장면 찾기', () => {
     expect(scene).not.toBeNull()
   })
 })
+
+describe('readMatchInfo: 경기 화면의 점수판과 중계', () => {
+  it('점수·시간과 보이는 중계 문구를 읽는다', async () => {
+    const { readMatchInfo } = await import('../src/shared/gameUi')
+    const info = readMatchInfo(
+      parseTree(`#1 SI.Bindable.Panel "OverviewHeader" [0,0 100x100]
+ #2 SI.Bindable.SIText "Time" .sitext [0,0 10x10] text="74:27"
+ #3 SI.Bindable.SIText "HomeTeamText" .sitext [0,0 10x10] text="BOU"
+ #4 SI.Bindable.SIText "HomeScore" .sitext [0,0 10x10] text="1"
+ #5 SI.Bindable.SIText "AwayScore" .sitext [0,0 10x10] text="2"
+ #6 SI.Bindable.SIText "AwayTeamText" .sitext [0,0 10x10] text="LIV"
+ #7 SI.Bindable.BindingExpect "BindingExpect_MatchCommentary" [0,0 10x10]
+  #8 SI.Bindable.SIText .sitext [0,0 10x10] invisible text="지나간 중계 문구입니다"
+  #9 SI.Bindable.SIText .sitext [0,0 10x10] text="학포가 측면을 파고듭니다"
+`)
+    )
+    expect(info.situation).toBe('BOU 1-2 LIV, 경기 시간 74:27')
+    expect(info.facts).toEqual(['중계: 학포가 측면을 파고듭니다'])
+  })
+
+  it('경기 화면이 아니면 비어 있다', async () => {
+    const { readMatchInfo } = await import('../src/shared/gameUi')
+    expect(readMatchInfo(parseTree('#1 SI.Bindable.Panel "Squad" [0,0 10x10]\n'))).toEqual({ situation: '', facts: [] })
+  })
+})

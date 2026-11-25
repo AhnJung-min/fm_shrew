@@ -3,7 +3,7 @@ import type { GameScene } from '@shared/gameUi'
 import { LOW_CONFIDENCE, type TalkCapture, type TalkLine, type TalkPressResult, type TalkReadResult, type TalkSayResult, type TalkScene, type TalkStatus, type TalkUsage } from '@shared/talk'
 import type { SettingsStore } from '../settings'
 import { readScene, respond, type AdvisorConfig } from './advisor'
-import { bridgeAlive, pressInGame, readFromGame, sendReply, waitForWords, type GameReply } from './bridge'
+import { bridgeAlive, pressInGame, readFromGame, readMatchFromGame, sendReply, waitForWords, type GameReply, type GameWords } from './bridge'
 import { captureGame, previewOf } from './capture'
 import type { KeyStore } from './keyStore'
 
@@ -214,7 +214,7 @@ export class TalkController {
       after = got.seq
       let reply: GameReply
       try {
-        reply = await this.answerInGame(got.words)
+        reply = await this.answerInGame(got.words, got.kind)
       } catch (error) {
         reply = { pick: 0, pickText: '', note: '', replies: [], error: error instanceof Error ? error.message : String(error) }
       }
@@ -222,12 +222,15 @@ export class TalkController {
     }
   }
 
-  private async answerInGame(words: string): Promise<GameReply> {
+  private async answerInGame(words: string, kind: GameWords['kind']): Promise<GameReply> {
     const fail = (error: string): GameReply => ({ pick: 0, pickText: '', note: '', replies: [], error })
     const config = this.config()
     if (!config) return fail('Claude API 키가 없습니다. FM 보좌관 앱의 토크 도우미에서 키를 넣어 주세요.')
-    const game = await readFromGame()
-    if (!game || game.options.length === 0) return fail('지금 화면에서 고를 선택지를 찾지 못했습니다.')
+    const shout = kind === 'shout'
+    const game = shout ? await readMatchFromGame() : await readFromGame()
+    if (!game || game.options.length === 0) {
+      return fail(shout ? '외침 목록을 읽지 못했습니다. 다시 말해 주세요.' : '지금 화면에서 고를 선택지를 찾지 못했습니다.')
+    }
 
     const scene: TalkScene = { id: this.nextId++, readable: true, source: 'game', ...game }
     if (!this.gameTalk || !sameScene(this.gameTalk.scene, scene)) this.gameTalk = { scene, history: [] }
@@ -245,7 +248,8 @@ export class TalkController {
     if (!option || option.ref === undefined) {
       return { pick: 0, pickText: '', note: turn.reason || '맞는 선택지를 찾지 못했습니다.', replies: turn.replies }
     }
-    const lead = turn.confidence < LOW_CONFIDENCE ? '딱 맞는 선택지가 없어 가장 가까운 것' : '적용할 선택지'
+    const what = shout ? '외침' : '선택지'
+    const lead = turn.confidence < LOW_CONFIDENCE ? `딱 맞는 ${what}이 없어 가장 가까운 것` : `적용할 ${what}`
     const tone = option.tone ? ` (${option.tone})` : ''
     return { pick: option.ref, pickText: option.text, note: `${lead}${tone}: ${option.text}`, replies: turn.replies }
   }

@@ -22,6 +22,9 @@ internal static class TalkBox
 
     private enum State { Idle, Waiting, Replied }
 
+    /// <summary>Talk: 선택지가 있는 대화 화면. Match: 경기 중(고를 것은 외침 메뉴의 항목)</summary>
+    private enum Mode { Talk, Match }
+
     private static readonly Stopwatch Clock = Stopwatch.StartNew();
     private static readonly Color Panel = new(0.105f, 0.118f, 0.165f, 1f);
     private static readonly Color Field = new(0.07f, 0.078f, 0.11f, 1f);
@@ -43,13 +46,26 @@ internal static class TalkBox
     private static Label status;
     private static Label applyButton;
     private static readonly HashSet<IntPtr> WatchedRoots = new();
+    /// <summary>경기 화면의 외침 메뉴. 경기 중 칸은 이것이 떠 있는 동안 붙어 있다</summary>
+    private static VisualElement shouts;
+    private static VisualElement seenShouts;
 
     // 상태
     private static State state = State.Idle;
     private static int sceneHash;
     private static bool wantFocus;
-    /** 접어 두면 제목 줄만 남는다. 게임을 끌 때까지 기억한다 */
-    private static bool folded;
+    private static Mode mode;
+    /** 접어 두면 제목 줄만 남는다. 게임을 끌 때까지 기억한다. 경기 중 칸은 경기장을 가리므로 접힌 채로 시작한다 */
+    private static bool foldedTalk;
+    private static bool foldedMatch = true;
+    private static bool Folded => mode == Mode.Match ? foldedMatch : foldedTalk;
+    /** 외침 이름(메뉴에 놓인 순서, 고를 수 없는 줄은 빈 문자열). 처음 쓸 때 메뉴를 잠깐 열어 읽고 게임을 끌 때까지 기억한다 */
+    private static List<string> shoutLabels;
+    /** 외침 이름을 읽으려고 메뉴를 열어 둔 상태면 읽을 시각, 아니면 -1 */
+    private static long readLabelsAt = -1;
+    private static string heldWords;
+    private static Il2CppSystem.Object blockedMap;
+    private static int slowTicks;
     private static bool exclusive;
     private static long nextTick;
     private static long submitAt = -1;
@@ -63,6 +79,7 @@ internal static class TalkBox
     private static readonly object Gate = new();
     private static int seq;
     private static string pendingWords;
+    private static string pendingKind = "talk";
     private static long lastPoll = -100_000;
 
     /// <summary>대화 틀이 떠 있고 입력칸이 붙어 있는지</summary>
@@ -101,14 +118,26 @@ internal static class TalkBox
     private static void Slow(long now)
     {
         if (box != null && (box.panel == null || !UiTree.Displayed(host))) Detach();
+        if (box != null && mode == Mode.Match)
+        {
+            if (shouts.panel == null || !UiTree.Displayed(shouts)) Detach();
+            // 경기 중에 대화 화면(하프타임 팀 대화 등)이 뜨면 칸을 그쪽으로 옮긴다
+            else if (++slowTicks % 3 == 0 && state == State.Idle && FindHost() != null) Detach();
+        }
         if (box == null)
         {
             if (buildFailures >= 3) return;
+            var kind = Mode.Talk;
             var found = FindHost();
+            if (found == null)
+            {
+                kind = Mode.Match;
+                found = FindMatchHost();
+            }
             if (found == null) return;
             try
             {
-                Build(found);
+                Build(found, kind);
             }
             catch (Exception error)
             {
@@ -117,17 +146,24 @@ internal static class TalkBox
                 Plugin.Logger.LogError($"talk box could not be built ({buildFailures}): {error}");
                 return;
             }
-            sceneHash = HashScene();
-            Plugin.Logger.LogInfo("talk box attached");
+            sceneHash = mode == Mode.Talk ? HashScene() : 0;
+            Plugin.Logger.LogInfo(mode == Mode.Talk ? "talk box attached" : "talk box attached (match)");
             return;
         }
 
-        // 게임이 다음 질문으로 넘어갔으면 대화를 비운다
-        var hash = HashScene();
-        if (hash != sceneHash)
+        if (mode == Mode.Talk)
         {
-            sceneHash = hash;
-            ResetChat();
+            // 게임이 다음 질문으로 넘어갔으면 대화를 비운다
+            var hash = HashScene();
+            if (hash != sceneHash)
+            {
+                sceneHash = hash;
+                ResetChat();
+            }
+        }
+        else if (readLabelsAt >= 0 && now >= readLabelsAt)
+        {
+            ReadShoutLabels();
         }
 
         if (state == State.Waiting && now - waitingSince > 90_000)
@@ -173,11 +209,13 @@ internal static class TalkBox
     {
         VisualElement card = null;
         VisualElement container = null;
+        seenShouts = null;
         foreach (var root in UiTree.Roots())
         {
             Walk(root, element =>
             {
                 var name = element.name;
+                if (name == "shouts-dropdown") seenShouts = element;
                 if (name == "SpeakToContainer" && element.worldBound.width > 100) container = element;
                 if (name != "SpeakToShortcutElement" || element.worldBound.width <= 100) return false;
                 card = element;
@@ -193,6 +231,22 @@ internal static class TalkBox
             IsSiButton(element) && element.enabledInHierarchy && element.worldBound.width > 100 &&
             !element.ClassListContains("shortcut-fake-button") && JoinedText(element).Length > 0);
         return hasOption ? found : null;
+    }
+
+    /// <summary>
+    /// 경기 중이면 외침 메뉴가 놓인 화면을 준다(거기에 칸을 올린다). 아니면 null.
+    /// 바로 앞에서 부른 FindHost가 화면을 훑으며 봐 둔 것을 쓴다.
+    /// </summary>
+    private static VisualElement FindMatchHost()
+    {
+        if (seenShouts == null) return null;
+        for (var element = seenShouts.parent; element != null; element = element.parent)
+        {
+            if (Il2.ClassName(Il2.ClassOf(element.Pointer)) != "SI.Bindable.Panel") continue;
+            shouts = seenShouts;
+            return element;
+        }
+        return null;
     }
 
     private static readonly Regex Tags = new("</?[a-zA-Z][^>]*>", RegexOptions.CultureInvariant);
@@ -329,17 +383,29 @@ internal static class TalkBox
         return row;
     }
 
-    private static void Build(VisualElement found)
+    private static void Build(VisualElement found, Mode kind)
     {
+        mode = kind;
         host = found;
         box = new VisualElement { name = BoxName };
         Try(() => box.style.position = new StyleEnum<Position>(Position.Absolute));
         Try(() =>
         {
             var style = box.style;
-            style.left = new StyleLength(0f);
-            style.right = new StyleLength(0f);
-            style.bottom = new StyleLength(0f);
+            if (mode == Mode.Match)
+            {
+                // 경기 화면: 왼쪽 위, 전술·외침 버튼 줄 바로 아래
+                style.left = new StyleLength(16f);
+                style.top = new StyleLength(56f);
+                style.width = new StyleLength(420f);
+            }
+            else
+            {
+                // 대화 화면: 선택지가 있는 카드의 아래쪽
+                style.left = new StyleLength(0f);
+                style.right = new StyleLength(0f);
+                style.bottom = new StyleLength(0f);
+            }
         });
         Try(() => box.style.backgroundColor = new StyleColor(Panel));
         Try(() =>
@@ -360,7 +426,7 @@ internal static class TalkBox
             DelegateSupport.ConvertDelegate<EventCallback<PointerDownEvent>>(new Action<PointerDownEvent>(evt =>
             {
                 evt.StopPropagation();
-                SetFolded(!folded);
+                SetFolded(!Folded);
             })),
             TrickleDown.NoTrickleDown);
         header.Add(foldButton);
@@ -406,7 +472,7 @@ internal static class TalkBox
         Try(() => footer.style.flexShrink = new StyleFloat(0f));
         status = Text("", 12, Soft);
         footer.Add(status);
-        applyButton = ButtonLike("반영하고 넘어가기", Green, Apply);
+        applyButton = ButtonLike(mode == Mode.Match ? "외치기" : "반영하고 넘어가기", Green, Apply);
         Try(() => applyButton.style.alignSelf = new StyleEnum<Align>(Align.FlexEnd));
         Try(() => applyButton.style.marginTop = new StyleLength(8f));
         Try(() => applyButton.style.display = new StyleEnum<DisplayStyle>(DisplayStyle.None));
@@ -414,7 +480,7 @@ internal static class TalkBox
         body.Add(footer);
 
         host.Add(box);
-        SetFolded(folded);
+        SetFolded(Folded);
         StyleInput(input);
         WatchRoot();
         state = State.Idle;
@@ -464,7 +530,8 @@ internal static class TalkBox
 
     private static void SetFolded(bool fold)
     {
-        folded = fold;
+        if (mode == Mode.Match) foldedMatch = fold;
+        else foldedTalk = fold;
         if (fold) SetTyping(false);
         foldButton.text = fold ? "[펼치기]" : "[접기]";
         Try(() => body.style.display = new StyleEnum<DisplayStyle>(fold ? DisplayStyle.None : DisplayStyle.Flex));
@@ -489,6 +556,9 @@ internal static class TalkBox
         input = null;
         status = null;
         applyButton = null;
+        shouts = null;
+        readLabelsAt = -1;
+        heldWords = null;
         state = State.Idle;
         submitAt = -1;
         lock (Gate) pendingWords = null;
@@ -516,7 +586,11 @@ internal static class TalkBox
         try
         {
             var manager = Il2.FindUnityObject("SI.Input.InputManager");
-            if (manager != IntPtr.Zero) Il2.Call(manager, wantFocus ? "OnExclusiveInputBegin" : "OnExclusiveInputEnd");
+            if (manager != IntPtr.Zero)
+            {
+                Il2.Call(manager, wantFocus ? "OnExclusiveInputBegin" : "OnExclusiveInputEnd");
+                BlockMatchKeys(manager, wantFocus);
+            }
             exclusive = wantFocus;
         }
         catch (Exception error)
@@ -534,6 +608,29 @@ internal static class TalkBox
                 // 이미 화면에서 빠졌다
             }
         }
+    }
+
+    /// <summary>
+    /// 경기 화면의 단축키 묶음("Match": 스페이스 = 재생/일시정지 등)은 독점 입력으로 꺼지지 않아 따로 끈다.
+    /// 우리가 끈 것만 다시 켠다.
+    /// </summary>
+    private static void BlockMatchKeys(IntPtr manager, bool block)
+    {
+        if (!block)
+        {
+            if (blockedMap == null) return;
+            var held = blockedMap;
+            blockedMap = null;
+            Il2.Call(held.Pointer, "Enable");
+            return;
+        }
+        if (blockedMap != null) return;
+        var asset = Il2.FieldObject(manager, "m_asset");
+        if (asset == IntPtr.Zero) return;
+        var map = Il2.CallObject(asset, "FindActionMap", "Match", "false");
+        if (map == IntPtr.Zero || !Il2.CallBool(map, "get_enabled")) return;
+        Il2.Call(map, "Disable");
+        blockedMap = new Il2CppSystem.Object(map);
     }
 
     private static void OnKey(KeyDownEvent evt)
@@ -614,17 +711,72 @@ internal static class TalkBox
         state = State.Waiting;
         waitingSince = Clock.ElapsedMilliseconds;
         status.text = AppConnected(waitingSince) ? "생각하는 중…" : "FM 보좌관 앱을 기다리는 중… (앱이 켜져 있어야 합니다)";
+        if (mode == Mode.Match && shoutLabels == null)
+        {
+            // 외침 이름을 아직 모른다. 메뉴를 잠깐 열어 읽은 뒤에 보낸다
+            if (!shouts.enabledInHierarchy)
+            {
+                Finish("지금은 외침 메뉴가 꺼져 있습니다. 잠시 뒤에 다시 말해 주세요.");
+                return;
+            }
+            heldWords = words;
+            Il2.Call(shouts.Pointer, "ShowDropdown");
+            readLabelsAt = waitingSince + 350;
+            return;
+        }
+        Publish(words);
+    }
+
+    /// <summary>적은 말을 앱이 가져가게 내놓는다.</summary>
+    private static void Publish(string words)
+    {
         lock (Gate)
         {
             seq++;
             pendingWords = words;
+            pendingKind = mode == Mode.Match ? "shout" : "talk";
             Monitor.PulseAll(Gate);
         }
+    }
+
+    /// <summary>열어 둔 외침 메뉴에서 줄마다 이름을 읽고 메뉴를 닫는다.</summary>
+    private static void ReadShoutLabels()
+    {
+        readLabelsAt = -1;
+        var labels = new List<string>();
+        foreach (var root in UiTree.Roots())
+        {
+            Walk(root, element =>
+            {
+                if (Il2.ClassName(Il2.ClassOf(element.Pointer)) != "SI.Bindable.DropdownRowNavigatable") return false;
+                // 외침 줄에는 외침 그림이 있다. 그림이 없는 줄("개인": 선수 한 명에게 외치는 화면을 연다)은 뺀다
+                var isShout = Walk(element, inner => inner.name == "shoutIcon" && inner.worldBound.width > 0);
+                labels.Add(isShout ? JoinedText(element) : "");
+                return false;
+            });
+        }
+        Il2.Call(shouts.Pointer, "HideDropdown");
+
+        var words = heldWords;
+        heldWords = null;
+        if (labels.Count(label => label.Length > 0) < 2)
+        {
+            Finish("외침 목록을 읽지 못했습니다. 다시 말해 주세요.");
+            return;
+        }
+        shoutLabels = labels;
+        Plugin.Logger.LogInfo($"talk box: shouts = {string.Join(", ", labels)}");
+        if (state == State.Waiting && words != null) Publish(words);
     }
 
     private static void Apply()
     {
         if (state != State.Replied || pickId <= 0) return;
+        if (mode == Mode.Match)
+        {
+            Shout();
+            return;
+        }
         VisualElement option;
         try
         {
@@ -654,9 +806,44 @@ internal static class TalkBox
         clickable.SimulateSingleClick(null);
     }
 
+    /// <summary>고른 외침을 게임에 보낸다. 메뉴를 열지 않고, 메뉴가 항목을 골랐을 때 하는 일을 그대로 일으킨다.</summary>
+    private static void Shout()
+    {
+        var index = pickId - 1;
+        if (shoutLabels == null || index < 0 || index >= shoutLabels.Count || shoutLabels[index] != pickText || pickText.Length == 0)
+        {
+            Finish("외침 목록이 바뀌었습니다. 다시 말해 주세요.");
+            return;
+        }
+        if (!shouts.enabledInHierarchy)
+        {
+            // 방금 외친 뒤에는 게임이 한동안 외침을 막는다. 버튼은 남겨 둔다
+            status.text = "지금은 외칠 수 없습니다. 잠시 뒤에 다시 눌러 주세요.";
+            return;
+        }
+        var shout = pickText;
+        SetTyping(false);
+        Il2.Call(shouts.Pointer, "TriggerSelectionEvent", index.ToString());
+        Finish($"외쳤습니다: {shout}");
+    }
+
+    /// <summary>앱이 부른다. 읽어 둔 외침 이름을 "순번(1부터)\t이름" 줄들로 준다.</summary>
+    public static string Shouts()
+    {
+        return MainThread.Run(() =>
+        {
+            if (shoutLabels == null) return "";
+            var lines = new List<string>();
+            for (var i = 0; i < shoutLabels.Count; i++)
+                if (shoutLabels[i].Length > 0)
+                    lines.Add($"{i + 1}\t{shoutLabels[i]}");
+            return string.Join("\n", lines);
+        });
+    }
+
     // ── 앱과 주고받기(HTTP 스레드) ────────────────────────
 
-    /// <summary>앱이 부른다. 새로 한 말이 생길 때까지 기다렸다가 "순번\n말"을 준다. 없으면 빈 문자열.</summary>
+    /// <summary>앱이 부른다. 새로 한 말이 생길 때까지 기다렸다가 "순번\n종류(talk·shout)\n말"을 준다. 없으면 빈 문자열.</summary>
     public static string Poll(int after, int waitSeconds)
     {
         var deadline = Clock.ElapsedMilliseconds + Math.Clamp(waitSeconds, 0, 30) * 1000L;
@@ -666,7 +853,7 @@ internal static class TalkBox
             {
                 var now = Clock.ElapsedMilliseconds;
                 lastPoll = now;
-                if (pendingWords != null && seq > after) return seq + "\n" + pendingWords;
+                if (pendingWords != null && seq > after) return seq + "\n" + pendingKind + "\n" + pendingWords;
                 if (now >= deadline) return "";
                 Monitor.Wait(Gate, (int)Math.Min(deadline - now, 5000));
             }

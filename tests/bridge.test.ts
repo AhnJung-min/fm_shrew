@@ -4,7 +4,7 @@ import type { AddressInfo } from 'node:net'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
-import { bridgeAlive, readFromGame, sendReply, waitForWords } from '../src/main/talk/bridge'
+import { bridgeAlive, readFromGame, readMatchFromGame, sendReply, waitForWords } from '../src/main/talk/bridge'
 
 /** 게임 안 플러그인 흉내. 앱이 주소·암호를 파일에서 읽어 제대로 묻는지 본다 */
 const TREE = `#1 SI.Bindable.Panel "TeamTalkPanel" [0,0 100x100]
@@ -31,6 +31,10 @@ beforeAll(async () => {
         response.end('fm-bojwagwan-bridge test')
       } else if (url === '/tree') {
         response.end(TREE)
+      } else if (url === '/talk/shouts') {
+        response.end(['1', '격려하기'].join(String.fromCharCode(9)) + String.fromCharCode(10) + ['8', '질책하기'].join(String.fromCharCode(9)))
+      } else if (url.startsWith('/talk/poll?after=3')) {
+        response.end(['4', 'shout', '더 뛰어!'].join(String.fromCharCode(10)))
       } else if (url.startsWith('/talk/poll?after=0')) {
         response.end('3\n이기고 와라\n꼭')
       } else if (url.startsWith('/talk/poll')) {
@@ -70,8 +74,19 @@ describe('게임 안 플러그인과 주고받기', () => {
   })
 
   it('게임 안 칸에 적힌 말을 순번과 함께 받는다(말 속의 줄바꿈은 그대로)', async () => {
-    expect(await waitForWords(0)).toEqual({ seq: 3, words: '이기고 와라\n꼭' })
-    expect(await waitForWords(3)).toBeNull()
+    // 예전 플러그인은 종류 없이 말만 보낸다
+    expect(await waitForWords(0)).toEqual({ seq: 3, kind: 'talk', words: '이기고 와라\n꼭' })
+    expect(await waitForWords(3)).toEqual({ seq: 4, kind: 'shout', words: '더 뛰어!' })
+    expect(await waitForWords(4)).toBeNull()
+  })
+
+  it('경기 중에는 외침 목록이 선택지가 된다', async () => {
+    const scene = await readMatchFromGame()
+    expect(scene?.screen).toBe('touchline_shout')
+    expect(scene?.options).toEqual([
+      { text: '격려하기', tone: '', ref: 1 },
+      { text: '질책하기', tone: '', ref: 8 }
+    ])
   })
 
   it('답을 JSON으로 돌려보낸다', async () => {

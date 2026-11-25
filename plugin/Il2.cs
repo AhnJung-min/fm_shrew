@@ -469,13 +469,32 @@ internal static unsafe class Il2
         return IntPtr.Zero;
     }
 
-    /// <summary>인자 없는 메서드를 이름으로 부른다. 게임 쪽에서 예외가 나면 그 내용을 던진다.</summary>
-    public static void Call(IntPtr obj, string method)
+    /// <summary>
+    /// 메서드를 이름으로 부르고 돌려준 객체를 준다(값 종류는 상자에 담겨 온다). 인자는 글로 넘긴다.
+    /// 게임 쪽에서 예외가 나면 그 내용을 던진다.
+    /// </summary>
+    public static IntPtr CallObject(IntPtr obj, string method, params string[] arguments)
     {
-        var found = FindMethod(ClassOf(obj), method, 0);
+        var found = FindMethod(ClassOf(obj), method, arguments.Length);
         if (found == IntPtr.Zero) throw new MissingMethodException(method);
-        Invoke(found, obj, Array.Empty<string>(), out var error);
+        var result = Invoke(found, obj, arguments, out var error);
         if (error != null) throw new InvalidOperationException(error);
+        return result;
+    }
+
+    public static void Call(IntPtr obj, string method, params string[] arguments) => CallObject(obj, method, arguments);
+
+    public static bool CallBool(IntPtr obj, string method, params string[] arguments)
+    {
+        var result = CallObject(obj, method, arguments);
+        return result != IntPtr.Zero && *(byte*)IL2CPP.il2cpp_object_unbox(result) != 0;
+    }
+
+    /// <summary>객체의 필드에 든 객체. 없으면 0.</summary>
+    public static IntPtr FieldObject(IntPtr obj, string name)
+    {
+        var field = FindField(ClassOf(obj), name);
+        return field == IntPtr.Zero ? IntPtr.Zero : IL2CPP.il2cpp_field_get_value_object(field, obj);
     }
 
     /// <summary>이름이 정규식에 맞는 클래스를 모든 어셈블리에서 찾는다.</summary>

@@ -130,6 +130,8 @@ internal static class Server
             // 게임 안 "직접 답변" 칸과 앱 사이의 통로. poll은 새 말이 생길 때까지 이 스레드에서 기다린다
             case "/talk/poll":
                 return TalkBox.Poll(Number("after", 0), Number("wait", 25));
+            case "/talk/shouts":
+                return TalkBox.Shouts();
             case "/talk/reply":
                 return TalkBox.Reply(Number("seq", 0), sent);
 

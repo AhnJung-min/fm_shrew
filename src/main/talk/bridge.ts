@@ -1,6 +1,6 @@
 import { readFile } from 'node:fs/promises'
 import { join } from 'node:path'
-import { parseTree, readGameScene, type GameScene } from '@shared/gameUi'
+import { parseTree, readGameScene, readMatchInfo, type GameScene } from '@shared/gameUi'
 
 /**
  * 게임 안 플러그인(plugin/)과 이야기하는 쪽.
@@ -76,6 +76,8 @@ export async function pressInGame(ref: number, expectedText: string): Promise<{ 
 /** 게임 안 "직접 답변" 칸에 적힌 말 */
 export interface GameWords {
   seq: number
+  /** 'talk'는 선택지가 있는 대화 화면, 'shout'는 경기 중(고를 것은 외침) */
+  kind: 'talk' | 'shout'
   words: string
 }
 
@@ -89,7 +91,39 @@ export async function waitForWords(after: number): Promise<GameWords | null | 'o
   const cut = text.indexOf(String.fromCharCode(10))
   if (cut < 0) return null
   const seq = Number(text.slice(0, cut))
-  return Number.isFinite(seq) ? { seq, words: text.slice(cut + 1) } : null
+  if (!Number.isFinite(seq)) return null
+  const rest = text.slice(cut + 1)
+  // 둘째 줄은 종류다(예전 플러그인은 종류 없이 곧바로 말이 온다)
+  const next = rest.indexOf(String.fromCharCode(10))
+  const kind = next < 0 ? '' : rest.slice(0, next)
+  if (kind === 'talk' || kind === 'shout') return { seq, kind, words: rest.slice(next + 1) }
+  return { seq, kind: 'talk', words: rest }
+}
+
+/**
+ * 경기 중 장면: 고를 것은 외침 메뉴의 항목이고, 상황은 점수판과 중계 문구에서 읽는다.
+ * 플러그인이 외침 목록을 아직 읽지 못했으면 null.
+ */
+export async function readMatchFromGame(): Promise<GameScene | null> {
+  const list = await ask('/talk/shouts')
+  if (!list) return null
+  const options = list
+    .split(String.fromCharCode(10))
+    .map((line) => line.split(String.fromCharCode(9)))
+    .filter((cells) => cells.length === 2 && Number.isInteger(Number(cells[0])) && cells[1] !== '')
+    .map((cells) => ({ text: cells[1], tone: '', ref: Number(cells[0]) }))
+  if (options.length === 0) return null
+  const tree = await ask('/tree')
+  const info = tree === null ? { situation: '', facts: [] } : readMatchInfo(parseTree(tree))
+  return {
+    panel: 'Match',
+    screen: 'touchline_shout',
+    situation: info.situation,
+    speaker: '경기장의 우리 선수들',
+    question: '',
+    options,
+    facts: info.facts
+  }
 }
 
 /** 게임 안 칸에 보여 줄 답 */
