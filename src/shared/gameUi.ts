@@ -32,7 +32,7 @@ export interface UiNode {
 }
 
 const LINE =
-  /^( *)#(\d+) (\S+)(?: "([^"]*)")?((?: \.\S+)*) \[(-?[\d.NaInfity-]+),(-?[\d.NaInfity-]+) (-?[\d.NaInfity-]+)x(-?[\d.NaInfity-]+)\]((?: (?:hidden|invisible|disabled|focusable))*)(?: text="(.*)")?(?: !\w+)?$/
+  /^( *)(?:#(\d+) )?(\S+)(?: "([^"]*)")?((?: \.\S+)*) \[(-?[\d.NaInfity-]+),(-?[\d.NaInfity-]+) (-?[\d.NaInfity-]+)x(-?[\d.NaInfity-]+)\]((?: (?:hidden|invisible|disabled|focusable))*)(?: text="(.*)")?(?: !\w+)?$/
 
 function unescape(text: string): string {
   return text.replace(/\\(["\\n])/g, (_, c: string) => (c === 'n' ? '\n' : c))
@@ -59,7 +59,7 @@ export function parseTree(text: string): UiNode[] {
     if (!m) continue
     const depth = m[1].length
     const node: UiNode = {
-      id: Number(m[2]),
+      id: m[2] === undefined ? 0 : Number(m[2]),
       depth,
       type: m[3],
       name: m[4] ?? '',
@@ -135,17 +135,31 @@ export function readGameScene(nodes: UiNode[]): GameScene | null {
   }
   const panel = panelIndex >= 0 ? nodes[panelIndex].name : ''
   const heading: string[] = []
+  // 기자회견은 질문과 기자 이름이 대화 틀 밖(같은 화면의 다른 자리)에 있다
+  const asked: string[] = []
+  const asker: string[] = []
   if (panelIndex >= 0) {
-    for (let i = panelIndex + 1; i < start; i++) {
+    let panelEnd = panelIndex + 1
+    while (panelEnd < nodes.length && nodes[panelEnd].depth > nodes[panelIndex].depth) panelEnd++
+    for (let i = panelIndex + 1; i < panelEnd; i++) {
+      if (i >= start && i < end) continue
       const text = plainText(nodes[i].text)
       if (!text || nodes[i].type === BUTTON) continue
       let inTopBar = false
       let inButton = false
+      let inBubble = false
+      let inName = false
       for (let p = nodes[i].parent; p > panelIndex; p = nodes[p].parent) {
-        if (nodes[p].name === 'TopBar') inTopBar = true
+        const name = nodes[p].name
+        if (name === 'TopBar') inTopBar = true
         if (nodes[p].type === BUTTON) inButton = true
+        if (/bubble/i.test(name)) inBubble = true
+        if (/^NameAndHierar/i.test(name)) inName = true
       }
-      if (inTopBar && !inButton) heading.push(text)
+      if (inButton) continue
+      if (inBubble) asked.push(text)
+      else if (inName) asker.push(text)
+      else if (nodes[i].name === 'FinishedText' || inTopBar) heading.push(text)
     }
   }
 
@@ -188,7 +202,8 @@ export function readGameScene(nodes: UiNode[]): GameScene | null {
     if (!text || node.type === BUTTON) continue
     if (under(i, named('SpeakToHeader'))) speaker.push(text)
     else if (under(i, named('HasBubbles'))) question.push(text)
-    else if (text.length <= 14 && !under(i, (n) => n.classes.includes('sender-bubbles-frame'))) tone = text
+    else if (under(i, named('SenderFrame'))) continue // 기자회견에서는 답하는 사람(감독 자신)이 적혀 있다
+    else if (node.name === 'GroupTitle' || (text.length <= 14 && !under(i, (n) => n.classes.includes('sender-bubbles-frame')))) tone = text
     else facts.push(text)
   }
 
@@ -196,8 +211,8 @@ export function readGameScene(nodes: UiNode[]): GameScene | null {
     panel,
     screen: screenOf(panel),
     situation: heading.join(' · '),
-    speaker: [...new Set(speaker)].join(' · '),
-    question: question.join('\n'),
+    speaker: [...new Set(speaker.length > 0 ? speaker : asker)].join(' · '),
+    question: (question.length > 0 ? question : asked).join('\n'),
     options,
     facts
   }

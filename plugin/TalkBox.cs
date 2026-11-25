@@ -23,7 +23,7 @@ internal static class TalkBox
     private enum State { Idle, Waiting, Replied }
 
     private static readonly Stopwatch Clock = Stopwatch.StartNew();
-    private static readonly Color Panel = new(0.105f, 0.118f, 0.165f, 0.98f);
+    private static readonly Color Panel = new(0.105f, 0.118f, 0.165f, 1f);
     private static readonly Color Field = new(0.07f, 0.078f, 0.11f, 1f);
     private static readonly Color Line = new(0.27f, 0.3f, 0.38f, 1f);
     private static readonly Color Blue = new(0.145f, 0.388f, 0.922f, 1f);
@@ -283,6 +283,8 @@ internal static class TalkBox
     {
         var label = new Label(text);
         Try(() => label.style.fontSize = new StyleLength(size));
+        // 게임 쪽 기본값(가운데 정렬)을 물려받지 않게 왼쪽 위로 맞춘다
+        Try(() => label.style.unityTextAlign = new StyleEnum<TextAnchor>(TextAnchor.UpperLeft));
         Try(() => label.style.color = new StyleColor(color));
         Try(() => label.style.whiteSpace = new StyleEnum<WhiteSpace>(WhiteSpace.Normal));
         return label;
@@ -378,14 +380,15 @@ internal static class TalkBox
         entry.Add(ButtonLike("말하기", Blue, () => submitAt = Clock.ElapsedMilliseconds));
         box.Add(entry);
 
-        var footer = Row();
+        // 적용할 선택지는 문장이 길 수 있어 한 줄을 통째로 쓰고, 버튼은 그 아래 오른쪽에 둔다
+        var footer = new VisualElement();
         Try(() => footer.style.marginTop = new StyleLength(8f));
+        Try(() => footer.style.flexShrink = new StyleFloat(0f));
         status = Text("", 12, Soft);
-        Try(() => status.style.flexGrow = new StyleFloat(1f));
-        Try(() => status.style.flexShrink = new StyleFloat(1f));
-        Try(() => status.style.alignSelf = new StyleEnum<Align>(Align.Center));
         footer.Add(status);
         applyButton = ButtonLike("반영하고 넘어가기", Green, Apply);
+        Try(() => applyButton.style.alignSelf = new StyleEnum<Align>(Align.FlexEnd));
+        Try(() => applyButton.style.marginTop = new StyleLength(8f));
         Try(() => applyButton.style.display = new StyleEnum<DisplayStyle>(DisplayStyle.None));
         footer.Add(applyButton);
         box.Add(footer);
