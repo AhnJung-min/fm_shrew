@@ -39,6 +39,7 @@ internal static class Watcher
     private static int goalDumps;
     private static int errors;
     private static bool hotkeyBroken;
+    private static bool dataBroken;
     private static string lastScore;
 
     public static void Tick()
@@ -49,7 +50,10 @@ internal static class Watcher
             {
                 var keyboard = Keyboard.current;
                 if (keyboard != null && keyboard.f10Key.wasPressedThisFrame)
+                {
                     Plugin.Logger.LogInfo("UI dump: " + DumpToFile("manual"));
+                    DumpDataQuietly("manual");
+                }
             }
             catch (Exception error)
             {
@@ -86,6 +90,27 @@ internal static class Watcher
         return BridgeFiles.WriteDump(tag, content);
     }
 
+    /// <summary>게임이 지금 화면에 넣어 주고 있는 값들(데이터 나무)을 파일로 남긴다.</summary>
+    public static string DumpDataToFile(string tag)
+    {
+        return BridgeFiles.WriteDump(tag + "-data", DataTree.Dump("", 9, 6000));
+    }
+
+    /// <summary>화면 기록에 딸린 데이터 기록. 실패해도 화면 기록에는 영향을 주지 않는다.</summary>
+    private static void DumpDataQuietly(string tag)
+    {
+        if (dataBroken) return;
+        try
+        {
+            DumpDataToFile(tag);
+        }
+        catch (Exception error)
+        {
+            dataBroken = true;
+            Plugin.Logger.LogWarning($"data dump unavailable: {error.Message}");
+        }
+    }
+
     private static void Scan(long now)
     {
         var panels = new List<string>();
@@ -115,6 +140,8 @@ internal static class Watcher
         lastDump = now;
         autoDumps++;
         Plugin.Logger.LogInfo("UI dump: " + DumpToFile(tag));
+        // 새 화면이면 그 화면이 쓰는 값들도 남긴다(대화가 이어지는 동안의 기록에는 남기지 않는다)
+        if (!tag.EndsWith("-talk")) DumpDataQuietly(tag);
     }
 
     /// <summary>경기 점수판의 점수가 바뀌면(골) 그 순간과 3초·8초 뒤의 화면을 남긴다.</summary>

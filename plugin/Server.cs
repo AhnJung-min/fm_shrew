@@ -165,6 +165,16 @@ internal static class Server
                     return "ok";
                 });
 
+            // 게임이 화면에 넣어 주는 값들(개발용, 읽기만)
+            case "/data":
+                return MainThread.Run(() => DataTree.Dump(query["path"], Number("depth", 3), Number("max", 600)), 30_000);
+            case "/datadump":
+                return MainThread.Run(() => Watcher.DumpDataToFile(query["tag"] ?? "manual"), 30_000);
+
+            // 견본 카드 띄우기(개발용): kind = goal, multi, hat, best
+            case "/card/test":
+                return MainThread.Run(() => MatchCards.Test(query["kind"] ?? "goal"));
+
             // 누르기(실험)
             case "/click":
                 return MainThread.Run(() => Clicker.Click(Number("id", 0), query["mode"] ?? "clickable"));

@@ -87,13 +87,24 @@ internal static unsafe class Il2
         return IntPtr.Zero;
     }
 
+    private static readonly Dictionary<(IntPtr, string), IntPtr> FoundFields = new();
+
     private static IntPtr FindField(IntPtr klass, string name)
     {
+        if (FoundFields.TryGetValue((klass, name), out var known)) return known;
+        var found = IntPtr.Zero;
         foreach (var k in Chain(klass))
-        foreach (var field in Fields(k))
-            if (Utf8(IL2CPP.il2cpp_field_get_name(field)) == name)
-                return field;
-        return IntPtr.Zero;
+        {
+            foreach (var field in Fields(k))
+            {
+                if (Utf8(IL2CPP.il2cpp_field_get_name(field)) != name) continue;
+                found = field;
+                break;
+            }
+            if (found != IntPtr.Zero) break;
+        }
+        FoundFields[(klass, name)] = found;
+        return found;
     }
 
     private static bool IsStaticField(IntPtr field) => (IL2CPP.il2cpp_field_get_flags(field) & FieldStatic) != 0;
@@ -495,6 +506,41 @@ internal static unsafe class Il2
     {
         var field = FindField(ClassOf(obj), name);
         return field == IntPtr.Zero ? IntPtr.Zero : IL2CPP.il2cpp_field_get_value_object(field, obj);
+    }
+
+    /// <summary>클래스의 정적 필드에 든 객체. 없으면 0.</summary>
+    public static IntPtr StaticObject(string className, string fieldName)
+    {
+        var field = FindField(FindClass(className), fieldName);
+        if (field == IntPtr.Zero || !IsStaticField(field)) return IntPtr.Zero;
+        var pointer = IntPtr.Zero;
+        IL2CPP.il2cpp_field_static_get_value(field, &pointer);
+        return pointer;
+    }
+
+    /// <summary>게임 쪽 문자열 객체를 글자로. 문자열이 아니면 null.</summary>
+    public static string Str(IntPtr obj) =>
+        obj != IntPtr.Zero && ClassName(ClassOf(obj)) == "System.String" ? IL2CPP.Il2CppStringToManaged(obj) : null;
+
+    /// <summary>목록(Count와 [번호]가 있는 것)의 내용. 목록이 아니면 빈 목록.</summary>
+    public static List<IntPtr> Items(IntPtr list, int max)
+    {
+        var items = new List<IntPtr>();
+        if (list == IntPtr.Zero) return items;
+        var klass = ClassOf(list);
+        var counter = FindMethod(klass, "get_Count", 0);
+        var indexer = FindMethod(klass, "get_Item", 1);
+        if (counter == IntPtr.Zero || indexer == IntPtr.Zero) return items;
+        var boxed = Invoke(counter, list, Array.Empty<string>(), out var error);
+        if (error != null || boxed == IntPtr.Zero) return items;
+        var count = *(int*)IL2CPP.il2cpp_object_unbox(boxed);
+        for (var i = 0; i < count && i < max; i++)
+        {
+            var item = Invoke(indexer, list, new[] { i.ToString() }, out error);
+            if (error != null) break;
+            items.Add(item);
+        }
+        return items;
     }
 
     /// <summary>이름이 정규식에 맞는 클래스를 모든 어셈블리에서 찾는다.</summary>
