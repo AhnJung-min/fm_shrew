@@ -20,7 +20,9 @@ export class TalkController {
   constructor(
     private keys: KeyStore,
     private settings: SettingsStore,
-    private getWindow: () => BrowserWindow | null
+    private getWindow: () => BrowserWindow | null,
+    /** 세이브에서 읽은 내 팀 선수 이름. AI가 이름 표기를 맞추는 데 쓴다 */
+    private getSquadNames: () => string[]
   ) {}
 
   status(): TalkStatus {
@@ -87,8 +89,10 @@ export class TalkController {
     const result = await advise({
       apiKey,
       model: this.settings.get().talkModel,
+      effort: this.settings.get().talkEffort,
       imageJpeg: this.held.jpeg,
-      intent: text
+      intent: text,
+      squadNames: this.getSquadNames()
     })
     if (result.ok && result.usage) {
       const stats = this.settings.get().talkStats

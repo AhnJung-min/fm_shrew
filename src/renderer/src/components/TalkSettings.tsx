@@ -1,6 +1,6 @@
 import { X } from 'lucide-react'
 import { useEffect, useState } from 'react'
-import { estimateCostUsd, TALK_MODELS, type TalkStatus } from '@shared/talk'
+import { estimateCostUsd, TALK_EFFORTS, TALK_MODELS, type TalkEffort, type TalkStatus } from '@shared/talk'
 import type { Settings } from '@shared/types'
 import { api } from '@/api'
 import { hotkeyLabel } from '@/screens/Talk'
@@ -74,9 +74,25 @@ export function TalkSettings(props: { settings: Settings; onChange: (patch: Part
       <div className="setting-row">
         <div>
           <strong>AI 모델</strong>
-          <p className="muted">기본값이 한글 화면을 가장 정확히 읽습니다. 응답이 느리게 느껴지면 더 빠른 모델로 바꿀 수 있습니다.</p>
+          <p className="muted">
+            모델이 좋을수록, 생각의 깊이가 높을수록 정확하지만 느리고 요금이 더 나옵니다. 추천이 자주 틀리면 한 단계씩 올려
+            보세요.
+          </p>
         </div>
         <div className="setting-control">
+          <select
+            className="field"
+            aria-label="생각의 깊이"
+            value={settings.talkEffort}
+            onChange={(event) => void onChange({ talkEffort: event.target.value as TalkEffort })}
+            style={{ minWidth: 150 }}
+          >
+            {TALK_EFFORTS.map((effort) => (
+              <option key={effort.id} value={effort.id}>
+                {effort.label}
+              </option>
+            ))}
+          </select>
           <select
             className="field"
             aria-label="AI 모델"

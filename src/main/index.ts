@@ -61,6 +61,12 @@ function latestRosterNames(): string[] {
   return roster ? (store.getSnapshot(roster.id)?.rows.map((row) => row.name) ?? []) : []
 }
 
+/** 세이브에서 읽은 가장 최근 내 스쿼드의 선수 이름 */
+function latestSquadNames(): string[] {
+  const squad = store.listSnapshots().find((snapshot) => isSaveFile(snapshot.fileName))
+  return squad ? (store.getSnapshot(squad.id)?.rows.map((row) => row.name) ?? []) : []
+}
+
 async function handleSaveFile(path: string): Promise<void> {
   const fileName = basename(path)
   const result = await importSave(store, path, {
@@ -203,6 +209,17 @@ async function runSmoke(outFile: string): Promise<void> {
   app.quit()
 }
 
+// 앱을 두 번 켜면 단축키와 폴더 감시가 겹치므로, 이미 떠 있으면 그 창을 앞으로 가져오고 끝낸다
+if (!SMOKE_OUT && !app.requestSingleInstanceLock()) {
+  app.quit()
+} else {
+  app.on('second-instance', () => {
+    if (!mainWindow) return
+    if (mainWindow.isMinimized()) mainWindow.restore()
+    mainWindow.focus()
+  })
+}
+
 app.whenReady().then(async () => {
   const dataDir = app.getPath('userData')
   mkdirSync(dataDir, { recursive: true })
@@ -216,7 +233,7 @@ app.whenReady().then(async () => {
   watcher = new ExportWatcher((path) => void handleExportFile(path))
   saveWatcher = new SaveWatcher((path) => void handleSaveFile(path))
   keys = new KeyStore(join(dataDir, 'claude-key.bin'))
-  talk = new TalkController(keys, settings, () => mainWindow)
+  talk = new TalkController(keys, settings, () => mainWindow, latestSquadNames)
 
   registerIpc()
   createWindow()

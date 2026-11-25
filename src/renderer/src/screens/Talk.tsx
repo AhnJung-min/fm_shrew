@@ -1,6 +1,13 @@
 import { Camera, CircleAlert, CornerDownLeft, Undo2 } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
-import { estimateCostUsd, TALK_SCREEN_LABEL, type TalkCapture, type TalkResult, type TalkStatus } from '@shared/talk'
+import {
+  estimateCostUsd,
+  LOW_CONFIDENCE,
+  TALK_SCREEN_LABEL,
+  type TalkCapture,
+  type TalkResult,
+  type TalkStatus
+} from '@shared/talk'
 import type { Settings } from '@shared/types'
 import { api } from '@/api'
 import { formatTime } from '@/lib/format'
@@ -88,11 +95,36 @@ function ResultCard(props: { result: TalkResult; model: string }) {
       )}
 
       <section className="talk-pick">
-        <h2>{isDeal ? '지금 할 일' : '이 선택지를 고르세요'}</h2>
-        <p className="talk-option">{advice.recommendation.option}</p>
+        <h2>
+          {isDeal
+            ? '지금 할 일'
+            : advice.pickIndex !== null
+              ? `이 선택지를 고르세요 (화면에서 ${advice.pickIndex + 1}번째)`
+              : '고를 선택지를 찾지 못했습니다'}
+        </h2>
+        {advice.recommendation.option && <p className="talk-option">{advice.recommendation.option}</p>}
         {advice.recommendation.tone && <p className="talk-tone">어조: {advice.recommendation.tone}</p>}
         <p className="muted">{advice.recommendation.reason}</p>
+        {!isDeal && advice.pickIndex !== null && advice.confidence < LOW_CONFIDENCE && (
+          <p className="talk-caution">
+            <CircleAlert size={15} />딱 맞는 선택지가 없어 가장 가까운 것을 골랐습니다. 아래 목록에서 직접 확인해 보세요.
+          </p>
+        )}
       </section>
+
+      {advice.options.length > 1 && (
+        <section className="talk-alts">
+          <h3>화면에서 읽은 선택지</h3>
+          <ol className="talk-options">
+            {advice.options.map((option, i) => (
+              <li key={i} className={i === advice.pickIndex ? 'picked' : undefined}>
+                <span>{option.text}</span>
+                {option.tone && <span className="faint"> ({option.tone})</span>}
+              </li>
+            ))}
+          </ol>
+        </section>
+      )}
 
       {isDeal && (
         <dl className="talk-offer">
@@ -109,9 +141,11 @@ function ResultCard(props: { result: TalkResult; model: string }) {
         <section className="talk-alts">
           <h3>뜻이 조금 다른 차선책</h3>
           <ul>
-            {advice.alternatives.map((alt, i) => (
-              <li key={i}>
-                <strong>{alt.option}</strong>
+            {advice.alternatives.map((alt) => (
+              <li key={alt.index}>
+                <strong>
+                  {alt.index + 1}번째: {alt.option}
+                </strong>
                 {alt.tone && <span className="talk-tone"> (어조: {alt.tone})</span>}
                 <span className="muted"> {alt.reason}</span>
               </li>

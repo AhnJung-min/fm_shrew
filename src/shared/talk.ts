@@ -16,6 +16,9 @@ export const TALK_SCREEN_LABEL: Record<TalkScreen, string> = {
   other: '그 밖의 화면'
 }
 
+/** 확신도가 이 값보다 낮으면 "딱 맞는 선택지가 없었다"고 알린다 */
+export const LOW_CONFIDENCE = 0.4
+
 export interface TalkOption {
   /** 화면에 적힌 선택지 문구 그대로 */
   option: string
@@ -31,8 +34,14 @@ export interface TalkAdvice {
   situation: string
   /** 화면의 질문과 선택지를 읽을 수 있었는지 */
   readable: boolean
+  /** 화면에 보이는 선택지 전부, 놓인 순서대로. 협상 화면이면 비어 있다 */
+  options: Array<{ text: string; tone: string }>
+  /** options에서 고른 순번. 고른 것이 없으면 null */
+  pickIndex: number | null
+  /** 고른 선택지가 내 뜻과 얼마나 맞는지(0~1) */
+  confidence: number
   recommendation: TalkOption
-  alternatives: TalkOption[]
+  alternatives: Array<TalkOption & { index: number }>
   /** 협상 화면일 때의 제안. 협상이 아니면 빈 문자열들 */
   offer: {
     /** 처음 부를 금액이나 조건 */
@@ -87,9 +96,18 @@ export interface TalkStats {
 }
 
 export const TALK_MODELS: Array<{ id: string; label: string; inputPerMTok: number; outputPerMTok: number }> = [
-  { id: 'claude-opus-5-5', label: 'Claude Opus 5.5 (기본, 가장 정확)', inputPerMTok: 4, outputPerMTok: 20 },
-  { id: 'claude-sonnet-5-5', label: 'Claude Sonnet 5.5 (더 빠르고 저렴)', inputPerMTok: 2, outputPerMTok: 10 },
+  { id: 'claude-sonnet-5-5', label: 'Claude Sonnet 5.5 (기본)', inputPerMTok: 2, outputPerMTok: 10 },
+  { id: 'claude-opus-5-5', label: 'Claude Opus 5.5 (가장 정확, 요금 약 2배)', inputPerMTok: 4, outputPerMTok: 20 },
   { id: 'claude-haiku-5-5', label: 'Claude Haiku 5.5 (가장 빠르고 저렴)', inputPerMTok: 0.1, outputPerMTok: 0.5 }
+]
+
+/** 생각의 깊이 */
+export type TalkEffort = 'low' | 'medium' | 'high'
+
+export const TALK_EFFORTS: Array<{ id: TalkEffort; label: string }> = [
+  { id: 'low', label: '낮음 (가장 빠름)' },
+  { id: 'medium', label: '중간 (기본)' },
+  { id: 'high', label: '높음 (느리지만 꼼꼼함)' }
 ]
 
 /** 대략의 요금(달러). 2026-11 기준 공개 단가로 계산한 어림값이다. */

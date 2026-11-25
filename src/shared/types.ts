@@ -1,4 +1,4 @@
-import type { TalkCapture, TalkResult, TalkStats, TalkStatus } from './talk'
+import type { TalkCapture, TalkEffort, TalkResult, TalkStats, TalkStatus } from './talk'
 
 /** 스냅샷 종류: 내 스쿼드인지, 선수 검색(영입 후보) 결과인지 */
 export type SnapshotKind = 'squad' | 'search'
@@ -72,6 +72,8 @@ export interface Settings {
   talkHotkey: string
   /** 토크 도우미가 쓰는 Claude 모델 */
   talkModel: string
+  /** 생각의 깊이 */
+  talkEffort: TalkEffort
   /** 자주 쓰는 말 */
   talkPhrases: string[]
   /** 게임 창을 못 찾을 때 주 모니터 전체를 찍어도 되는지 */

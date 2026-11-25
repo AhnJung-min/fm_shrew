@@ -26,7 +26,8 @@ export class SettingsStore {
       slotRoles: {},
       roleWeights: {},
       talkHotkey: 'CommandOrControl+Shift+Space',
-      talkModel: 'claude-opus-5-5',
+      talkModel: 'claude-sonnet-5-5',
+      talkEffort: 'medium',
       talkPhrases: [
         '잘하고 있다, 이대로 계속 가자',
         '실망스럽다, 더 집중해야 한다',

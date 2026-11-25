@@ -25,7 +25,8 @@ function createMockApi(): Api {
     slotRoles: {},
     roleWeights: {},
     talkHotkey: 'CommandOrControl+Shift+Space',
-    talkModel: 'claude-opus-5-5',
+    talkModel: 'claude-sonnet-5-5',
+    talkEffort: 'medium',
     talkPhrases: ['잘하고 있다, 이대로 계속 가자', '실망스럽다, 더 집중해야 한다'],
     talkAllowScreen: false,
     talkStats: { requests: 3, inputTokens: 5400, outputTokens: 900 },
@@ -92,18 +93,26 @@ function createMockApi(): Api {
         screen: 'team_talk',
         situation: '하프타임, 0-1로 지고 있습니다. 어조와 말을 고르는 락커룸 토크 화면입니다.',
         readable: true,
+        options: [
+          { text: '이런 경기력은 받아들일 수 없다.', tone: '공격적으로' },
+          { text: '아직 끝나지 않았다. 후반에 뒤집을 수 있다고 믿는다.', tone: '단호하게' },
+          { text: '부담 갖지 말고 하던 대로 해라.', tone: '차분하게' },
+          { text: '아무 말도 하지 않는다', tone: '' }
+        ],
+        pickIndex: 1,
+        confidence: 0.86,
         recommendation: {
           option: '아직 끝나지 않았다. 후반에 뒤집을 수 있다고 믿는다.',
           tone: '단호하게',
           reason: '실망을 드러내되 믿음을 주고 싶다는 뜻과 가장 가깝습니다.'
         },
         alternatives: [
-          { option: '이런 경기력은 받아들일 수 없다.', tone: '공격적으로', reason: '실망은 전하지만 믿음의 뜻은 빠집니다.' }
+          { index: 0, option: '이런 경기력은 받아들일 수 없다.', tone: '공격적으로', reason: '실망은 전하지만 믿음의 뜻은 빠집니다.' }
         ],
         offer: { opening: '', structure: '', walkAway: '' },
         caution: ''
       },
-      usage: { inputTokens: 1830, outputTokens: 260, model: 'claude-opus-5-5' }
+      usage: { inputTokens: 1830, outputTokens: 260, model: 'claude-sonnet-5-5' }
     }),
     onTalkCaptured: () => () => undefined,
     hideWindow: async () => undefined

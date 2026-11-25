@@ -1231,6 +1231,21 @@ kbd {
 .talk-alts li {
   margin-top: 4px;
 }
+.talk-options {
+  margin: 6px 0 0;
+  padding-left: 22px;
+  color: var(--text-2);
+}
+.talk-options li {
+  margin-top: 3px;
+}
+.talk-options li.picked {
+  color: var(--text);
+  font-weight: 600;
+}
+.talk-options li.picked::marker {
+  color: var(--accent);
+}
 .talk-caution {
   display: flex;
   align-items: flex-start;
