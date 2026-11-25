@@ -234,19 +234,19 @@ internal static class TalkBox
     }
 
     /// <summary>
-    /// 경기 중이면 외침 메뉴가 놓인 화면을 준다(거기에 칸을 올린다). 아니면 null.
-    /// 바로 앞에서 부른 FindHost가 화면을 훑으며 봐 둔 것을 쓴다.
+    /// 경기 중이면 칸을 올릴 자리를 준다. 아니면 null.
+    /// 바로 앞에서 부른 FindHost가 화면을 훑으며 봐 둔 외침 메뉴를 쓴다.
+    ///
+    /// 자리는 화면 전체의 뿌리다. 외침 메뉴가 놓인 화면(OverviewHeader)에 올리면,
+    /// 그 뒤에 그려지는 경기 개요 카드들(포메이션, 경기 기록)에 칸이 가려진다.
     /// </summary>
     private static VisualElement FindMatchHost()
     {
         if (seenShouts == null) return null;
-        for (var element = seenShouts.parent; element != null; element = element.parent)
-        {
-            if (Il2.ClassName(Il2.ClassOf(element.Pointer)) != "SI.Bindable.Panel") continue;
-            shouts = seenShouts;
-            return element;
-        }
-        return null;
+        var root = seenShouts.panel?.visualTree;
+        if (root == null) return null;
+        shouts = seenShouts;
+        return root;
     }
 
     private static readonly Regex Tags = new("</?[a-zA-Z][^>]*>", RegexOptions.CultureInvariant);
