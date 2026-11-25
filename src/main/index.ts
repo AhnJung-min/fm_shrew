@@ -1,6 +1,6 @@
 import { existsSync, mkdirSync, readdirSync, statSync, writeFileSync } from 'node:fs'
 import { basename, join } from 'node:path'
-import { app, BrowserWindow, dialog, ipcMain, shell } from 'electron'
+import { app, BrowserWindow, dialog, ipcMain, Menu, nativeImage, shell, Tray } from 'electron'
 import { deriveColumns } from '@shared/parse'
 import type { TalkLine } from '@shared/talk'
 import type { AppStatus, ImportResult, Settings, SnapshotKind } from '@shared/types'
@@ -11,6 +11,7 @@ import { importSave } from './saveImporter'
 import { SettingsStore } from './settings'
 import { TalkController } from './talk/controller'
 import { KeyStore } from './talk/keyStore'
+import { TRAY_ICON } from './trayIcon'
 import { ExportWatcher, isSaveFile, SaveWatcher } from './watcher'
 
 // 검증용 환경 변수: 데이터 폴더와 감시 폴더를 바꾸고, 화면을 PNG로 찍은 뒤 종료한다
@@ -36,6 +37,10 @@ let saveWatcher: SaveWatcher
 let talk: TalkController
 let keys: KeyStore
 let backups: BackupManager
+let tray: Tray | null = null
+/** 정말 끄는 중인지(트레이 메뉴의 종료, 시스템 종료). 아니면 창을 닫아도 앱은 남는다 */
+let quitting = false
+let toldAboutTray = false
 /** 내 팀을 몰라 미뤄 둔 세이브. 스쿼드 명단이 들어오면 다시 읽는다. */
 let pendingSave: string | null = null
 
@@ -131,6 +136,19 @@ function createWindow(): void {
   })
   mainWindow.once('ready-to-show', () => mainWindow?.show())
   mainWindow.on('closed', () => (mainWindow = null))
+  // 창을 닫아도 앱은 알림 영역에 남는다. 게임 안 "직접 답변"과 자동 백업이 앱이 켜져 있어야 돌기 때문이다
+  mainWindow.on('close', (event) => {
+    if (quitting || !tray || !settings.get().keepRunning) return
+    event.preventDefault()
+    mainWindow?.hide()
+    if (!toldAboutTray) {
+      toldAboutTray = true
+      tray.displayBalloon({
+        title: 'FM 보좌관이 계속 켜져 있습니다',
+        content: '게임 안 직접 답변과 세이브 백업이 계속 동작합니다. 끄려면 이 아이콘을 오른쪽 클릭해 "종료"를 누르세요.'
+      })
+    }
+  })
 
   // 바깥 링크는 앱 안에서 열지 않고 기본 브라우저로 보낸다
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
@@ -142,6 +160,36 @@ function createWindow(): void {
   const route = process.env.FMB_SMOKE_ROUTE ? `#${process.env.FMB_SMOKE_ROUTE}` : ''
   if (devUrl) void mainWindow.loadURL(devUrl + route)
   else void mainWindow.loadFile(join(__dirname, '../renderer/index.html'), { hash: route.slice(1) })
+}
+
+function showWindow(): void {
+  if (!mainWindow) {
+    createWindow()
+    return
+  }
+  if (mainWindow.isMinimized()) mainWindow.restore()
+  mainWindow.show()
+  mainWindow.focus()
+}
+
+/** 알림 영역 아이콘. 창을 닫은 뒤에도 앱을 다시 열거나 끌 수 있게 한다. */
+function createTray(): void {
+  tray = new Tray(nativeImage.createFromDataURL(TRAY_ICON))
+  tray.setToolTip('FM 보좌관')
+  tray.setContextMenu(
+    Menu.buildFromTemplate([
+      { label: 'FM 보좌관 열기', click: showWindow },
+      { type: 'separator' },
+      {
+        label: '종료',
+        click: () => {
+          quitting = true
+          app.quit()
+        }
+      }
+    ])
+  )
+  tray.on('click', showWindow)
 }
 
 function registerIpc(): void {
@@ -260,11 +308,7 @@ async function runSmoke(outFile: string): Promise<void> {
 if (!SMOKE_OUT && !app.requestSingleInstanceLock()) {
   app.quit()
 } else {
-  app.on('second-instance', () => {
-    if (!mainWindow) return
-    if (mainWindow.isMinimized()) mainWindow.restore()
-    mainWindow.focus()
-  })
+  app.on('second-instance', () => showWindow())
 }
 
 app.whenReady().then(async () => {
@@ -292,6 +336,7 @@ app.whenReady().then(async () => {
 
   registerIpc()
   createWindow()
+  if (!SMOKE_OUT) createTray()
   talk.registerHotkey()
   // 게임 안 "직접 답변" 칸을 맡는다(검사용 실행에서는 돌리지 않는다)
   if (!process.env.FMB_SMOKE_OUT) void talk.serveGame()
@@ -307,7 +352,13 @@ app.whenReady().then(async () => {
   })
 })
 
+app.on('before-quit', () => {
+  quitting = true
+})
+
 app.on('window-all-closed', () => {
+  tray?.destroy()
+  tray = null
   void watcher?.stop()
   void saveWatcher?.stop()
   talk?.dispose()

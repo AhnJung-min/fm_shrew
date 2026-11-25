@@ -126,12 +126,33 @@ describe('readMatchInfo: 경기 화면의 점수판과 중계', () => {
   #9 SI.Bindable.SIText .sitext [0,0 10x10] text="학포가 측면을 파고듭니다"
 `)
     )
-    expect(info.situation).toBe('BOU 1-2 LIV, 경기 시간 74:27')
+    expect(info.situation).toBe('BOU 1-2 LIV (앞이 홈), 경기 시간 74:27')
+    expect(info.teams).toEqual(['BOU', 'LIV'])
     expect(info.facts).toEqual(['중계: 학포가 측면을 파고듭니다'])
   })
 
   it('경기 화면이 아니면 비어 있다', async () => {
     const { readMatchInfo } = await import('../src/shared/gameUi')
     expect(readMatchInfo(parseTree('#1 SI.Bindable.Panel "Squad" [0,0 10x10]\n'))).toEqual({ situation: '', facts: [] })
+  })
+})
+
+describe('guessOwnTeam: 여러 경기에 다 나오는 약칭이 우리 팀', () => {
+  it('한 경기만 봤으면 알 수 없다', async () => {
+    const { guessOwnTeam } = await import('../src/shared/gameUi')
+    expect(guessOwnTeam([])).toBeNull()
+    expect(guessOwnTeam(['BOU|LIV'])).toBeNull()
+    expect(guessOwnTeam(['BOU|LIV', 'BOU|LIV'])).toBeNull()
+  })
+
+  it('서로 다른 두 경기에 나온 약칭을 고른다', async () => {
+    const { guessOwnTeam } = await import('../src/shared/gameUi')
+    expect(guessOwnTeam(['BOU|LIV', 'LIV|TOT'])).toBe('LIV')
+    expect(guessOwnTeam(['BOU|LIV', 'LIV|TOT', 'TOT|ARS', 'LIV|ARS'])).toBe('LIV')
+  })
+
+  it('같은 횟수로 나온 약칭이 둘이면 정하지 않는다', async () => {
+    const { guessOwnTeam } = await import('../src/shared/gameUi')
+    expect(guessOwnTeam(['BOU|LIV', 'LIV|BOU'])).toBeNull()
   })
 })

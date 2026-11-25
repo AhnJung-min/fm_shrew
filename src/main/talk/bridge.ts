@@ -114,7 +114,7 @@ export async function readMatchFromGame(): Promise<GameScene | null> {
     .map((cells) => ({ text: cells[1], tone: '', ref: Number(cells[0]) }))
   if (options.length === 0) return null
   const tree = await ask('/tree')
-  const info = tree === null ? { situation: '', facts: [] } : readMatchInfo(parseTree(tree))
+  const info: ReturnType<typeof readMatchInfo> = tree === null ? { situation: '', facts: [] } : readMatchInfo(parseTree(tree))
   return {
     panel: 'Match',
     screen: 'touchline_shout',
@@ -122,7 +122,8 @@ export async function readMatchFromGame(): Promise<GameScene | null> {
     speaker: '경기장의 우리 선수들',
     question: '',
     options,
-    facts: info.facts
+    facts: info.facts,
+    teams: info.teams
   }
 }
 

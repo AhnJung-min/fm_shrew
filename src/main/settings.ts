@@ -37,6 +37,8 @@ export class SettingsStore {
       talkAllowScreen: false,
       talkStats: { requests: 0, inputTokens: 0, outputTokens: 0 },
       columnOverrides: {},
+      matchPairs: [],
+      keepRunning: true,
       backupEnabled: true,
       backupKeep: 10
     }

@@ -92,6 +92,8 @@ export interface GameScene {
   question: string
   options: Array<{ text: string; tone: string; ref: number }>
   facts: string[]
+  /** 경기 중이면 점수판의 [홈, 원정] 약칭 */
+  teams?: [string, string]
 }
 
 /** 플러그인이 대화 틀에 붙이는 "직접 답변" 칸의 이름. 장면을 읽을 때는 뺀다 */
@@ -225,7 +227,7 @@ export function readGameScene(nodes: UiNode[]): GameScene | null {
  * 경기 화면에서 점수판과 방금 나온 중계 문구를 읽는다. 경기 중 외침을 고를 때 AI에게 상황으로 알려 준다.
  * 경기 화면이 아니면 빈 값.
  */
-export function readMatchInfo(nodes: UiNode[]): { situation: string; facts: string[] } {
+export function readMatchInfo(nodes: UiNode[]): { situation: string; facts: string[]; teams?: [string, string] } {
   const byName = (name: string): string => plainText(nodes.find((n) => n.name === name && n.text !== '')?.text ?? '')
   const home = byName('HomeTeamText')
   const away = byName('AwayTeamText')
@@ -245,5 +247,21 @@ export function readMatchInfo(nodes: UiNode[]): { situation: string; facts: stri
     }
   }
   const score = `${home} ${byName('HomeScore')}-${byName('AwayScore')} ${away}`
-  return { situation: time ? `${score}, 경기 시간 ${time}` : score, facts }
+  return { situation: time ? `${score} (앞이 홈), 경기 시간 ${time}` : `${score} (앞이 홈)`, facts, teams: [home, away] }
+}
+
+/**
+ * 지금까지 본 경기들의 "홈|원정" 약칭에서 우리 팀을 짐작한다.
+ * 우리 팀은 모든 경기에 나오므로, 서로 다른 경기 두 번 이상에 나온 약칭이 하나뿐이면 그것이 우리 팀이다.
+ * 아직 알 수 없으면 null.
+ */
+export function guessOwnTeam(pairs: string[]): string | null {
+  const counts = new Map<string, number>()
+  for (const pair of new Set(pairs)) {
+    for (const team of new Set(pair.split('|'))) counts.set(team, (counts.get(team) ?? 0) + 1)
+  }
+  const ranked = [...counts.entries()].sort((a, b) => b[1] - a[1])
+  if (ranked.length === 0 || ranked[0][1] < 2) return null
+  if (ranked.length > 1 && ranked[1][1] === ranked[0][1]) return null
+  return ranked[0][0]
 }

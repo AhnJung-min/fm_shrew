@@ -1,0 +1,2 @@
+/** 트레이 아이콘(32x32 PNG). 어두운 바탕에 분필색 경기장 표식. scratch 스크립트로 만든 그림이다 */
+export const TRAY_ICON = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAYAAABzenr0AAAAh0lEQVR42mNgGAVYgIyK4n9a4AGzmGiHDKgD0BV9OBdFVUzQEdgcQMgnuAwnxqyh6wBSg5pqDqAkzil2AC7DcfGxiVPFAcSmAao6AF/8EhJHNoNiB5CaC4aHA4jJXsRm16HpgNE0MCiy4YAXRIOiKB7wymhQVMcjs0VE10bpaL9gUHTNRiQAAAYojTQc2Ot6AAAAAElFTkSuQmCC'

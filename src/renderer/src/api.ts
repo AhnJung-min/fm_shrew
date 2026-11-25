@@ -31,6 +31,8 @@ function createMockApi(): Api {
     talkAllowScreen: false,
     talkStats: { requests: 3, inputTokens: 5400, outputTokens: 900 },
     columnOverrides: {},
+    matchPairs: [],
+    keepRunning: true,
     backupEnabled: true,
     backupKeep: 10
   }

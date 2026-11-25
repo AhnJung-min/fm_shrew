@@ -103,6 +103,26 @@ export function Settings(props: {
 
           <section className="panel">
             <div className="panel-head">
+              <h2>앱</h2>
+            </div>
+            <div className="panel-body">
+              <label className="inline-field">
+                <input
+                  type="checkbox"
+                  checked={settings.keepRunning}
+                  onChange={(event) => void onChange({ keepRunning: event.target.checked })}
+                />
+                <span>창을 닫아도 끄지 않고 알림 영역에 남겨 두기</span>
+              </label>
+              <p className="muted" style={{ marginTop: 8 }}>
+                게임 안 직접 답변과 세이브 백업은 앱이 켜져 있어야 동작합니다. 끌 때는 알림 영역의 아이콘을 오른쪽 클릭해
+                “종료”를 누릅니다.
+              </p>
+            </div>
+          </section>
+
+          <section className="panel">
+            <div className="panel-head">
               <h2>토크·협상 도우미</h2>
             </div>
             <div className="panel-body">

@@ -1,5 +1,5 @@
 import { globalShortcut, type BrowserWindow } from 'electron'
-import type { GameScene } from '@shared/gameUi'
+import { guessOwnTeam, type GameScene } from '@shared/gameUi'
 import { LOW_CONFIDENCE, type TalkCapture, type TalkLine, type TalkPressResult, type TalkReadResult, type TalkSayResult, type TalkScene, type TalkStatus, type TalkUsage } from '@shared/talk'
 import type { SettingsStore } from '../settings'
 import { readScene, respond, type AdvisorConfig } from './advisor'
@@ -232,7 +232,17 @@ export class TalkController {
       return fail(shout ? '외침 목록을 읽지 못했습니다. 다시 말해 주세요.' : '지금 화면에서 고를 선택지를 찾지 못했습니다.')
     }
 
-    const scene: TalkScene = { id: this.nextId++, readable: true, source: 'game', ...game }
+    const scene: TalkScene = {
+      id: this.nextId++,
+      readable: true,
+      source: 'game',
+      screen: game.screen,
+      situation: game.situation,
+      speaker: game.speaker,
+      question: game.question,
+      options: game.options,
+      facts: game.teams ? [...game.facts, this.ownTeamFact(game.teams)] : game.facts
+    }
     if (!this.gameTalk || !sameScene(this.gameTalk.scene, scene)) this.gameTalk = { scene, history: [] }
     const talk = this.gameTalk
     talk.scene = scene
@@ -252,6 +262,19 @@ export class TalkController {
     const lead = turn.confidence < LOW_CONFIDENCE ? `딱 맞는 ${what}이 없어 가장 가까운 것` : `적용할 ${what}`
     const tone = option.tone ? ` (${option.tone})` : ''
     return { pick: option.ref, pickText: option.text, note: `${lead}${tone}: ${option.text}`, replies: turn.replies }
+  }
+
+  /**
+   * 점수판의 두 팀 가운데 어느 쪽이 우리 팀인지 AI에게 알려 줄 문장.
+   * 게임 화면에는 그 표시가 없어서, 여러 경기에 계속 나오는 약칭을 우리 팀으로 본다.
+   */
+  private ownTeamFact(teams: [string, string]): string {
+    const pair = teams.join('|')
+    const seen = this.settings.get().matchPairs
+    if (!seen.includes(pair)) this.settings.set({ matchPairs: [...seen, pair].slice(-12) })
+    const own = guessOwnTeam(this.settings.get().matchPairs)
+    if (own && teams.includes(own)) return `우리 팀은 ${own}입니다.`
+    return '점수판의 두 팀 가운데 어느 쪽이 우리 팀인지는 알 수 없습니다. 이기고 있다거나 지고 있다고 단정하지 마세요.'
   }
 
   /** 앱을 내려 게임으로 돌아간다. */

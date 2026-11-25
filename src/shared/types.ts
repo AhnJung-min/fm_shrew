@@ -91,6 +91,10 @@ export interface Settings {
   talkStats: TalkStats
   /** 열 이름 → 항목 id. 자동 인식이 틀렸거나 못 알아본 열을 직접 지정 */
   columnOverrides: Record<string, string>
+  /** 경기 화면에서 본 "홈|원정" 약칭들(최근 것만). 여러 경기에 다 나오는 약칭이 우리 팀이다 */
+  matchPairs: string[]
+  /** 창을 닫아도 앱을 끄지 않고 작업 표시줄 알림 영역에 남겨 둘지(게임 안 직접 답변이 계속 되도록) */
+  keepRunning: boolean
   /** 게임이 저장할 때마다 세이브 사본을 남길지 */
   backupEnabled: boolean
   /** 세이브마다 보관할 사본 개수. 넘으면 오래된 것부터 지운다 */
