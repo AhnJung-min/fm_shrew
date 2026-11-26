@@ -193,7 +193,7 @@ internal static class Server
 
             // 견본 카드 띄우기(개발용): kind = goal, multi, hat, best
             case "/card/test":
-                return MainThread.Run(() => MatchCards.Test(query["kind"] ?? "goal"));
+                return MainThread.Run(() => MatchCards.Test(query["kind"] ?? "goal", query["person"]));
 
             // 누르기(실험)
             case "/click":

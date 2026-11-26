@@ -41,6 +41,11 @@ internal static class MatchCards
     private const int TableCardMs = 14000;
     private const int BestCardMs = 15000;
     private const int FadeInMs = 200;
+    private const float PhotoSize = 64f;
+    /// <summary>사진을 청한 뒤 이 시간이 지나도 오지 않으면 사진 자리를 접는다</summary>
+    private const int PhotoWaitMs = 2500;
+    /// <summary>페널티킥이 선언된 뒤 경기 시계로 이 분 안에 도움 없이 들어간 골은 페널티킥 골로 본다</summary>
+    private const int PenaltyWithinMinutes = 4;
     private const int FadeOutMs = 500;
     private const string GoalClass = "game-concepts-goal-";
 
@@ -54,6 +59,8 @@ internal static class MatchCards
         public string AssistNumber = "";
         public string Assist = "";
         public bool Own;
+        /// <summary>바로 앞에 "페널티킥 선언" 알림이 떴던 골</summary>
+        public bool Penalty;
         public string Note = "";
         public string ScoreLine = "";
         /// <summary>골 뒤에 게임이 띄우는 기록 알림의 문장(예: "13경기에서 4득점을 달성했습니다"). 게임이 쓴 그대로 둔다</summary>
@@ -69,6 +76,8 @@ internal static class MatchCards
         public int? CareerLeagueGoals;
         public int? CareerGoals;
         public int? AssistSeason;
+        /// <summary>득점자의 고유 번호(사진을 부를 때 쓴다)</summary>
+        public string PersonId = "";
         public List<Ranked> TopGoals = new();
         public List<Ranked> TopAssists = new();
     }
@@ -98,6 +107,14 @@ internal static class MatchCards
         public int Assists;
         public float Rating;
         public string RatingText = "";
+        public bool Home;
+
+        // 게임에서 받아 온 것(도착하지 않았으면 비어 있다)
+        public string FullName;
+        public string PersonId = "";
+        public int? KeyPasses;
+        public int? ShotsOnTarget;
+        public int? Shots;
     }
 
     private static readonly Stopwatch Clock = Stopwatch.StartNew();
@@ -106,6 +123,7 @@ internal static class MatchCards
     private static readonly Regex AddedText = new(@"^\(\+\d+\)$", RegexOptions.CultureInvariant);
     /// <summary>전반, 후반, 연장 전반, 연장 후반이 끝나는 분(늦은 것부터)</summary>
     private static readonly int[] PeriodEnds = { 120, 105, 90, 45 };
+    private static readonly Regex PersonNumber = new(@"^\d{1,12}$", RegexOptions.CultureInvariant);
 
     private static readonly Color Back = new(0.07f, 0.08f, 0.12f, 0.97f);
     private static readonly Color Gold = new(0.98f, 0.78f, 0.25f, 1f);
@@ -139,10 +157,17 @@ internal static class MatchCards
     private static string lastPopup = "";
     private static int popupDumps;
 
+    /// <summary>"페널티킥 선언" 알림이 떴을 때의 경기 시계(분). 없으면 -1</summary>
+    private static int penaltyClock = -1;
+
     // 떠 있는 카드
     private static VisualElement card;
+    private static string cardKind = "";
     private static long cardFrom;
     private static long cardUntil;
+    private static SI.UI.Image cardPhoto;
+    private static bool photoChecked;
+    private static bool photosOff;
 
     private static long nextTick;
     private static long nextPanelScan;
@@ -191,6 +216,17 @@ internal static class MatchCards
                 return;
             }
             if (fullTime != null) ShowBestPlayer(fullTime, now);
+        }
+        BestStep(now);
+        if (card != null && cardPhoto != null && !photoChecked && now - cardFrom >= PhotoWaitMs)
+        {
+            // 사진이 없는 선수면 빈칸을 남기지 않는다
+            photoChecked = true;
+            var photo = cardPhoto;
+            Ui.Try(() =>
+            {
+                if (photo.image == null) photo.style.display = new StyleEnum<DisplayStyle>(DisplayStyle.None);
+            });
         }
         if (header == null) return;
         DataStep(now);
@@ -268,6 +304,8 @@ internal static class MatchCards
         Ui.Walk(popup, element =>
         {
             if (element.name == "GoalIcon") isGoal = true;
+            // 비디오 판독 끝에 페널티킥이 선언됐다. 곧 이어질 골이 페널티킥 골인지 가리는 데 쓴다
+            if (element.name == "VARPenaltyGiven") penaltyClock = ClockMinute();
             var text = Read(element);
             if (text.Length > 0 && !texts.Contains(text)) texts.Add(text);
             return false;
@@ -275,7 +313,7 @@ internal static class MatchCards
         var joined = string.Join(" | ", texts);
         if (joined.Length == 0 || joined == lastPopup) return;
         lastPopup = joined;
-        Plugin.Logger.LogInfo($"lower third{(isGoal ? " (goal)" : "")}: {joined}");
+        Plugin.Logger.LogInfo($"lower third{(isGoal ? " (goal)" : "")}: {joined}{PopupKind()}");
         if (isGoal) return;
 
         if (popupDumps < 4)
@@ -309,7 +347,7 @@ internal static class MatchCards
     private static readonly string[] PopupPlayerValues =
     {
         "Person.Name", "GoalsInThisCompThisSeason", "AssistsInThisCompThisSeason", "AppsInThisCompThisSeason",
-        "Person.TotalCareerLeagueGoals", "Person.TotalCareerGoals"
+        "Person.TotalCareerLeagueGoals", "Person.TotalCareerGoals", "Person.UniqueId"
     };
     private static readonly string[] RankedValues = { "Player.Name", "Team.ShortName", "StatValue", "Position" };
 
@@ -319,9 +357,22 @@ internal static class MatchCards
     /// <summary>이 경기에서 처음 본, 선수("팀|이름")의 시즌 도움 수</summary>
     private static readonly Dictionary<string, int> AssistsBefore = new();
 
+    /// <summary>게임이 알림에 붙여 둔 종류 값들(어떤 값이 무엇을 뜻하는지 알아내려고 로그에 남긴다)</summary>
+    private static string PopupKind() =>
+        $"  [type {GameData.Text(MatchRoot + "MatchLowerThirdPopupType")}, flag {GameData.Text(MatchRoot + "MatchLowerThirdBoolean")}, " +
+        $"extra {GameData.Text(MatchRoot + "MatchLowerThirdExtraData")}]";
+
+    /// <summary>경기 시계의 분. 읽지 못하면 -1</summary>
+    private static int ClockMinute()
+    {
+        var m = ClockText.Match(Read(time));
+        return m.Success ? int.Parse(m.Groups[1].Value) : -1;
+    }
+
     private static void ResetData()
     {
         dataStage = 0;
+        penaltyClock = -1;
         AssistsBefore.Clear();
         if (!GameData.Available) return;
         GameData.Drop(GameData.OurRoot);
@@ -338,8 +389,9 @@ internal static class MatchCards
             case 0:
                 GameData.Want(MatchRoot + "Competition");
                 GameData.Want(MatchRoot + "Competition.Name");
-                GameData.Want(MatchRoot + "PlayerOfTheMatch.Name");
-                GameData.Want(MatchRoot + "PlayerOfTheMatchRating");
+                GameData.Want(MatchRoot + "MatchLowerThirdPopupType");
+                GameData.Want(MatchRoot + "MatchLowerThirdBoolean");
+                GameData.Want(MatchRoot + "MatchLowerThirdExtraData");
                 for (var k = 1; k <= 2; k++)
                     foreach (var value in PopupPlayerValues)
                         GameData.Want($"{MatchRoot}MatchLowerThirdPlayer{k}.{value}");
@@ -439,7 +491,8 @@ internal static class MatchCards
             goal.SeasonApps = GameData.Number(from + "AppsInThisCompThisSeason");
             goal.CareerLeagueGoals = GameData.Number(from + "Person.TotalCareerLeagueGoals");
             goal.CareerGoals = GameData.Number(from + "Person.TotalCareerGoals");
-            any = goal.SeasonGoals != null || goal.CareerLeagueGoals != null || goal.CareerGoals != null;
+            goal.PersonId = GameData.Text(from + "Person.UniqueId") ?? "";
+            any = goal.SeasonGoals != null || goal.CareerLeagueGoals != null || goal.CareerGoals != null || goal.PersonId.Length > 0;
         }
         var helper = PopupPlayer(goal.Assist);
         if (helper > 0)
@@ -675,11 +728,15 @@ internal static class MatchCards
 
     private static void Commit(Goal goal)
     {
+        var minute = ClockMinute();
+        goal.Penalty = !goal.Own && goal.Assist.Length == 0 && penaltyClock >= 0 && minute >= penaltyClock &&
+                       minute - penaltyClock <= PenaltyWithinMinutes;
+        penaltyClock = -1;
         Goals.Add(goal);
         Plugin.Logger.LogInfo(
             $"goal: {goal.Minute} {goal.Team} #{goal.Number} {goal.Scorer}" +
             (goal.Assist.Length > 0 ? $" (assist #{goal.AssistNumber} {goal.Assist})" : "") +
-            (goal.Own ? " [own goal]" : "") + $" {goal.ScoreLine}");
+            (goal.Own ? " [own goal]" : "") + (goal.Penalty ? " [penalty]" : "") + $" {goal.ScoreLine}{PopupKind()}");
         // 순위 줄을 새로 올려 둔다(다른 경기 결과로 목록이 바뀌었을 수 있다). 값은 조금 뒤 Enrich에서 읽는다
         if (dataStage == 3 && GameData.Available)
         {
@@ -728,10 +785,18 @@ internal static class MatchCards
         top.Add(Ui.Text(goal.Minute, 13, Color.white, TextAnchor.UpperRight));
         built.Add(top);
 
-        // 득점자
+        // 득점자(왼쪽)와 사진(오른쪽)
+        var head = Ui.Row();
+        Ui.Try(() => head.style.marginTop = new StyleLength(6f));
+        Ui.Try(() => head.style.alignItems = new StyleEnum<Align>(Align.FlexStart));
+        var left = new VisualElement();
+        Ui.Try(() => left.style.flexGrow = new StyleFloat(1f));
+        Ui.Try(() => left.style.flexShrink = new StyleFloat(1f));
+        head.Add(left);
+        built.Add(head);
+
         var who = Ui.Row();
         Ui.Try(() => who.style.alignItems = new StyleEnum<Align>(Align.FlexEnd));
-        Ui.Try(() => who.style.marginTop = new StyleLength(6f));
         if (goal.Number.Length > 0)
         {
             var number = Ui.Text(goal.Number, 15, Soft);
@@ -742,22 +807,23 @@ internal static class MatchCards
         var name = Ui.Text(goal.Scorer.Length > 0 ? goal.Scorer : goal.Team + " 골", 20, Color.white);
         Ui.Try(() => name.style.flexShrink = new StyleFloat(1f));
         who.Add(name);
-        built.Add(who);
+        left.Add(who);
 
         var detail = goal.Own
             ? (goal.Note.Length > 0 ? goal.Note : "자책골")
             : scored > 0 ? $"이번 경기 {scored}호 골" : "";
+        if (goal.Penalty) detail = detail.Length > 0 ? "페널티킥  " + detail : "페널티킥";
         if (detail.Length > 0)
         {
             var line = Ui.Text(detail, 13, Gold);
             Ui.Try(() => line.style.marginTop = new StyleLength(2f));
-            built.Add(line);
+            left.Add(line);
         }
         if (goal.Fact.Length > 0)
         {
             var fact = Ui.Text(goal.Fact, 13, Color.white);
             Ui.Try(() => fact.style.marginTop = new StyleLength(4f));
-            built.Add(fact);
+            left.Add(fact);
         }
         else if (goal.SeasonGoals != null)
         {
@@ -765,7 +831,7 @@ internal static class MatchCards
             var apps = goal.SeasonApps > 0 ? $" ({goal.SeasonApps}경기)" : "";
             var season = Ui.Text($"{where}이번 시즌 {goal.SeasonGoals}골{apps}", 13, Color.white);
             Ui.Try(() => season.style.marginTop = new StyleLength(4f));
-            built.Add(season);
+            left.Add(season);
         }
         if (goal.CareerLeagueGoals != null || goal.CareerGoals != null)
         {
@@ -774,8 +840,10 @@ internal static class MatchCards
             if (goal.CareerGoals != null && goal.CareerGoals != goal.CareerLeagueGoals) parts.Add($"통산 {goal.CareerGoals}골");
             var career = Ui.Text(string.Join("   ", parts), 12, Soft);
             Ui.Try(() => career.style.marginTop = new StyleLength(2f));
-            built.Add(career);
+            left.Add(career);
         }
+        var photo = Photo(goal.Own ? "" : goal.PersonId);
+        if (photo != null) head.Add(photo);
 
         if (goal.Assist.Length > 0)
         {
@@ -800,7 +868,7 @@ internal static class MatchCards
         Table(built, league + "득점 순위", goal.TopGoals, goal.Own ? "" : goal.Scorer, goal.SeasonGoals);
         Table(built, league + "도움 순위", goal.TopAssists, goal.Assist, goal.AssistSeason);
 
-        Present(built, root, fontSample, goal.TopGoals.Count + goal.TopAssists.Count > 0 ? TableCardMs : GoalCardMs);
+        Present(built, root, fontSample, goal.TopGoals.Count + goal.TopAssists.Count > 0 ? TableCardMs : GoalCardMs, "goal", photo);
         if (refresh)
         {
             // 떠 있던 카드를 고쳐 그리는 것이라 다시 서서히 나타나게 하지 않는다
@@ -892,8 +960,8 @@ internal static class MatchCards
         if (key == bestShownFor) return;
 
         var rows = new List<Row>();
-        ReadRows(homeTile, homeClub, rows);
-        ReadRows(awayTile, awayClub, rows);
+        ReadRows(homeTile, homeClub, true, rows);
+        ReadRows(awayTile, awayClub, false, rows);
         // 한 팀의 표만 보일 수도 있다(카드를 넘겨 둔 경우). 그래도 한 팀은 다 채워져 있어야 한다
         if (rows.Count < 11) return;
 
@@ -904,13 +972,152 @@ internal static class MatchCards
                 best = row;
         Plugin.Logger.LogInfo($"best player: {best.Team} {best.Name} {best.RatingText} ({best.Goals}G {best.Assists}A), {rows.Count} rows");
 
-        var line = $"{homeClub} {result} {awayClub}".Trim();
-        ShowBest(best, FullName(best), Story(best), competition ?? "", line, report.panel?.visualTree, sample);
-        Plugin.Logger.LogInfo(
-            $"best player (game): {GameData.Text(MatchRoot + "PlayerOfTheMatch.Name")} {GameData.Text(MatchRoot + "PlayerOfTheMatchRating")}");
+        best.FullName = FullName(best);
+        bestRow = best;
+        bestCompetition = competition ?? "";
+        bestResult = $"{homeClub} {result} {awayClub}".Trim();
+        bestScreen = report.panel?.visualTree;
+        bestSample = sample;
+        ShowBest(best, bestCompetition, bestResult, bestScreen, bestSample);
+        StartBestData(now);
     }
 
-    private static void ReadRows(VisualElement tile, string club, List<Row> rows)
+    // ── 최우수 선수의 경기 기록(게임에서 받는다) ──────────
+    //
+    // 경기에 "홈 팀인가"를 조건으로 붙여 선수별 기록 목록을 청한다:
+    //   fmb.b.isHomeTeam = 참/거짓,  fmb.b.m = 경기  →  fmb.b.m.PlayerMatchStats (선수마다 KeyPasses, ShotsOnTarget …)
+    // 목록에서 표의 이름(Player.ShirtName)과 평점이 같은 선수를 찾아, 그 선수의 기록과 온전한 이름·사진 번호를 받는다.
+    // 경기는 먼저 지금 경기("Match")로 청하고, 안 되면 방금 끝난 경기("Human.Team.LastFixture")로 청한다.
+
+    private const string BestRoot = "fmb.b";
+    private const string LiveMatch = "Match";
+    private const string LastFixture = "Human.Team.LastFixture";
+    private const int BestWaitMs = 4000;
+    private static readonly string[] BestFind = { "Player.ShirtName", "TotalRating" };
+    private static readonly string[] BestValues = { "KeyPasses", "ShotsOnTarget", "ShotAttempts", "Player.Name", "Player.UniqueId" };
+
+    private static Row bestRow;
+    private static string bestCompetition = "";
+    private static string bestResult = "";
+    private static VisualElement bestScreen;
+    private static VisualElement bestSample;
+    /// <summary>0: 쉬는 중, 1: 경기를 올림, 2: 목록을 기다림, 3: 선수를 찾음, 4: 기록을 기다림</summary>
+    private static int bestStage;
+    private static long bestSince;
+    private static string bestSource = "";
+    private static int bestCount;
+    private static string bestFrom = "";
+
+    private static void StartBestData(long now)
+    {
+        bestStage = 0;
+        if (!GameData.Available) return;
+        GameData.Drop(BestRoot + ".");
+        GameData.Want("const.True");
+        GameData.Want("const.False");
+        GameData.Want(LastFixture);
+        bestSource = LiveMatch;
+        bestStage = 1;
+        bestSince = now;
+    }
+
+    /// <summary>지금 경기로 받지 못했으면 방금 끝난 경기로 다시 청한다. 그것도 안 되면 그만둔다.</summary>
+    private static void NextBestSource(long now, string why)
+    {
+        GameData.Drop(BestRoot + ".");
+        if (bestSource == LiveMatch)
+        {
+            bestSource = LastFixture;
+            bestStage = 1;
+            bestSince = now;
+            return;
+        }
+        bestStage = 0;
+        Plugin.Logger.LogInfo($"best player data: none ({why})");
+    }
+
+    private static void BestStep(long now)
+    {
+        if (bestStage == 0 || bestRow == null) return;
+        if (!GameData.Available)
+        {
+            bestStage = 0;
+            return;
+        }
+        var list = BestRoot + ".m.PlayerMatchStats";
+        switch (bestStage)
+        {
+            case 1:
+                if (!GameData.Put(BestRoot + ".isHomeTeam", bestRow.Home ? "const.True" : "const.False") ||
+                    !GameData.Put(BestRoot + ".m", bestSource))
+                {
+                    if (now - bestSince > BestWaitMs) NextBestSource(now, "no match");
+                    break;
+                }
+                GameData.Want(list);
+                bestStage = 2;
+                bestSince = now;
+                break;
+
+            case 2:
+                var count = GameData.Count(list);
+                if (count <= 0)
+                {
+                    if (now - bestSince > BestWaitMs) NextBestSource(now, "no list");
+                    break;
+                }
+                bestCount = 0;
+                for (var i = 0; i < count && i < 40; i++)
+                {
+                    var item = $"{BestRoot}.p{i}";
+                    if (!GameData.Put(item, list, i)) break;
+                    foreach (var value in BestFind) GameData.Want($"{item}.{value}");
+                    bestCount++;
+                }
+                bestStage = 3;
+                bestSince = now;
+                break;
+
+            case 3:
+                var found = -1;
+                for (var i = 0; i < bestCount && found < 0; i++)
+                {
+                    var item = $"{BestRoot}.p{i}.";
+                    if (GameData.Text(item + "Player.ShirtName") != bestRow.Name) continue;
+                    // 지난 경기의 같은 선수와 헷갈리지 않게 평점까지 같아야 한다
+                    if (float.TryParse(GameData.Text(item + "TotalRating"), NumberStyles.Float, CultureInfo.InvariantCulture, out var rating) &&
+                        Math.Abs(rating - bestRow.Rating) < 0.051f)
+                        found = i;
+                }
+                if (found < 0)
+                {
+                    if (now - bestSince > BestWaitMs) NextBestSource(now, "player not in list");
+                    break;
+                }
+                bestFrom = $"{BestRoot}.p{found}.";
+                foreach (var value in BestValues) GameData.Want(bestFrom + value);
+                bestStage = 4;
+                bestSince = now;
+                break;
+
+            case 4:
+                if (BestValues.Any(value => !GameData.Has(bestFrom + value)) && now - bestSince < BestWaitMs) break;
+                bestStage = 0;
+                bestRow.KeyPasses = GameData.Number(bestFrom + "KeyPasses");
+                bestRow.ShotsOnTarget = GameData.Number(bestFrom + "ShotsOnTarget");
+                bestRow.Shots = GameData.Number(bestFrom + "ShotAttempts");
+                bestRow.PersonId = GameData.Text(bestFrom + "Player.UniqueId") ?? "";
+                var full = GameData.Text(bestFrom + "Player.Name");
+                if (!string.IsNullOrEmpty(full)) bestRow.FullName = full;
+                Plugin.Logger.LogInfo(
+                    $"best player data ({bestSource}): {bestRow.FullName}, key passes {bestRow.KeyPasses}, " +
+                    $"on target {bestRow.ShotsOnTarget}/{bestRow.Shots}, photo {(bestRow.PersonId.Length > 0 ? "yes" : "no")}");
+                if (card != null && cardKind == "best") ShowBest(bestRow, bestCompetition, bestResult, bestScreen, bestSample, true);
+                break;
+        }
+    }
+
+    private static void ReadRows(VisualElement tile, string club, bool isHome, List<Row> rows)
     {
         if (tile == null) return;
         var team = "";
@@ -918,7 +1125,7 @@ internal static class MatchCards
         {
             if (team.Length == 0 && element.name == "title-text") team = Read(element);
             if (!element.ClassListContains("virtualised-list__item")) return false;
-            var row = new Row { Team = team, Club = club };
+            var row = new Row { Team = team, Club = club, Home = isHome };
             ReadRow(element, "", row);
             if (row.Name.Length > 0 && row.Rating > 0) rows.Add(row);
             return false;
@@ -984,13 +1191,6 @@ internal static class MatchCards
     /// </summary>
     private static string FullName(Row row)
     {
-        // 게임이 뽑은 최우수 선수의 평점이 이 줄과 같으면 그 선수다
-        var picked = GameData.Text(MatchRoot + "PlayerOfTheMatch.Name");
-        if (!string.IsNullOrEmpty(picked) &&
-            float.TryParse(GameData.Text(MatchRoot + "PlayerOfTheMatchRating"), NumberStyles.Float, CultureInfo.InvariantCulture, out var rating) &&
-            Math.Abs(rating - row.Rating) < 0.051f)
-            return picked;
-
         var mine = Goals.Where(g => g.Team == row.Team).ToList();
         if (mine.Any(g => g.Scorer == row.Name || g.Assist == row.Name)) return row.Name;
         if (row.Goals + row.Assists == 0) return null;
@@ -1009,13 +1209,13 @@ internal static class MatchCards
     private static List<string> Story(Row row)
     {
         var lines = new List<string>();
-        var full = FullName(row);
+        var full = row.FullName;
         if (full == null) return lines;
         foreach (var goal in Goals)
         {
             if (goal.Team != row.Team) continue;
             if (!goal.Own && goal.Scorer == full)
-                lines.Add($"{goal.Minute}  득점" + (goal.Assist.Length > 0 ? $" (도움 {goal.Assist})" : ""));
+                lines.Add($"{goal.Minute}  득점" + (goal.Penalty ? " (페널티킥)" : goal.Assist.Length > 0 ? $" (도움 {goal.Assist})" : ""));
             else if (goal.Assist == full)
                 lines.Add($"{goal.Minute}  도움 ({goal.Scorer} 득점)");
         }
@@ -1029,11 +1229,12 @@ internal static class MatchCards
         return row.SubMinute + " 교체 아웃";
     }
 
-    private static void ShowBest(Row best, string fullName, List<string> story, string competition, string result, VisualElement root, VisualElement fontSample)
+    private static void ShowBest(Row best, string competition, string result, VisualElement root, VisualElement fontSample, bool refresh = false)
     {
         HideCard();
         if (root == null) return;
         var built = Frame(Great);
+        var story = Story(best);
 
         // 윗줄: 종류와 평점
         var top = Ui.Row();
@@ -1047,20 +1248,32 @@ internal static class MatchCards
         top.Add(rating);
         built.Add(top);
 
-        var name = Ui.Text(fullName ?? best.Name, 20, Color.white);
-        Ui.Try(() => name.style.marginTop = new StyleLength(6f));
-        built.Add(name);
+        // 이름(왼쪽)과 사진(오른쪽)
+        var head = Ui.Row();
+        Ui.Try(() => head.style.marginTop = new StyleLength(6f));
+        Ui.Try(() => head.style.alignItems = new StyleEnum<Align>(Align.FlexStart));
+        var left = new VisualElement();
+        Ui.Try(() => left.style.flexGrow = new StyleFloat(1f));
+        Ui.Try(() => left.style.flexShrink = new StyleFloat(1f));
+        head.Add(left);
+        built.Add(head);
 
+        left.Add(Ui.Text(best.FullName ?? best.Name, 20, Color.white));
         var where = best.Bench || best.Position.Length == 0 ? best.Club : $"{best.Club}  {best.Position}";
         var club = Ui.Text(where.Trim(), 13, Soft);
         Ui.Try(() => club.style.marginTop = new StyleLength(2f));
-        built.Add(club);
+        left.Add(club);
+        var photo = Photo(best.PersonId);
+        if (photo != null) head.Add(photo);
 
         // 이번 경기 기록
         var stats = Divided();
         Stat(stats, "출전", Played(best));
         Stat(stats, "득점", best.Goals.ToString());
         Stat(stats, "도움", best.Assists.ToString());
+        if (best.KeyPasses != null) Stat(stats, "키패스", best.KeyPasses.Value.ToString());
+        if (best.ShotsOnTarget != null)
+            Stat(stats, "유효슈팅", best.Shots != null ? $"{best.ShotsOnTarget}/{best.Shots}" : best.ShotsOnTarget.Value.ToString());
         built.Add(stats);
 
         if (story.Count > 0)
@@ -1083,14 +1296,46 @@ internal static class MatchCards
         Ui.Try(() => foot.style.marginTop = new StyleLength(8f));
         built.Add(foot);
 
-        Present(built, root, fontSample, BestCardMs);
+        Present(built, root, fontSample, BestCardMs, "best", photo);
+        if (refresh)
+        {
+            cardFrom -= FadeInMs;
+            Ui.Try(() => built.style.opacity = new StyleFloat(1f));
+        }
+    }
+
+    /// <summary>
+    /// 선수 사진. 게임의 그림 요소에 주소("person_고유번호")를 주면 게임이 그 선수의 사진(없으면 게임이 쓰는 얼굴)을 불러온다.
+    /// 게임 화면의 사진 요소(PersonImage)가 쓰는 주소와 같은 모양이다.
+    /// </summary>
+    private static SI.UI.Image Photo(string personId)
+    {
+        if (photosOff || string.IsNullOrEmpty(personId) || !PersonNumber.IsMatch(personId)) return null;
+        try
+        {
+            var image = new SI.UI.Image();
+            image.style.width = new StyleLength(PhotoSize);
+            image.style.height = new StyleLength(PhotoSize);
+            image.style.flexShrink = new StyleFloat(0f);
+            image.style.marginLeft = new StyleLength(10f);
+            image.style.backgroundColor = new StyleColor(Line);
+            Ui.Round(image, 6);
+            image.SetImage("person_" + personId, null);
+            return image;
+        }
+        catch (Exception error)
+        {
+            photosOff = true;
+            Plugin.Logger.LogWarning($"match cards: photo: {error.Message}");
+            return null;
+        }
     }
 
     /// <summary>"출전 / 풀타임"처럼 이름표와 값을 위아래로 놓은 칸 하나.</summary>
     private static void Stat(VisualElement row, string label, string value)
     {
         var cell = new VisualElement();
-        Ui.Try(() => cell.style.marginRight = new StyleLength(18f));
+        Ui.Try(() => cell.style.marginRight = new StyleLength(14f));
         cell.Add(Ui.Text(label, 11, Soft));
         var shown = Ui.Text(value, 14, Color.white);
         Ui.Try(() => shown.style.marginTop = new StyleLength(2f));
@@ -1109,7 +1354,7 @@ internal static class MatchCards
         {
             frame.style.right = new StyleLength(16f);
             frame.style.top = new StyleLength(64f);
-            frame.style.width = new StyleLength(290f);
+            frame.style.width = new StyleLength(310f);
         });
         Ui.Try(() => frame.style.backgroundColor = new StyleColor(Back));
         Ui.Try(() =>
@@ -1134,13 +1379,16 @@ internal static class MatchCards
         return row;
     }
 
-    private static void Present(VisualElement built, VisualElement root, VisualElement fontSample, int showMs)
+    private static void Present(VisualElement built, VisualElement root, VisualElement fontSample, int showMs, string kind, SI.UI.Image photo)
     {
         // 카드는 보기만 하는 것이다. 카드 아래의 게임 화면을 누르는 데 방해가 되지 않게 한다
         IgnoreClicks(built);
         Ui.UseFontOf(built, fontSample);
         root.Add(built);
         card = built;
+        cardKind = kind;
+        cardPhoto = photo;
+        photoChecked = false;
         cardFrom = Clock.ElapsedMilliseconds;
         cardUntil = cardFrom + showMs;
     }
@@ -1182,14 +1430,19 @@ internal static class MatchCards
         {
             // 화면이 통째로 사라진 경우
         }
+        // 게임이 불러 둔 사진을 놓아 준다
+        var photo = cardPhoto;
+        if (photo != null) Ui.Try(() => photo.ClearImage());
+        cardPhoto = null;
         card = null;
     }
 
     // ── 시험 ──────────────────────────────────────────────
 
-    /// <summary>개발용. 경기 없이 견본 카드를 띄워 모양을 본다(goal, multi, hat, best).</summary>
-    public static string Test(string kind)
+    /// <summary>개발용. 경기 없이 견본 카드를 띄워 모양을 본다(goal, multi, hat, fact, full, pen, best). person은 사진을 부를 선수 번호.</summary>
+    public static string Test(string kind, string person)
     {
+        person ??= "";
         var roots = UiTree.Roots();
         if (roots.Count == 0) return "no screen";
         var root = header?.panel?.visualTree ?? roots[^1];
@@ -1211,10 +1464,10 @@ internal static class MatchCards
             var best = new Row
             {
                 Team = "LIV", Club = "리버풀", Name = "B. Barcola", Bench = true, SubMinute = "76'",
-                Goals = 1, Assists = 1, Rating = 8.8f, RatingText = "8.8"
+                Goals = 1, Assists = 1, Rating = 8.8f, RatingText = "8.8",
+                FullName = "브래들리 바르콜라", PersonId = person, KeyPasses = 4, ShotsOnTarget = 2, Shots = 3
             };
-            var story = new List<string> { "61'  도움 (알렉산데르 이삭 득점)", "64'  득점" };
-            ShowBest(best, "브래들리 바르콜라", story, "프리미어 리그", "리버풀 3 : 0 울브스", root, sample);
+            ShowBest(best, "프리미어 리그", "리버풀 3 : 0 울브스", root, sample);
             return "shown";
         }
 
@@ -1227,8 +1480,15 @@ internal static class MatchCards
             AssistNumber = "29",
             Assist = "브래들리 바르콜라",
             ScoreLine = "LIV 2 - 0 WOL",
-            Fact = kind == "fact" ? "13경기에서 4득점을 달성했습니다" : ""
+            Fact = kind == "fact" ? "13경기에서 4득점을 달성했습니다" : "",
+            PersonId = person
         };
+        if (kind == "pen")
+        {
+            goal.Penalty = true;
+            goal.Assist = "";
+            goal.AssistNumber = "";
+        }
         if (kind == "full")
         {
             goal.Competition = "프리미어 리그";
