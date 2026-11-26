@@ -8,10 +8,15 @@ namespace FmBojwagwan.Bridge;
 /// <summary>
 /// 켜져 있는 게임의 메모리에서 선수 기록을 찾아 읽고 고친다(앱의 스쿼드·영입 후보·에디터가 쓰는 "지금 값").
 ///
-/// 선수 기록의 생김새는 세이브 파일을 분석해 알아낸 것과 같다고 보고 찾는다(앱의 src/main/save/reader.ts):
-///   [고유 번호 u32][같은 번호 u32] … [현재 능력 u16][잠재 능력 u16] … [숙련도 15바이트(1~20)][능력치 54바이트(1~100)]
-///   숙련도가 시작하는 곳을 0으로 보면: 고유 번호는 -39와 -35, 현재 능력은 -24, 잠재 능력은 -22에 있다.
-/// 숙련도·능력치·능력 값이 모두 제 범위이고 그 앞에 같은 번호가 두 번 적힌 곳만 선수 기록으로 본다.
+/// 선수 기록의 생김새(26.3.2에서 켜진 게임의 메모리를 세이브와 대조해 확인. 선수 약 10만 명 중 99.6%가 맞았다):
+///   [포인터 8바이트 — 모든 선수가 같은 값][숙련도 15바이트(1~20)][능력치 54바이트(1~100)] …
+///   숙련도가 시작하는 곳을 0으로 보면: 현재 능력 u16은 +0x114, 잠재 능력 u16은 +0x116,
+///   그 뒤에 그 선수의 인물 기록이 온다: [포인터 8바이트 — 선수끼리 같은 값][색인 u32][고유 번호 u32][같은 번호 u32].
+///   인물 기록은 보통 +0x138에서 시작하고(번호는 +0x144), 코치를 겸하는 선수는 +0x230에서 시작한다(번호는 +0x23C).
+/// 세이브 파일에서는 순서가 달라서(번호가 능력치 앞에 있는 것은 앞 사람의 번호다) 세이브의 배치를 그대로 쓰면 안 된다.
+///
+/// 포인터 값은 게임을 켤 때마다 달라지므로, 훑으면서 가장 흔한 값을 "선수의 값"으로 삼는다.
+/// 숙련도·능력치·능력 값이 모두 제 범위이고, 세 포인터가 그 흔한 값이며, 번호가 두 번 똑같이 적힌 곳만 선수 기록으로 본다.
 ///
 /// 처음 한 번 메모리 전체를 훑어 모든 선수 기록의 위치를 적어 두고(몇 초 걸린다), 그 뒤로는 적어 둔 자리만 다시 읽는다.
 /// 읽기와 쓰기는 운영체제의 ReadProcessMemory·WriteProcessMemory로 한다(우리 자신의 프로세스).
@@ -20,12 +25,19 @@ namespace FmBojwagwan.Bridge;
 /// </summary>
 internal static unsafe class LiveMemory
 {
-    private const int UidToBlock = 39;
     private const int Positions = 15;
     private const int Attributes = 54;
-    private const int CaAt = -24;
-    private const int PaAt = -22;
-    private const int RecordSpan = UidToBlock + Positions + Attributes;
+    /// <summary>숙련도 앞에 붙은 포인터의 크기. 기록을 읽을 때는 여기서부터 읽는다</summary>
+    private const int Lead = 8;
+    private const int CaAt = 0x114;
+    private const int PaAt = 0x116;
+    /// <summary>인물 기록이 시작하는 곳: 보통 선수, 코치를 겸하는 선수</summary>
+    private const int PersonAt = 0x138;
+    private const int PersonAtStaff = 0x230;
+    /// <summary>인물 기록 안에서 고유 번호가 적힌 곳(포인터 8 + 색인 4 뒤)</summary>
+    private const int UidInPerson = 12;
+    /// <summary>기록 하나를 확인하려고 읽는 길이: 앞 포인터부터 가장 먼 번호의 끝까지</summary>
+    private const int RecordSpan = Lead + PersonAtStaff + UidInPerson + 8;
     /// <summary>앱에 넘기는 선수 한 명의 크기: 번호 4 + 현재·잠재 능력 4 + 숙련도 15 + 능력치 54</summary>
     private const int PackedSize = 4 + 4 + Positions + Attributes;
 
@@ -33,8 +45,8 @@ internal static unsafe class LiveMemory
     private const uint MemPrivate = 0x20000;
     private const uint PageReadWrite = 0x04;
     private const int ChunkSize = 16 * 1024 * 1024;
-    /// <summary>적어 둔 위치들이 이보다 오래됐으면 다음 요청 때 메모리를 다시 훑는다</summary>
-    private const int IndexMaxAgeMs = 10 * 60 * 1000;
+    /// <summary>적어 두지 못한 선수를 찾으려고 메모리를 다시 훑는 것은 이 간격보다 자주 하지 않는다</summary>
+    private const int RescanGapMs = 60 * 1000;
     /// <summary>선수 기록이 이만큼은 나와야 제대로 찾은 것으로 본다</summary>
     private const int MinRecords = 500;
 
@@ -65,8 +77,12 @@ internal static unsafe class LiveMemory
     private static extern bool WriteProcessMemory(IntPtr process, IntPtr address, byte* buffer, IntPtr size, out IntPtr written);
 
     private static readonly object Gate = new();
-    /// <summary>고유 번호 → 기록 위치(고유 번호가 적힌 곳). 번호가 겹치는 기록은 -1</summary>
+    /// <summary>고유 번호 → 기록 위치(숙련도가 시작하는 곳). 번호가 겹치는 기록은 -1</summary>
     private static readonly Dictionary<uint, long> Index = new();
+    // 훑으면서 알아낸 "선수의 포인터 값" 셋: 숙련도 앞, 보통 선수의 인물 기록, 코치를 겸하는 선수의 인물 기록
+    private static ulong blockMark;
+    private static ulong personMark;
+    private static ulong staffMark;
     private static readonly Stopwatch Clock = Stopwatch.StartNew();
     private static long indexedAt = -1;
     private static long lastScanMb;
@@ -139,57 +155,131 @@ internal static unsafe class LiveMemory
         return true;
     }
 
-    /// <summary>record(고유 번호가 적힌 곳부터 RecordSpan바이트)가 선수 기록의 모양이면 그 고유 번호, 아니면 0</summary>
-    private static uint Shape(byte* record)
+    /// <summary>훑다가 만난, 선수 기록처럼 생긴 곳 하나</summary>
+    private struct Candidate
     {
-        var uid = *(uint*)record;
-        if (uid == 0 || *(uint*)(record + 4) != uid) return 0;
-        var block = record + UidToBlock;
-        if (!InRange(block, Positions, 1, 20) || !InRange(block + Positions, Attributes, 1, 100)) return 0;
+        public long Address;
+        public uint Uid;
+        public bool Staff;
+        public ulong BlockMark;
+        public ulong PersonMark;
+    }
+
+    /// <summary>
+    /// block(숙련도가 시작하는 곳, 앞 8바이트와 뒤 RecordSpan까지 읽을 수 있어야 한다)이 선수 기록의 모양인지.
+    /// 맞으면 그 번호와 포인터 값들을 채운다. 포인터 값이 맞는지는 여기서 보지 않는다.
+    /// </summary>
+    private static bool Shape(byte* block, out Candidate found)
+    {
+        found = default;
+        if (!InRange(block, Positions, 1, 20) || !InRange(block + Positions, Attributes, 1, 100)) return false;
         var ca = *(ushort*)(block + CaAt);
         var pa = *(ushort*)(block + PaAt);
-        return ca is >= 1 and <= 200 && pa is >= 1 and <= 200 ? uid : 0;
+        if (ca < 1 || ca > 200 || pa < 1 || pa > 200) return false;
+        found.BlockMark = *(ulong*)(block - Lead);
+        if (found.BlockMark == 0) return false;
+
+        var person = block + PersonAt;
+        var uid = *(uint*)(person + UidInPerson);
+        if (uid == 0 || uid != *(uint*)(person + UidInPerson + 4))
+        {
+            person = block + PersonAtStaff;
+            uid = *(uint*)(person + UidInPerson);
+            if (uid == 0 || uid != *(uint*)(person + UidInPerson + 4)) return false;
+            found.Staff = true;
+        }
+        found.Uid = uid;
+        found.PersonMark = *(ulong*)person;
+        return found.PersonMark != 0;
+    }
+
+    /// <summary>모양이 맞고, 포인터 값들도 훑을 때 알아낸 선수의 값과 같은지</summary>
+    private static bool Genuine(byte* block, out uint uid)
+    {
+        uid = 0;
+        if (!Shape(block, out var found)) return false;
+        if (found.BlockMark != blockMark || found.PersonMark != (found.Staff ? staffMark : personMark)) return false;
+        uid = found.Uid;
+        return true;
+    }
+
+    private static ulong MostCommon(List<Candidate> candidates, Func<Candidate, bool> among, Func<Candidate, ulong> value)
+    {
+        var counts = new Dictionary<ulong, int>();
+        foreach (var candidate in candidates)
+        {
+            if (!among(candidate)) continue;
+            var key = value(candidate);
+            counts[key] = counts.TryGetValue(key, out var seen) ? seen + 1 : 1;
+        }
+        ulong best = 0;
+        var most = 0;
+        foreach (var (key, count) in counts)
+        {
+            if (count <= most) continue;
+            best = key;
+            most = count;
+        }
+        return best;
     }
 
     /// <summary>메모리 전체를 훑어 모든 선수 기록의 위치를 적는다.</summary>
     private static void BuildIndex()
     {
         var watch = Stopwatch.StartNew();
-        Index.Clear();
+        // 방금 읽어 둔 선수의 사본이 "또 하나의 기록"으로 잡히지 않게 비운다
+        Prepare();
+        new Span<byte>(scratch, RecordSpan).Clear();
+        var candidates = new List<Candidate>(140_000);
         var scanned = Walk(RecordSpan, () => false, (address, data, length) =>
         {
-            var last = length - (Positions + Attributes);
-            for (var i = UidToBlock; i <= last; i++)
+            var last = length - (RecordSpan - Lead);
+            for (var i = Lead; i <= last; i++)
             {
                 // 싼 검사부터: 숙련도의 첫 값
                 var first = data[i];
                 if (first < 1 || first > 20) continue;
-                var uid = Shape(data + i - UidToBlock);
-                if (uid == 0) continue;
-                var at = address + i - UidToBlock;
-                // 조각이 겹치는 곳에서 같은 기록을 두 번 볼 수 있다
-                if (Index.TryGetValue(uid, out var seen)) Index[uid] = seen == at ? at : -1;
-                else Index[uid] = at;
+                if (!Shape(data + i, out var found)) continue;
+                found.Address = address + i;
+                candidates.Add(found);
                 i += Positions + Attributes - 1;
             }
         });
+
+        // 선수 기록이 아닌데 우연히 모양이 맞은 곳은 포인터 값이 제각각이다. 가장 흔한 값을 가진 것만 남긴다
+        blockMark = MostCommon(candidates, _ => true, c => c.BlockMark);
+        personMark = MostCommon(candidates, c => c.BlockMark == blockMark && !c.Staff, c => c.PersonMark);
+        staffMark = MostCommon(candidates, c => c.BlockMark == blockMark && c.Staff, c => c.PersonMark);
+        Index.Clear();
+        var staff = 0;
+        foreach (var candidate in candidates)
+        {
+            if (candidate.BlockMark != blockMark || candidate.PersonMark != (candidate.Staff ? staffMark : personMark)) continue;
+            // 조각이 겹치는 곳에서 같은 기록을 두 번 볼 수 있다
+            if (Index.TryGetValue(candidate.Uid, out var seen)) Index[candidate.Uid] = seen == candidate.Address ? seen : -1;
+            else Index[candidate.Uid] = candidate.Address;
+            if (candidate.Staff) staff++;
+        }
         indexedAt = Clock.ElapsedMilliseconds;
         lastScanMb = scanned / (1024 * 1024);
         lastScanMs = watch.ElapsedMilliseconds;
-        Plugin.Logger.LogInfo($"live memory: {Index.Count} player record(s), scanned {lastScanMb} MB in {lastScanMs} ms");
+        Plugin.Logger.LogInfo(
+            $"live memory: {Index.Count} player record(s) ({staff} also staff) of {candidates.Count} look-alike(s), scanned {lastScanMb} MB in {lastScanMs} ms");
     }
 
     private static void EnsureIndex(bool force = false)
     {
-        var stale = indexedAt < 0 || Clock.ElapsedMilliseconds - indexedAt > IndexMaxAgeMs || Index.Count < MinRecords;
-        if (force || stale) BuildIndex();
+        if (force || indexedAt < 0) BuildIndex();
+        // 선수를 거의 못 찾았으면(게임이 아직 세이브를 불러오지 않았을 때) 조금 뒤에 다시 훑는다
+        else if (Index.Count < MinRecords && Clock.ElapsedMilliseconds - indexedAt > RescanGapMs) BuildIndex();
     }
 
     /// <summary>적어 둔 자리에서 이 선수의 기록을 scratch로 읽는다. 자리가 없거나 그새 달라졌으면 false</summary>
     private static bool Load(uint uid, out long address)
     {
         Prepare();
-        return Index.TryGetValue(uid, out address) && address > 0 && Read(address, scratch, RecordSpan) && Shape(scratch) == uid;
+        return Index.TryGetValue(uid, out address) && address > 0 && Read(address - Lead, scratch, RecordSpan) &&
+               Genuine(scratch + Lead, out var found) && found == uid;
     }
 
     /// <summary>이 선수의 기록 수: 1이면 scratch에 그 내용이 있다. 적어 둔 자리가 틀렸으면 한 번 다시 훑는다.</summary>
@@ -200,7 +290,7 @@ internal static unsafe class LiveMemory
         var known = Index.TryGetValue(uid, out var at);
         if (known && at < 0) return 2;
         // 게임이 기록을 옮겼거나(불러오기 등) 아직 적지 못한 선수다
-        if (Clock.ElapsedMilliseconds - indexedAt > 5000) BuildIndex();
+        if (Clock.ElapsedMilliseconds - indexedAt > RescanGapMs) BuildIndex();
         if (Load(uid, out address)) return 1;
         return Index.TryGetValue(uid, out at) && at < 0 ? 2 : 0;
     }
@@ -214,7 +304,7 @@ internal static unsafe class LiveMemory
         text.Append(",\"ms\":").Append(lastScanMs);
         if (withValues)
         {
-            var block = scratch + UidToBlock;
+            var block = scratch + Lead;
             text.Append(",\"ca\":").Append(*(ushort*)(block + CaAt));
             text.Append(",\"pa\":").Append(*(ushort*)(block + PaAt));
             text.Append(",\"positions\":[");
@@ -261,13 +351,13 @@ internal static unsafe class LiveMemory
                 foreach (var (uid, address) in Index)
                 {
                     if (address <= 0) continue;
-                    if (!Read(address, scratch, RecordSpan) || Shape(scratch) != uid)
+                    if (!Read(address - Lead, scratch, RecordSpan) || !Genuine(scratch + Lead, out var found) || found != uid)
                     {
                         gone++;
                         continue;
                     }
                     var item = output + count * PackedSize;
-                    var block = scratch + UidToBlock;
+                    var block = scratch + Lead;
                     *(uint*)item = uid;
                     *(ushort*)(item + 4) = *(ushort*)(block + CaAt);
                     *(ushort*)(item + 6) = *(ushort*)(block + PaAt);
@@ -318,9 +408,9 @@ internal static unsafe class LiveMemory
         {
             var found = Locate(uid, out var address);
             if (found != 1) return Describe(found, false);
-            var block = address + UidToBlock;
-            var newCa = ca ?? *(ushort*)(scratch + UidToBlock + CaAt);
-            var newPa = pa ?? *(ushort*)(scratch + UidToBlock + PaAt);
+            var block = address;
+            var newCa = ca ?? *(ushort*)(scratch + Lead + CaAt);
+            var newPa = pa ?? *(ushort*)(scratch + Lead + PaAt);
             if (newCa > newPa) throw new HttpError(400, "ca above pa");
 
             var ok = true;

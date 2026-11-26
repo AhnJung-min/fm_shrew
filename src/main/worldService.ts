@@ -65,8 +65,15 @@ export interface WorldDeps {
  */
 export class WorldService {
   private loaded: Loaded | null = null
+  /** 지금은 게임의 값을 읽거나 고칠 수 없는 이유(게임이 꺼져 있음, 플러그인이 옛 버전). 할 수 있으면 null */
+  private liveOff: string | null = null
 
   constructor(private readonly deps: WorldDeps) {}
+
+  /** 게임의 값을 읽고 고칠 수 있는지를 알려 둔다. 못 하면 그 이유(화면에 그대로 보여 준다). */
+  setLiveOff(reason: string | null): void {
+    this.liveOff = reason
+  }
 
   /** 적용해 둔 세이브의 경로 */
   get path(): string | null {
@@ -364,7 +371,7 @@ export class WorldService {
     const world = this.loaded?.world
     const k = this.indexOf(uid)
     if (!world || k < 0) return null
-    const live = await livePlayer(uid)
+    const live = this.liveOff ? null : await livePlayer(uid)
     const usable = live !== null && live.found === 1 && live.positions && live.attributes && live.ca !== undefined && live.pa !== undefined
     if (usable) this.store(k, live)
     const player: EditorPlayer = {
@@ -374,7 +381,9 @@ export class WorldService {
       source: usable ? 'game' : 'save'
     }
     if (usable) return player
-    if (live === null) return { ...player, sourceNote: '게임이 꺼져 있거나 게임 안 플러그인이 대답하지 않아, 세이브의 값을 보여 줍니다.' }
+    // (화면이 이 뒤에 "이 상태에서는 고친 값을 게임에 넣을 수 없습니다"를 붙인다)
+    if (this.liveOff) return { ...player, sourceNote: this.liveOff }
+    if (live === null) return { ...player, sourceNote: '게임 안 플러그인이 대답하지 않아 세이브의 값을 보여 줍니다.' }
     return {
       ...player,
       sourceNote:
@@ -387,6 +396,7 @@ export class WorldService {
   /** 고친 값을 켜져 있는 게임에 바로 넣는다. 선수마다 따로 넣고, 넣은 뒤 게임이 돌려준 값으로 확인한다. */
   async applyEdits(edits: EditorEdit[]): Promise<EditorApplyResult> {
     if (edits.length === 0) return { ok: false, message: '고친 값이 없습니다.' }
+    if (this.liveOff) return { ok: false, message: this.liveOff.replace(/세이브에 저장된 값을 보여 줍니다/, '값을 넣을 수 없습니다') }
     for (const edit of edits) {
       const problem = checkEdit(edit)
       if (problem) return { ok: false, message: problem }

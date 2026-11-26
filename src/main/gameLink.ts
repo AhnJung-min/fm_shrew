@@ -1,6 +1,6 @@
 import { existsSync, readdirSync, statSync } from 'node:fs'
 import { basename, join } from 'node:path'
-import { NO_GAME, type ApplyResult, type GameStatus, type LinkStatus, type SaveFileInfo } from '@shared/game'
+import { NEEDED_PLUGIN, NO_GAME, versionOlder, type ApplyResult, type GameStatus, type LinkStatus, type SaveFileInfo } from '@shared/game'
 import { gameState, liveAll } from './talk/bridge'
 import { isSaveFile } from './watcher'
 import type { WorldService } from './worldService'
@@ -9,6 +9,11 @@ import type { WorldService } from './worldService'
 const POLL_MS = 3000
 /** 게임이 켜져 있는 동안 모든 선수의 지금 값을 다시 받는 간격 */
 const LIVE_EVERY_MS = 90_000
+
+const GAME_OFF = '게임이 꺼져 있어 세이브에 저장된 값을 보여 줍니다.'
+const oldPluginNote = (version: string): string =>
+  `게임에 올라가 있는 연결 플러그인이 옛 버전(${version || '알 수 없음'})이라 세이브에 저장된 값을 보여 줍니다. ` +
+  `FM을 완전히 껐다가 다시 켜면 새 버전(${NEEDED_PLUGIN})으로 바뀌고, 그때부터 게임의 지금 값을 읽고 고칠 수 있습니다.`
 
 const wait = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms))
 
@@ -74,9 +79,18 @@ export class GameLink {
   private async check(): Promise<void> {
     const state = await gameState()
     const next: GameStatus = state
-      ? { connected: true, pluginVersion: state.version, loaded: state.loaded, manager: state.manager, team: state.team, teamShort: state.teamShort }
+      ? {
+          connected: true,
+          pluginVersion: state.version,
+          pluginOld: versionOlder(state.version, NEEDED_PLUGIN),
+          loaded: state.loaded,
+          manager: state.manager,
+          team: state.team,
+          teamShort: state.teamShort
+        }
       : NO_GAME
     this.roster = state?.players ?? []
+    this.world.setLiveOff(!next.connected ? GAME_OFF : next.pluginOld ? oldPluginNote(next.pluginVersion) : null)
     const before = this.game
     this.game = next
     const entered = next.loaded && (!before.loaded || before.team !== next.team)
@@ -136,7 +150,11 @@ export class GameLink {
     if (!this.world.path) return
     this.lastLive = Date.now()
     if (!this.game.connected) {
-      this.world.setNote('게임이 꺼져 있어 세이브에 저장된 값을 보여 줍니다.')
+      this.world.setNote(GAME_OFF)
+      return
+    }
+    if (this.game.pluginOld) {
+      this.world.setNote(oldPluginNote(this.game.pluginVersion))
       return
     }
     if (!this.game.loaded) {

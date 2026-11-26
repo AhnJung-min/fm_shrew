@@ -162,6 +162,41 @@ function mapTeams(db: Buffer, clubs: ClubRecord[], limit: number): Map<number, n
   return teamClub
 }
 
+/** 사람의 색인이 가질 수 있는 가장 큰 값(세이브 하나에 사람은 수십만 명이다) */
+const MAX_PERSON_INDEX = 0x000f_ffff
+/** 꼬리표 뒤에 오는 "다음 기록의 종류" 값의 범위 */
+const MAX_RECORD_KIND = 0x10
+
+/**
+ * 선수의 고유 번호(게임이 쓰는 번호. 켜져 있는 게임에서 이 선수를 찾을 때 쓴다). 찾지 못하면 0.
+ *
+ * 사람마다 기록의 끝에 꼬리표 [색인 u32][고유 번호 u32][같은 번호 u32]가 붙고, 바로 뒤에 다음 기록의 종류(1바이트)가 온다.
+ * 그래서 능력치 블록 "앞"에 적힌 번호는 이 선수가 아니라 앞 사람의 것이다. 이 선수의 꼬리표는 블록 "뒤"에 있다.
+ * 색인은 사람마다 1씩 늘어나므로, 블록 뒤에서 색인이 (앞 사람의 색인 + 1)인 꼬리표를 찾는다.
+ * 켜져 있는 게임의 메모리와 대조했을 때 선수 99,873명 모두 이 규칙으로 맞았다(26.3.2).
+ * 앞 사람의 꼬리표를 읽지 못한 기록은 블록 뒤에서 처음 나오는 꼬리표를 쓴다.
+ */
+export function ownerUid(db: Buffer, block: number, end: number): number {
+  const before = db.readUInt32LE(block - 39)
+  const wanted = before !== 0 && before === db.readUInt32LE(block - 35) ? db.readUInt32LE(block - 43) + 1 : -1
+  const last = Math.min(end, db.length) - 13
+  let first = 0
+  for (let at = block + BLOCK_SIZE; at <= last; at++) {
+    const uid = db.readUInt32LE(at + 4)
+    if (uid === 0 || uid === 0xffffffff || uid !== db.readUInt32LE(at + 8)) continue
+    const index = db.readUInt32LE(at)
+    if (index === 0 || index > MAX_PERSON_INDEX || index === uid) continue
+    // 꼬리표 앞에는 작은 수(u32), 뒤에는 기록의 종류가 온다. 날짜가 두 번 잇달아 적힌 곳 같은 것을 걸러 낸다
+    if (db.readUInt32LE(at - 4) > 0xff) continue
+    const kind = db[at + 12]
+    if (kind === 0 || kind > MAX_RECORD_KIND) continue
+    if (index === wanted) return uid
+    if (first === 0) first = uid
+    if (wanted < 0) break
+  }
+  return first
+}
+
 /**
  * 풀어 놓은 데이터베이스에서 모든 선수와 구단을 뽑는다.
  * pickTeam은 뽑아 놓은 선수들을 보고 내 팀 번호를 정해 준다(모르면 undefined).
@@ -213,9 +248,7 @@ export function buildWorld(db: Buffer, pickTeam?: (world: SaveWorld) => number |
     world.club[k] = teamClub.get(world.teamIds[k]) ?? -1
     world.ca[k] = db.readUInt16LE(block - 24)
     world.pa[k] = db.readUInt16LE(block - 22)
-    // 고유 번호는 같은 값이 두 번 적혀 있다. 다르면 모르는 것으로 둔다
-    const uid = db.readUInt32LE(block - 39)
-    world.uids[k] = uid === db.readUInt32LE(block - 35) ? uid : 0
+    world.uids[k] = ownerUid(db, block, recordEnd(k))
     world.positions.set(db.subarray(block, block + POSITION_COUNT), k * POSITION_COUNT)
     world.attributes.set(db.subarray(block + POSITION_COUNT, block + BLOCK_SIZE), k * ATTRIBUTE_COUNT)
   }

@@ -11,7 +11,8 @@ declare global {
 /**
  * 브라우저에서 화면만 볼 때 쓰는 가짜 구현(`npm run web`).
  * 실제 앱에서는 preload가 넣어 준 window.api를 쓴다.
- * 주소에 ?empty를 붙이면 세이브를 적용하기 전, ?off를 붙이면 게임이 꺼진 상태를 본다.
+ * 주소에 ?empty를 붙이면 세이브를 적용하기 전, ?off를 붙이면 게임이 꺼진 상태,
+ * ?old를 붙이면 게임에 옛 플러그인이 올라가 있는 상태를 본다.
  */
 function createMockApi(): Api {
   let settings: Settings = {
@@ -32,6 +33,7 @@ function createMockApi(): Api {
   }
   const params = new URLSearchParams(location.search)
   const gameOff = params.has('off')
+  const oldPlugin = params.has('old')
   const hour = 3_600_000
   const names = ['리버풀 2025', '리버풀 2025 (v02)', '뉴캐슬 시작']
   const saves: SaveFileInfo[] = [0.4, 26, 50].map((ago, i) => ({
@@ -50,18 +52,20 @@ function createMockApi(): Api {
   }))
   let mockHasKey = !params.has('nokey')
   const listeners = new Set<(status: LinkStatus) => void>()
+  /** 게임의 지금 값을 쓰고 있는 상태인지 */
+  const live = (): boolean => applied !== null && !gameOff && !oldPlugin
   const linkStatus = (busy = false): LinkStatus => ({
     game: gameOff
-      ? { connected: false, pluginVersion: '', loaded: false, manager: '', team: '', teamShort: '' }
-      : { connected: true, pluginVersion: '0.8.0', loaded: true, manager: '김 감독', team: '리버풀', teamShort: 'LIV' },
+      ? { connected: false, pluginVersion: '', pluginOld: false, loaded: false, manager: '', team: '', teamShort: '' }
+      : { connected: true, pluginVersion: oldPlugin ? '0.8.0' : '0.9.0', pluginOld: oldPlugin, loaded: true, manager: '김 감독', team: '리버풀', teamShort: 'LIV' },
     data: {
       save: applied,
       players: applied ? 99_892 : 0,
       hasTeam: applied !== null,
       club: applied ? '리버풀' : '',
-      source: applied && !gameOff ? 'game' : 'save',
-      liveAt: applied && !gameOff ? new Date(Date.now() - 40_000).toISOString() : null,
-      liveMatched: applied && !gameOff ? 99_640 : 0,
+      source: live() ? 'game' : 'save',
+      liveAt: live() ? new Date(Date.now() - 40_000).toISOString() : null,
+      liveMatched: live() ? 99_888 : 0,
       note: applied && gameOff ? '게임이 꺼져 있어 세이브에 저장된 값을 보여 줍니다.' : ''
     },
     busy
@@ -101,7 +105,7 @@ function createMockApi(): Api {
     // 세이브 전체: 미리보기에서는 지어낸 선수들로 화면만 보여 준다
     worldCandidates: async (query) => mockCandidates(query, applied === null),
     editorList: async (search) => mockEditorList(search, applied === null),
-    editorPlayer: async (uid) => mockEditorPlayer(uid, !gameOff),
+    editorPlayer: async (uid) => mockEditorPlayer(uid, !gameOff && !oldPlugin),
     editorApply: async (edits) => {
       await new Promise((resolve) => setTimeout(resolve, 500))
       return { ok: true, message: `선수 ${edits.length}명의 값을 게임에 반영했습니다. 게임에서 그 선수 화면을 다시 열면 보입니다.` }

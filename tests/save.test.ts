@@ -2,6 +2,8 @@ import { constants, zstdCompressSync } from 'node:zlib'
 import { describe, expect, it } from 'vitest'
 import { extractDatabase, openContainer } from '../src/main/save/container'
 import { SaveFormatError } from '../src/main/save/reader'
+import { ownerUid } from '../src/main/save/world'
+import { versionOlder } from '../src/shared/game'
 import { categoriesOf, checkEdit, shownValue, type CandidateBench } from '../src/shared/world'
 
 const SIGNATURE = Buffer.from([0x02, 0x01, 0x66, 0x6d, 0x66, 0x2e, 0x08, 0x00, 0x00])
@@ -98,5 +100,50 @@ describe('영입 후보의 유형', () => {
 
   it('저장값을 게임 표시값으로 바꾼다', () => {
     expect([1, 5, 52, 53, 84, 100].map(shownValue)).toEqual([1, 1, 10, 11, 17, 20])
+  })
+})
+
+describe('선수의 고유 번호', () => {
+  const BLOCK = 100
+  /** 사람 꼬리표: [앞의 작은 수][색인][번호][번호][다음 기록의 종류] */
+  const tag = (db: Buffer, at: number, index: number, uid: number, kind = 2): void => {
+    db.writeUInt32LE(4, at - 4)
+    db.writeUInt32LE(index, at)
+    db.writeUInt32LE(uid, at + 4)
+    db.writeUInt32LE(uid, at + 8)
+    db[at + 12] = kind
+  }
+
+  it('능력치 앞의 번호는 앞 사람의 것이고, 뒤에서 색인이 하나 큰 꼬리표가 이 선수의 것이다', () => {
+    const db = Buffer.alloc(2000)
+    tag(db, BLOCK - 43, 500, 11111)
+    // 날짜가 두 번 잇달아 적힌 곳(번호처럼 보이지만 앞의 수가 크다)
+    db.writeUInt32LE(0xffff0000, BLOCK + 196)
+    db.writeUInt32LE(0x076c0001, BLOCK + 200)
+    db.writeUInt32LE(0x076c0001, BLOCK + 204)
+    db.writeUInt32LE(0x076c0001, BLOCK + 208)
+    tag(db, BLOCK + 700, 501, 22222)
+    tag(db, BLOCK + 1400, 502, 33333)
+    expect(ownerUid(db, BLOCK, db.length)).toBe(22222)
+  })
+
+  it('앞 사람의 꼬리표가 없으면 뒤에서 처음 나오는 꼬리표를 쓴다', () => {
+    const db = Buffer.alloc(2000)
+    tag(db, BLOCK + 700, 501, 22222)
+    tag(db, BLOCK + 1400, 502, 33333)
+    expect(ownerUid(db, BLOCK, db.length)).toBe(22222)
+  })
+
+  it('꼬리표가 없으면 모르는 것(0)으로 둔다', () => {
+    expect(ownerUid(Buffer.alloc(2000), BLOCK, 2000)).toBe(0)
+  })
+})
+
+describe('플러그인 버전', () => {
+  it('낮은 버전을 가려낸다', () => {
+    expect(versionOlder('0.8.0', '0.9.0')).toBe(true)
+    expect(versionOlder('0.9.0', '0.9.0')).toBe(false)
+    expect(versionOlder('0.10.0', '0.9.0')).toBe(false)
+    expect(versionOlder('', '0.9.0')).toBe(true)
   })
 })

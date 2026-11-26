@@ -1,6 +1,6 @@
 import { CircleAlert, FolderOpen, RefreshCw } from 'lucide-react'
 import { useCallback, useEffect, useState } from 'react'
-import type { LinkStatus, SaveFileInfo } from '@shared/game'
+import { NEEDED_PLUGIN, type LinkStatus, type SaveFileInfo } from '@shared/game'
 import type { AppStatus } from '@shared/types'
 import { api } from '@/api'
 import type { Route } from '@/components/Sidebar'
@@ -59,7 +59,14 @@ export function Home(props: { status: AppStatus | null; link: LinkStatus; onNavi
                 <span className={`dot ${game.connected ? 'on' : 'off'}`} />
                 <span>{gameLine}</span>
               </p>
-              {game.connected && <p className="faint num">게임 안 플러그인 {game.pluginVersion}</p>}
+              {game.connected && !game.pluginOld && <p className="faint num">게임 안 플러그인 {game.pluginVersion}</p>}
+              {game.pluginOld && (
+                <p className="chat-caution" role="status">
+                  <CircleAlert size={15} />
+                  게임에 올라가 있는 연결 플러그인이 옛 버전({game.pluginVersion || '알 수 없음'})입니다. FM을 완전히 껐다가 다시 켜면 새
+                  버전({NEEDED_PLUGIN})으로 바뀝니다. 그 전까지는 세이브에 저장된 값만 볼 수 있고, 에디터로 값을 고칠 수 없습니다.
+                </p>
+              )}
             </div>
           </section>
 

@@ -43,7 +43,13 @@ function BrandMark() {
 export function Sidebar(props: { route: Route; onNavigate: (route: Route) => void; link: LinkStatus }) {
   const { route, onNavigate, link } = props
   const { game, data } = link
-  const gameLine = !game.connected ? 'FM이 꺼져 있습니다' : game.loaded ? `FM 연결됨 · ${game.team}` : 'FM 연결됨 · 메인 메뉴'
+  const gameLine = !game.connected
+    ? 'FM이 꺼져 있습니다'
+    : game.pluginOld
+      ? 'FM을 다시 켜야 합니다(플러그인 옛 버전)'
+      : game.loaded
+        ? `FM 연결됨 · ${game.team}`
+        : 'FM 연결됨 · 메인 메뉴'
 
   return (
     <aside className="sidebar">
