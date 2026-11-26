@@ -17,7 +17,7 @@ import {
  * 이름과 값은 모두 꾸며 낸 것이다.
  */
 
-interface MockPlayer extends EditorPlayer {
+interface MockPlayer extends Omit<EditorPlayer, 'source'> {
   mine: boolean
 }
 
@@ -134,5 +134,5 @@ export function mockEditorPlayer(uid: number): EditorPlayer | null {
   const found = PLAYERS.find((player) => player.uid === uid)
   if (!found) return null
   const { mine: _mine, ...player } = found
-  return { ...player, positions: [...player.positions], attributes: [...player.attributes] }
+  return { ...player, positions: [...player.positions], attributes: [...player.attributes], source: 'game' }
 }

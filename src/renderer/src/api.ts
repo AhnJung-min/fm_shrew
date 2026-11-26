@@ -93,9 +93,9 @@ function createMockApi(): Api {
     worldCandidates: async (query) => mockCandidates(query, empty),
     editorList: async (search) => mockEditorList(search, empty),
     editorPlayer: async (uid) => mockEditorPlayer(uid),
-    editorSave: async (edits) => {
-      await new Promise((resolve) => setTimeout(resolve, 700))
-      return { ok: true, fileName: '리버풀 2025 (수정).fm', message: `선수 ${edits.length}명의 값을 고친 세이브 “리버풀 2025 (수정).fm”을 만들었습니다. 게임에서 이 세이브를 불러오세요.` }
+    editorApply: async (edits) => {
+      await new Promise((resolve) => setTimeout(resolve, 500))
+      return { ok: true, message: `선수 ${edits.length}명의 값을 게임에 반영했습니다. 게임에서 그 선수 화면을 다시 열면 보입니다.` }
     },
 
     talkStatus: async () => ({ hasKey: mockHasKey, game: true }),

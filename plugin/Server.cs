@@ -187,6 +187,17 @@ internal static class Server
                 return MainThread.Run(() => DataProbe.Alias(Need("name"), Need("from"), Number("index", -1)));
             case "/probe/clear":
                 return MainThread.Run(DataProbe.Clear);
+            // 에디터의 실시간 반영: 켜져 있는 게임의 메모리에서 선수 기록을 읽고 고친다(이 스레드에서 돈다)
+            case "/live/player":
+                return LiveMemory.Player(Need("uid"));
+            case "/live/set":
+                return LiveMemory.Set(Need("uid"), query["positions"], query["attributes"], query["ca"], query["pa"]);
+            // 메모리 조사(개발용, 읽기만)
+            case "/mem/find":
+                return LiveMemory.Find(Need("hex"), Number("max", 20));
+            case "/mem/dump":
+                return LiveMemory.Dump(Need("addr"), Number("len", 256));
+
             // 카드가 게임에서 받아 둔 값들
             case "/gamedata":
                 return MainThread.Run(GameData.Dump);

@@ -1,4 +1,4 @@
-import { CircleAlert, RotateCcw, Save, Search } from 'lucide-react'
+import { CircleAlert, RotateCcw, Search, Zap } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { FIELDS, GROUP_LABEL } from '@shared/fields'
 import { POSITION_KEYS } from '@shared/positions'
@@ -73,13 +73,6 @@ function toEdit(player: EditorPlayer, draft: Draft): EditorEdit {
 
 const clamp = (value: number, min: number, max: number): number => Math.min(max, Math.max(min, Math.round(value)))
 
-/**
- * 고친 값을 내보낼 길이 있는지.
- * 수정본 세이브를 새로 쓰는 방식은 게임(26.3.2)이 "저장된 게임을 열 수 없습니다"라며 불러오지 않아 막아 두었다.
- * 켜져 있는 게임에 바로 반영하는 방식으로 바꾸는 중이다.
- */
-const CAN_APPLY = false
-
 /** 숫자 한 칸. 바뀐 값은 눈에 띄게 하고, 원래 값을 풍선 도움말로 알려 준다 */
 function NumberCell(props: { label: string; value: number; original: number; min: number; max: number; onChange: (value: number) => void }) {
   const { label, value, original, min, max, onChange } = props
@@ -103,8 +96,8 @@ function NumberCell(props: { label: string; value: number; original: number; min
 }
 
 /**
- * 세이브에 든 선수의 능력치·포지션 숙련도·현재/잠재 능력을 고친다.
- * 고친 값은 모아 두었다가 한 번에 새 세이브 파일로 쓴다. 원본 세이브는 그대로 남는다.
+ * 선수의 능력치·포지션 숙련도·현재/잠재 능력을 고쳐 켜져 있는 게임에 바로 반영한다.
+ * 선수 목록은 세이브에서, 고칠 값은 게임의 지금 값에서 읽는다. 세이브 파일은 건드리지 않는다.
  */
 export function Editor(props: { openUid: number | null; onOpened: () => void }) {
   const { openUid, onOpened } = props
@@ -146,7 +139,7 @@ export function Editor(props: { openUid: number | null; onOpened: () => void }) 
   const draft = useMemo<Draft | null>(() => (player ? (pending.get(player.uid)?.draft ?? draftOf(player)) : null), [player, pending])
 
   const update = (change: (draft: Draft) => void): void => {
-    if (!player || !draft) return
+    if (!player || !draft || player.source !== 'game') return
     const next: Draft = { ...draft, positions: [...draft.positions], attributes: [...draft.attributes] }
     change(next)
     setPending((current) => {
@@ -166,23 +159,22 @@ export function Editor(props: { openUid: number | null; onOpened: () => void }) 
     })
   }
 
-  const save = async (): Promise<void> => {
+  const apply = async (): Promise<void> => {
     const edits = [...pending.values()].map((each) => toEdit(each.player, each.draft))
     const names = [...pending.values()].map((each) => each.player.name).join(', ')
     const ok = window.confirm(
-      `${names}의 값을 고친 새 세이브를 만들까요?\n\n` +
-        '원본 세이브는 그대로 두고 “이름 (수정).fm”으로 따로 만듭니다. 원본의 사본도 백업에 남깁니다.\n' +
-        '게임에서 그 세이브를 불러와야 반영됩니다. 처음이라면 불러온 뒤 값이 맞는지 확인해 주세요.'
+      `${names}의 값을 지금 켜져 있는 게임에 바로 넣을까요?\n\n` +
+        '세이브 파일은 건드리지 않습니다. 게임에서 저장해야 남고, 저장하지 않고 끄면 사라집니다.\n' +
+        '처음이라면 게임에서 그 선수 화면을 다시 열어 값이 맞는지 확인해 주세요.'
     )
     if (!ok) return
     setBusy(true)
-    const result = await api.editorSave(edits)
+    const result = await api.editorApply(edits)
     setBusy(false)
     setNotice({ text: result.message, error: !result.ok })
-    if (!result.ok) return
+    // 일부만 들어갔을 수도 있으니, 성공이든 실패든 게임의 지금 값을 다시 읽는다
     setPending(new Map())
-    setPlayer(null)
-    await loadList(search)
+    if (player) await open(player.uid)
   }
 
   const caProblem = draft && draft.ca > draft.pa ? '현재 능력이 잠재 능력보다 큽니다. 저장하려면 잠재 능력을 올리거나 현재 능력을 낮춰 주세요.' : null
@@ -193,13 +185,13 @@ export function Editor(props: { openUid: number | null; onOpened: () => void }) 
       <header className="page-head">
         <h1>에디터</h1>
         <span className="page-sub">
-          {saveName ? `세이브 “${saveName}”의 선수 값을 고칩니다.` : problem ? '' : '세이브를 읽는 중입니다. 몇 초 걸립니다.'}
+          {saveName ? '고친 값을 켜져 있는 게임에 바로 반영합니다.' : problem ? '' : '세이브를 읽는 중입니다. 몇 초 걸립니다.'}
         </span>
         <div className="spacer" />
         {pending.size > 0 && <span className="page-sub num">고친 선수 {pending.size}명</span>}
-        <button className="btn primary" disabled={!CAN_APPLY || pending.size === 0 || busy || anyProblem} onClick={() => void save()}>
-          <Save size={16} />
-          {busy ? '세이브를 쓰는 중…' : '수정본 세이브 만들기'}
+        <button className="btn primary" disabled={pending.size === 0 || busy || anyProblem} onClick={() => void apply()}>
+          <Zap size={16} />
+          {busy ? '게임에 넣는 중…' : '게임에 반영'}
         </button>
       </header>
 
@@ -243,13 +235,6 @@ export function Editor(props: { openUid: number | null; onOpened: () => void }) 
         </aside>
 
         <section className="editor-form">
-          {!CAN_APPLY && (
-            <p className="chat-caution" role="status">
-              <CircleAlert size={15} />
-              지금은 고친 값을 게임에 넣을 수 없습니다. 수정본 세이브를 게임이 불러오지 못해 그 방식은 막아 두었고, 켜져 있는
-              게임에 바로 반영하는 방식으로 바꾸는 중입니다. 값을 살펴보는 것은 그대로 됩니다.
-            </p>
-          )}
           {notice && (
             <p className={notice.error ? 'chat-caution' : 'backup-notice'} role={notice.error ? 'alert' : 'status'}>
               {notice.error && <CircleAlert size={15} />}
@@ -260,7 +245,8 @@ export function Editor(props: { openUid: number | null; onOpened: () => void }) 
             <div className="empty">
               <strong>고칠 선수를 왼쪽에서 고르세요</strong>
               <p style={{ marginTop: 8 }}>
-                능력치, 포지션 숙련도, 현재·잠재 능력을 고칠 수 있습니다. 여러 선수를 고친 뒤 한 번에 새 세이브로 만듭니다.
+                능력치, 포지션 숙련도, 현재·잠재 능력을 고칠 수 있습니다. 게임이 켜져 있어야 하고, “게임에 반영”을 누르면 바로
+                들어갑니다.
               </p>
             </div>
           ) : (
@@ -276,6 +262,16 @@ export function Editor(props: { openUid: number | null; onOpened: () => void }) 
                   이 선수 되돌리기
                 </button>
               </div>
+              {player.source === 'game' ? (
+                <p className="backup-notice" role="status">
+                  켜져 있는 게임에서 읽은 지금 값입니다.
+                </p>
+              ) : (
+                <p className="chat-caution" role="status">
+                  <CircleAlert size={15} />
+                  {player.sourceNote} 이 상태에서는 고친 값을 게임에 넣을 수 없습니다.
+                </p>
+              )}
 
               <section className="editor-group">
                 <h3>능력</h3>

@@ -265,7 +265,7 @@ function registerIpc(): void {
   ipcMain.handle('world:candidates', (_event, query: CandidateQuery) => soon(() => world.candidates(query)))
   ipcMain.handle('editor:list', (_event, search: string) => soon(() => world.editorList(String(search ?? ''))))
   ipcMain.handle('editor:player', (_event, uid: number) => world.editorPlayer(Number(uid)))
-  ipcMain.handle('editor:save', (_event, edits: EditorEdit[]) => world.saveEdits(edits))
+  ipcMain.handle('editor:apply', (_event, edits: EditorEdit[]) => world.applyEdits(edits))
 
   ipcMain.handle('talk:status', () => talk.status())
   ipcMain.handle('talk:setKey', (_event, key: string) => {
@@ -330,11 +330,7 @@ app.whenReady().then(async () => {
         settings.set({ saveTeams: { ...settings.get().saveTeams, [fileName]: teamId } })
       }
     },
-    roleWeights: () => settings.get().roleWeights,
-    backup: async (path) => {
-      await backups.backup(path)
-      mainWindow?.webContents.send('backup:changed')
-    }
+    roleWeights: () => settings.get().roleWeights
   })
   saveWatcher = new SaveWatcher((path) => {
     void handleSaveFile(path)

@@ -1,9 +1,8 @@
-import { constants, zstdCompressSync, zstdDecompressSync } from 'node:zlib'
+import { constants, zstdCompressSync } from 'node:zlib'
 import { describe, expect, it } from 'vitest'
-import { extractDatabase, openContainer, replaceDatabase } from '../src/main/save/container'
-import { applyEdits, checkEdit } from '../src/main/save/editor'
+import { extractDatabase, openContainer } from '../src/main/save/container'
 import { SaveFormatError } from '../src/main/save/reader'
-import { categoriesOf, shownValue, type CandidateBench } from '../src/shared/world'
+import { categoriesOf, checkEdit, shownValue, type CandidateBench } from '../src/shared/world'
 
 const SIGNATURE = Buffer.from([0x02, 0x01, 0x66, 0x6d, 0x66, 0x2e, 0x08, 0x00, 0x00])
 const pack = (data: Buffer): Buffer => zstdCompressSync(data, { params: { [constants.ZSTD_c_checksumFlag]: 1 } })
@@ -37,24 +36,10 @@ function makeSave(files: Array<{ name: string; data: Buffer }>): Buffer {
   return Buffer.concat([head, body, SIGNATURE, pack(Buffer.concat(parts))])
 }
 
-/** 선수 기록 하나: 앞쪽 값 44바이트 + 숙련도 15 + 능력치 54 + 뒤쪽 채움 */
-function playerRecord(uid: number, ca: number, pa: number): Buffer {
-  const record = Buffer.alloc(44 + 69 + 40)
-  const block = 44
-  record.writeUInt32LE(uid, block - 39)
-  record.writeUInt32LE(uid, block - 35)
-  record.writeUInt16LE(ca, block - 24)
-  record.writeUInt16LE(pa, block - 22)
-  record.writeUInt32LE(533, block - 8)
-  record.fill(10, block, block + 15)
-  record.fill(50, block + 15, block + 69)
-  return record
-}
-
 describe('세이브 꾸러미', () => {
   const before = Buffer.from('앞 파일의 내용'.repeat(40))
   const after = Buffer.from('뒤 파일의 내용'.repeat(300))
-  const database = Buffer.concat([playerRecord(1001, 120, 150), playerRecord(1002, 90, 95)])
+  const database = Buffer.from('데이터베이스의 내용'.repeat(120))
   const save = makeSave([
     { name: 'game_info', data: before },
     { name: 'game_db', data: database },
@@ -71,51 +56,9 @@ describe('세이브 꾸러미', () => {
     expect(() => openContainer(Buffer.from('세이브가 아닌 파일입니다. 충분히 긴 내용을 채웁니다.'))).toThrow(SaveFormatError)
   })
 
-  it('데이터베이스를 바꾸면 뒤 파일의 위치와 머리의 길이를 옮겨 적는다', () => {
-    // 압축이 잘 안 되는 값으로 바꿔 압축 크기가 달라지게 한다
-    const changed = Buffer.from(database)
-    for (let i = 0; i < 40; i++) changed[200 + i] = (i * 37) % 251
-    const rebuilt = openContainer(replaceDatabase(openContainer(save), changed))
-
-    expect(extractDatabase(rebuilt).equals(changed)).toBe(true)
-    const [first, db, last] = rebuilt.entries
-    expect(last.offset).toBe(db.offset + db.compressedSize)
-    const read = (entry: typeof first): Buffer =>
-      zstdDecompressSync(rebuilt.data.subarray(26 + entry.offset, 26 + entry.offset + entry.compressedSize))
-    expect(read(first).equals(before)).toBe(true)
-    expect(read(last).equals(after)).toBe(true)
-    expect(rebuilt.tocHead).toBe(26 + last.offset + last.compressedSize)
-  })
-
-  it('크기가 달라진 데이터베이스는 넣지 않는다', () => {
-    expect(() => replaceDatabase(openContainer(save), Buffer.concat([database, Buffer.alloc(1)]))).toThrow(SaveFormatError)
-  })
 })
 
 describe('선수 값 고치기', () => {
-  const block = (index: number): number => index * (44 + 69 + 40) + 44
-
-  it('고른 선수의 값만 제자리에서 바꾼다', () => {
-    const db = Buffer.concat([playerRecord(1001, 120, 150), playerRecord(1002, 90, 95)])
-    const untouched = Buffer.from(db.subarray(0, 44 + 69 + 40))
-    const attributes = new Array<number>(54).fill(50)
-    attributes[2] = 95
-    applyEdits(db, [{ uid: 1002, attributes, ca: 130, pa: 160 }])
-
-    expect(db[block(1) + 15 + 2]).toBe(95)
-    expect(db.readUInt16LE(block(1) - 24)).toBe(130)
-    expect(db.readUInt16LE(block(1) - 22)).toBe(160)
-    expect(db.subarray(0, 44 + 69 + 40).equals(untouched)).toBe(true)
-  })
-
-  it('세이브에 없는 선수나 번호가 겹치는 선수는 고치지 않는다', () => {
-    const twins = Buffer.concat([playerRecord(1001, 120, 150), playerRecord(1001, 90, 95)])
-    expect(() => applyEdits(twins, [{ uid: 1001, ca: 100 }])).toThrow(SaveFormatError)
-    const one = playerRecord(1001, 120, 150)
-    expect(() => applyEdits(one, [{ uid: 7, ca: 100 }])).toThrow(SaveFormatError)
-    expect(one.readUInt16LE(44 - 24)).toBe(120)
-  })
-
   it('범위를 벗어난 값은 받지 않는다', () => {
     expect(checkEdit({ uid: 1, ca: 201 })).not.toBeNull()
     expect(checkEdit({ uid: 1, ca: 150, pa: 140 })).not.toBeNull()

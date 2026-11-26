@@ -56,24 +56,6 @@ export async function readFromGame(): Promise<GameScene | null> {
   return readGameScene(parseTree(tree))
 }
 
-/**
- * 선택지를 게임에서 누른다. 누르기 직전에 화면을 다시 읽어, 그 자리에 같은 문장이 그대로 있는지 확인한다
- * (그 사이에 화면이 넘어갔으면 누르지 않는다).
- */
-export async function pressInGame(ref: number, expectedText: string): Promise<{ ok: boolean; message?: string }> {
-  const now = await readFromGame()
-  if (!now) return { ok: false, message: '게임 화면이 바뀌었습니다. 다시 읽어 주세요.' }
-  const option = now.options.find((o) => o.ref === ref)
-  if (!option || option.text !== expectedText) {
-    return { ok: false, message: '게임 화면의 선택지가 바뀌었습니다. 다시 읽어 주세요.' }
-  }
-  const result = await ask(`/click?id=${ref}&mode=clickable`)
-  if (result === null) return { ok: false, message: '게임에 연결하지 못했습니다.' }
-  if (!result.startsWith('ok')) return { ok: false, message: `게임이 누르기를 받지 않았습니다: ${result}` }
-  return { ok: true }
-}
-
-/** 게임 안 "직접 답변" 칸에 적힌 말 */
 export interface GameWords {
   seq: number
   /** 'talk'는 선택지가 있는 대화 화면, 'shout'는 경기 중(고를 것은 외침) */
@@ -141,4 +123,45 @@ export interface GameReply {
 
 export async function sendReply(seq: number, reply: GameReply): Promise<void> {
   await ask(`/talk/reply?seq=${seq}`, 15_000, JSON.stringify(reply))
+}
+
+/** 게임 메모리에서 읽은 선수 한 명의 지금 값 */
+export interface LivePlayer {
+  /** 게임 메모리에서 찾은 이 선수의 기록 수. 1이어야 값을 믿을 수 있다 */
+  found: number
+  ca?: number
+  pa?: number
+  positions?: number[]
+  attributes?: number[]
+}
+
+function parseLive(text: string | null): LivePlayer | null {
+  if (text === null) return null
+  try {
+    const raw = JSON.parse(text) as LivePlayer
+    return typeof raw.found === 'number' ? raw : null
+  } catch {
+    return null
+  }
+}
+
+/** 켜져 있는 게임에서 선수의 지금 값을 읽는다. 게임이 꺼져 있으면 null. 처음 찾을 때는 몇 초 걸릴 수 있다 */
+export async function livePlayer(uid: number): Promise<LivePlayer | null> {
+  return parseLive(await ask(`/live/player?uid=${uid}`, 90_000))
+}
+
+/** 켜져 있는 게임에서 선수의 값을 고친다. 고친 뒤의 값을 돌려준다. 게임이 꺼져 있거나 값을 받지 않으면 null */
+export async function liveSet(edit: {
+  uid: number
+  positions?: number[]
+  attributes?: number[]
+  ca?: number
+  pa?: number
+}): Promise<LivePlayer | null> {
+  const query = new URLSearchParams({ uid: String(edit.uid) })
+  if (edit.positions) query.set('positions', edit.positions.join(','))
+  if (edit.attributes) query.set('attributes', edit.attributes.join(','))
+  if (edit.ca !== undefined) query.set('ca', String(edit.ca))
+  if (edit.pa !== undefined) query.set('pa', String(edit.pa))
+  return parseLive(await ask(`/live/set?${query.toString()}`, 90_000))
 }

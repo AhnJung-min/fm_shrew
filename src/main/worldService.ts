@@ -1,9 +1,10 @@
-import { existsSync, statSync } from 'node:fs'
-import { basename, dirname, join } from 'node:path'
+import { statSync } from 'node:fs'
+import { basename } from 'node:path'
 import { POSITION_KEYS, PLAYABLE_RATING, positionOrder, positionsLabel } from '@shared/positions'
 import { effectiveWeights, ROLE_BY_ID } from '@shared/roles'
 import {
   categoriesOf,
+  checkEdit,
   SAVE_ATTRIBUTE_ORDER,
   shownValue,
   type CandidateBench,
@@ -11,21 +12,19 @@ import {
   type CandidateQuery,
   type CandidateResult,
   type CandidateRow,
+  type EditorApplyResult,
   type EditorEdit,
   type EditorListItem,
-  type EditorPlayer,
-  type EditorSaveResult
+  type EditorPlayer
 } from '@shared/world'
-import { checkEdit, writeEditedSave } from './save/editor'
 import { ATTRIBUTE_COUNT, POSITION_COUNT } from './save/reader'
+import { livePlayer, liveSet } from './talk/bridge'
 import { ageAt, findTeamByNames, NO_TEAM, readWorld, teamHasPlayers, type SaveWorld } from './save/world'
 
 /** 영입 후보로 한 번에 보여 주는 줄 수 */
 const MAX_ROWS = 300
 /** 에디터에서 이름으로 찾을 때 보여 주는 줄 수 */
 const MAX_FOUND = 80
-/** 수정본 세이브의 이름 꼬리 */
-const EDITED_SUFFIX = ' (수정)'
 
 const ATTRIBUTE_INDEX = new Map<string, number>(SAVE_ATTRIBUTE_ORDER.map((id, i) => [id, i]))
 const POSITION_INDEX = new Map<string, number>(POSITION_KEYS.map((key, i) => [key, i]))
@@ -47,13 +46,12 @@ export interface WorldDeps {
   /** 찾아낸 내 팀 번호를 기억해 둔다 */
   rememberTeam(fileName: string, teamId: number): void
   roleWeights(): Record<string, Record<string, number>>
-  /** 고치기 전에 원본 세이브의 사본을 남긴다 */
-  backup(path: string): Promise<void>
 }
 
 /**
- * 가장 최근 세이브 하나를 통째로 읽어 두고(모든 구단의 선수), 영입 후보를 고르고 능력치 수정본을 쓴다.
+ * 가장 최근 세이브 하나를 통째로 읽어 두고(모든 구단의 선수), 영입 후보를 고르고 에디터에 선수 목록을 준다.
  * 세이브를 읽는 데 몇 초 걸리므로 파일이 바뀌지 않았으면 읽어 둔 것을 다시 쓴다.
+ * 에디터의 값 읽기·쓰기는 세이브가 아니라 켜져 있는 게임에 한다(게임 안 플러그인을 거친다).
  */
 export class WorldService {
   private loaded: Loaded | null = null
@@ -229,53 +227,67 @@ export class WorldService {
     return { ok: true, saveName: basename(loaded.path), items: found.map((k) => this.listItem(world, k)) }
   }
 
-  editorPlayer(uid: number): EditorPlayer | null {
+  /**
+   * 에디터에 보여 줄 선수의 값. 이름·나이·구단은 세이브에서, 고칠 값은 켜져 있는 게임에서 읽는다.
+   * 게임에서 읽지 못하면 세이브의 값을 주고 그 이유를 적는다(그때는 고칠 수 없다).
+   */
+  async editorPlayer(uid: number): Promise<EditorPlayer | null> {
     const world = this.loaded?.world
     if (!world || uid === 0) return null
     const k = world.uids.indexOf(uid)
     if (k < 0 || world.uids.indexOf(uid, k + 1) >= 0) return null
-    return {
+    const fromSave: EditorPlayer = {
       ...this.listItem(world, k),
       positions: [...world.positions.subarray(k * POSITION_COUNT, (k + 1) * POSITION_COUNT)],
-      attributes: [...world.attributes.subarray(k * ATTRIBUTE_COUNT, (k + 1) * ATTRIBUTE_COUNT)]
+      attributes: [...world.attributes.subarray(k * ATTRIBUTE_COUNT, (k + 1) * ATTRIBUTE_COUNT)],
+      source: 'save'
     }
+    const live = await livePlayer(uid)
+    if (live === null) {
+      return { ...fromSave, sourceNote: '게임이 꺼져 있거나 플러그인이 대답하지 않아, 마지막으로 저장한 세이브의 값을 보여 줍니다.' }
+    }
+    if (live.found !== 1 || !live.positions || !live.attributes || live.ca === undefined || live.pa === undefined) {
+      return {
+        ...fromSave,
+        sourceNote:
+          live.found === 0
+            ? '켜져 있는 게임에서 이 선수를 찾지 못해, 마지막으로 저장한 세이브의 값을 보여 줍니다. 게임에서 이 세이브를 불러왔는지 확인해 주세요.'
+            : '켜져 있는 게임에서 이 선수의 기록이 여러 개 나와 어느 것이 맞는지 알 수 없습니다. 세이브의 값을 보여 줍니다.'
+      }
+    }
+    return { ...fromSave, ca: live.ca, pa: live.pa, positions: live.positions, attributes: live.attributes, source: 'game' }
   }
 
-  /**
-   * 수정을 적용한 새 세이브를 세이브 폴더에 쓴다. 원본은 그대로 두고 "이름 (수정).fm"으로 따로 만든다.
-   * 이미 수정본을 고치는 중이면 그 파일을 덮어쓴다(먼저 사본을 남긴다).
-   */
-  async saveEdits(edits: EditorEdit[]): Promise<EditorSaveResult> {
-    const loaded = this.loaded
-    if (!loaded) return { ok: false, message: '먼저 세이브를 읽어야 합니다.' }
+  /** 고친 값을 켜져 있는 게임에 바로 넣는다. 선수마다 따로 넣고, 넣은 뒤 게임이 돌려준 값으로 확인한다. */
+  async applyEdits(edits: EditorEdit[]): Promise<EditorApplyResult> {
     if (edits.length === 0) return { ok: false, message: '고친 값이 없습니다.' }
     for (const edit of edits) {
       const problem = checkEdit(edit)
       if (problem) return { ok: false, message: problem }
     }
-    try {
-      const info = statSync(loaded.path)
-      if (info.mtimeMs !== loaded.mtimeMs || info.size !== loaded.size) {
-        this.loaded = null
-        return { ok: false, message: '그 사이에 게임이 세이브를 다시 저장했습니다. 바뀐 세이브를 다시 읽었으니 값을 확인하고 다시 저장해 주세요.' }
-      }
-      const sourceName = basename(loaded.path)
-      const base = sourceName.replace(/\.fm$/i, '')
-      const targetName = base.endsWith(EDITED_SUFFIX) ? sourceName : `${base}${EDITED_SUFFIX}.fm`
-      const target = join(dirname(loaded.path), targetName)
-
-      await this.deps.backup(loaded.path)
-      if (target !== loaded.path && existsSync(target)) await this.deps.backup(target)
-      if (loaded.world.teamId !== undefined) this.deps.rememberTeam(targetName, loaded.world.teamId)
-      const result = writeEditedSave(loaded.path, target, edits)
-      this.loaded = null
-      return {
-        ok: true,
-        fileName: targetName,
-        message: `선수 ${result.players}명의 값을 고친 세이브 “${targetName}”을 만들었습니다. 게임에서 이 세이브를 불러오세요.`
-      }
-    } catch (error) {
-      return { ok: false, message: error instanceof Error ? error.message : String(error) }
+    const world = this.loaded?.world
+    const nameOf = (uid: number): string => {
+      const k = world ? world.uids.indexOf(uid) : -1
+      return k >= 0 && world ? world.names[k] : String(uid)
+    }
+    const done: string[] = []
+    for (const edit of edits) {
+      const after = await liveSet(edit)
+      const stopped = done.length > 0 ? ` (${done.join(', ')}까지는 반영했습니다.)` : ''
+      if (after === null) return { ok: false, message: `게임에 연결하지 못했습니다. 게임이 켜져 있는지 확인해 주세요.${stopped}` }
+      if (after.found !== 1) return { ok: false, message: `켜져 있는 게임에서 ${nameOf(edit.uid)}의 기록을 찾지 못했습니다.${stopped}` }
+      const same = (a: number[] | undefined, b: number[] | undefined): boolean => !a || (b !== undefined && a.every((v, i) => v === b[i]))
+      const landed =
+        same(edit.positions, after.positions) &&
+        same(edit.attributes, after.attributes) &&
+        (edit.ca === undefined || edit.ca === after.ca) &&
+        (edit.pa === undefined || edit.pa === after.pa)
+      if (!landed) return { ok: false, message: `${nameOf(edit.uid)}의 값을 넣었지만 다시 읽은 값이 다릅니다.${stopped}` }
+      done.push(nameOf(edit.uid))
+    }
+    return {
+      ok: true,
+      message: `${done.join(', ')}의 값을 게임에 반영했습니다. 게임에서 그 선수 화면을 다시 열면 보입니다. 게임에서 저장해야 세이브에도 남습니다.`
     }
   }
 }

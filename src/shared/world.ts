@@ -149,6 +149,10 @@ export interface EditorPlayer extends EditorListItem {
   positions: number[]
   /** 능력치 54개의 저장값(1~100) */
   attributes: number[]
+  /** 값을 어디서 읽었는지: 켜져 있는 게임의 지금 값인지, 마지막으로 저장한 세이브의 값인지 */
+  source: 'game' | 'save'
+  /** 세이브의 값을 보여 줄 때 그 이유 */
+  sourceNote?: string
 }
 
 /** 한 선수에 대한 수정. 적힌 것만 바꾼다 */
@@ -160,9 +164,22 @@ export interface EditorEdit {
   pa?: number
 }
 
-export interface EditorSaveResult {
+export interface EditorApplyResult {
   ok: boolean
   message: string
-  /** 새로 쓴 세이브 파일 이름 */
-  fileName?: string
+}
+
+const whole = (values: number[], length: number, min: number, max: number): boolean =>
+  values.length === length && values.every((value) => Number.isInteger(value) && value >= min && value <= max)
+
+/** 고칠 값이 범위 안인지 본다. 문제가 있으면 그 이유를 돌려준다. */
+export function checkEdit(edit: EditorEdit): string | null {
+  if (!Number.isInteger(edit.uid) || edit.uid <= 0) return '선수를 알아볼 수 없습니다.'
+  if (edit.positions && !whole(edit.positions, 15, 1, 20)) return '포지션 숙련도는 1~20이어야 합니다.'
+  if (edit.attributes && !whole(edit.attributes, SAVE_ATTRIBUTE_ORDER.length, 1, 100)) return '능력치 값이 범위를 벗어났습니다.'
+  for (const value of [edit.ca, edit.pa]) {
+    if (value !== undefined && (!Number.isInteger(value) || value < 1 || value > 200)) return '현재·잠재 능력은 1~200이어야 합니다.'
+  }
+  if (edit.ca !== undefined && edit.pa !== undefined && edit.ca > edit.pa) return '현재 능력이 잠재 능력보다 클 수 없습니다.'
+  return null
 }

@@ -1,4 +1,4 @@
-import { zstdCompressSync, zstdDecompressSync, constants } from 'node:zlib'
+import { zstdDecompressSync } from 'node:zlib'
 import { SaveFormatError } from './reader'
 
 /**
@@ -11,6 +11,10 @@ import { SaveFormatError } from './reader'
  *     [u32 길이][이름] [u32 길이][확장자] [u64 위치] [u64 압축 크기] [u64 원래 크기] [16바이트: 시각 둘]
  *   위치는 머리(26바이트) 뒤부터 센다.
  * - 선수·구단이 든 데이터베이스는 "game_db" 파일이다.
+ *
+ * 읽기만 한다. 데이터베이스를 고쳐 다시 묶은 파일은 우리 쪽에서 다시 읽으면 멀쩡해도 게임(26.3.2)이
+ * "저장된 게임을 열 수 없습니다"라며 불러오지 않았다(게임이 무엇을 검사하는지는 알아내지 못했다).
+ * 그래서 값 수정은 세이브가 아니라 켜져 있는 게임에 한다(plugin/LiveMemory.cs).
  */
 
 const SIGNATURE = Buffer.from([0x02, 0x01, 0x66, 0x6d, 0x66, 0x2e, 0x08, 0x00, 0x00])
@@ -23,9 +27,6 @@ export interface TocEntry {
   offset: number
   compressedSize: number
   size: number
-  /** 목차 버퍼 안에서 위치·압축 크기 숫자가 적힌 곳 */
-  offsetAt: number
-  compressedSizeAt: number
 }
 
 export interface SaveContainer {
@@ -73,9 +74,7 @@ export function openContainer(data: Buffer): SaveContainer {
         name,
         offset: u64(toc, p),
         compressedSize: u64(toc, p + 8),
-        size: u64(toc, p + 16),
-        offsetAt: p,
-        compressedSizeAt: p + 8
+        size: u64(toc, p + 16)
       })
       p += 40
     }
@@ -106,48 +105,4 @@ export function extractDatabase(container: SaveContainer): Buffer {
   }
   if (db.length !== entry.size) throw new SaveFormatError('세이브 파일의 데이터베이스 크기가 목차와 다릅니다.')
   return db
-}
-
-function compress(buffer: Buffer): Buffer {
-  // 게임이 쓴 조각과 같은 모양: 내용 검사값이 붙고, 원래 크기는 적지 않는다
-  return zstdCompressSync(buffer, {
-    params: {
-      [constants.ZSTD_c_compressionLevel]: 3,
-      [constants.ZSTD_c_checksumFlag]: 1,
-      [constants.ZSTD_c_contentSizeFlag]: 0
-    }
-  })
-}
-
-/**
- * 데이터베이스만 바꾼 새 세이브 파일의 내용을 만든다. 다른 파일들은 바이트 그대로 옮긴다.
- * 압축한 크기가 달라지므로 뒤따르는 파일들의 위치와 머리의 길이를 그만큼 옮겨 적는다.
- * newDatabase의 크기는 원래와 같아야 한다(값만 제자리에서 고친다).
- */
-export function replaceDatabase(container: SaveContainer, newDatabase: Buffer): Buffer {
-  const entry = databaseEntry(container)
-  if (newDatabase.length !== entry.size) throw new SaveFormatError('고친 데이터베이스의 크기가 원래와 다릅니다.')
-  const { data, tocHead } = container
-  const start = HEAD_SIZE + entry.offset
-  const end = start + entry.compressedSize
-  const packed = compress(newDatabase)
-  const shift = packed.length - entry.compressedSize
-
-  const toc = Buffer.from(container.toc)
-  toc.writeBigUInt64LE(BigInt(packed.length), entry.compressedSizeAt)
-  for (const other of container.entries) {
-    if (other.offset > entry.offset) toc.writeBigUInt64LE(BigInt(other.offset + shift), other.offsetAt)
-  }
-
-  const head = Buffer.from(data.subarray(0, HEAD_SIZE))
-  head.writeBigUInt64LE(BigInt(tocHead - SIGNATURE.length + shift), SIGNATURE.length)
-
-  return Buffer.concat([
-    head,
-    data.subarray(HEAD_SIZE, start),
-    packed,
-    data.subarray(end, tocHead),
-    data.subarray(tocHead, tocHead + SIGNATURE.length),
-    compress(toc)
-  ])
 }

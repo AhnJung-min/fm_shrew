@@ -1,5 +1,5 @@
 import type { TalkEffort, TalkStats, TalkStatus } from './talk'
-import type { CandidateQuery, CandidateResult, EditorEdit, EditorListItem, EditorPlayer, EditorSaveResult } from './world'
+import type { CandidateQuery, CandidateResult, EditorApplyResult, EditorEdit, EditorListItem, EditorPlayer } from './world'
 
 /** 스냅샷 종류: 내 스쿼드인지, 선수 검색(영입 후보) 결과인지 */
 export type SnapshotKind = 'squad' | 'search'
@@ -153,9 +153,10 @@ export interface Api {
   worldCandidates(query: CandidateQuery): Promise<CandidateResult>
   /** 에디터의 선수 목록. 찾는 글자가 없으면 내 팀 선수들 */
   editorList(search: string): Promise<{ ok: boolean; message?: string; saveName?: string; items: EditorListItem[] }>
+  /** 선수의 값. 게임이 켜져 있으면 게임의 지금 값을, 아니면 세이브의 값을 준다 */
   editorPlayer(uid: number): Promise<EditorPlayer | null>
-  /** 수정을 적용한 새 세이브 파일을 만든다. 원본 세이브는 그대로 두고 사본도 남긴다 */
-  editorSave(edits: EditorEdit[]): Promise<EditorSaveResult>
+  /** 고친 값을 켜져 있는 게임에 바로 넣는다 */
+  editorApply(edits: EditorEdit[]): Promise<EditorApplyResult>
 
   // 게임 안 직접 답변(AI 키와 상태)
   talkStatus(): Promise<TalkStatus>
