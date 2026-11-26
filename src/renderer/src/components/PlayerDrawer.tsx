@@ -88,8 +88,8 @@ export function PlayerDrawer(props: {
                   return (
                     <div key={col.header} title={attrTitle(col.label, cell)}>
                       <dt>{col.label}</dt>
-                      <dd className={attrBand(cell?.num ?? null)}>
-                        <span className={cell?.range ? 'ranged' : undefined}>{attrText(cell)}</span>
+                      <dd>
+                        <span className={`attr-chip ${attrBand(cell?.num ?? null)} ${cell?.range ? 'ranged' : ''}`}>{attrText(cell)}</span>
                       </dd>
                     </div>
                   )

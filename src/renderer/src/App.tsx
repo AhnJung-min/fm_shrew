@@ -95,6 +95,7 @@ export function App() {
             dataKey={dataKey}
             link={link}
             settings={settings}
+            onGoHome={() => setRoute('home')}
             onEdit={(uid) => {
               setEditorUid(uid)
               setRoute('editor')
@@ -104,7 +105,9 @@ export function App() {
         {route === 'compare' && (
           <Compare dataKey={dataKey} idxs={compare} onIdxs={setCompare} settings={settings} onGoSquad={() => setRoute('squad')} />
         )}
-        {route === 'editor' && <Editor dataKey={dataKey} link={link} openUid={editorUid} onOpened={() => setEditorUid(null)} />}
+        {route === 'editor' && (
+          <Editor dataKey={dataKey} link={link} openUid={editorUid} onOpened={() => setEditorUid(null)} onGoHome={() => setRoute('home')} />
+        )}
         {route === 'backups' && <Backups settings={settings} onChange={changeSettings} />}
         {route === 'settings' && <Settings status={status} settings={settings} onChange={changeSettings} />}
       </main>

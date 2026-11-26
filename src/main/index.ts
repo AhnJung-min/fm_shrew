@@ -18,6 +18,8 @@ const USER_DATA_OVERRIDE = process.env.FMB_USER_DATA
 const SAVE_DIR_OVERRIDE = process.env.FMB_SAVE_DIR
 
 if (USER_DATA_OVERRIDE) app.setPath('userData', USER_DATA_OVERRIDE)
+// 검증 화면을 찍을 때 창이 게임 뒤에 가려 있어도 계속 그리게 한다(Windows는 가려진 창을 다시 그리지 않아 예전 화면이 찍힌다)
+if (SMOKE_OUT) app.commandLine.appendSwitch('disable-features', 'CalculateNativeWinOcclusion')
 
 // 프로젝트 폴더의 .env 파일이 있으면 읽는다(ANTHROPIC_API_KEY=...). 이 파일은 git에 올리지 않는다.
 try {

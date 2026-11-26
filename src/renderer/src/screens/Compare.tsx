@@ -190,9 +190,9 @@ export function Compare(props: {
                               const cell = p.row.cells[col.header]
                               const best = players.length > 1 && !tie && values[i] === top
                               return (
-                                <td key={p.row.idx} className={`right ${attrBand(values[i])} ${best ? 'best' : ''}`}>
+                                <td key={p.row.idx} className={`right ${best ? 'best' : ''}`}>
                                   {best && <span className="best-mark" aria-label="가장 높음" title="가장 높음" />}
-                                  <span className={cell?.range ? 'ranged' : undefined}>{attrText(cell)}</span>
+                                  <span className={`attr-chip ${attrBand(values[i])} ${cell?.range ? 'ranged' : ''}`}>{attrText(cell)}</span>
                                 </td>
                               )
                             })}

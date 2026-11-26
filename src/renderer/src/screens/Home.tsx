@@ -52,7 +52,8 @@ export function Home(props: { status: AppStatus | null; link: LinkStatus; onNavi
         <div className="start">
           <section className="panel">
             <div className="panel-head">
-              <h2>FM 연결</h2>
+              <span className={`step ${game.connected && !game.pluginOld ? 'done' : ''}`} aria-hidden="true">1</span>
+              <h2>FM 켜기</h2>
             </div>
             <div className="panel-body">
               <p className="start-line">
@@ -72,6 +73,7 @@ export function Home(props: { status: AppStatus | null; link: LinkStatus; onNavi
 
           <section className="panel">
             <div className="panel-head">
+              <span className={`step ${data.save ? 'done' : ''}`} aria-hidden="true">2</span>
               <h2>세이브 고르기</h2>
               <div className="spacer" />
               {status?.saveDir.exists && (
@@ -135,7 +137,8 @@ export function Home(props: { status: AppStatus | null; link: LinkStatus; onNavi
 
           <section className="panel">
             <div className="panel-head">
-              <h2>지금 쓰는 자료</h2>
+              <span className={`step ${data.save ? 'done' : ''}`} aria-hidden="true">3</span>
+              <h2>자료 쓰기</h2>
               <div className="spacer" />
               {data.save && game.loaded && (
                 <button className="btn ghost" disabled={busy} onClick={() => void api.refreshLive(true)}>

@@ -9,12 +9,12 @@ export interface SortState {
   dir: 'asc' | 'desc'
 }
 
-const ROW_HEIGHT: Record<Density, number> = { compact: 30, comfortable: 38 }
+const ROW_HEIGHT: Record<Density, number> = { compact: 36, comfortable: 44 }
 const OVERSCAN = 10
 
 function columnWidth(col: ColumnInfo, rows: PlayerRow[]): number {
-  if (col.field === 'name') return 190
-  if (col.isAttr) return 46
+  if (col.field === 'name') return 200
+  if (col.isAttr) return 48
   // 글자 수로 어림한다. 한글은 영문보다 넓다.
   const sample = rows.slice(0, 40).map((row) => row.cells[col.header]?.raw ?? '')
   const longest = Math.max(col.short.length * 1.6, ...sample.map(textUnits))
@@ -195,10 +195,10 @@ export function PlayerTable(props: {
                   return (
                     <td
                       key={col.header}
-                      className={`center ${attrBand(cell?.num ?? null)} ${start}`}
+                      className={`center ${start}`}
                       title={attrTitle(col.label, cell)}
                     >
-                      <span className={cell?.range ? 'ranged' : undefined}>{attrText(cell)}</span>
+                      <span className={`attr-chip ${attrBand(cell?.num ?? null)} ${cell?.range ? 'ranged' : ''}`}>{attrText(cell)}</span>
                     </td>
                   )
                 }

@@ -15,18 +15,20 @@ export type Route = 'home' | 'squad' | 'targets' | 'compare' | 'editor' | 'backu
 interface NavEntry {
   id: Route | null
   label: string
+  /** 이 화면에서 하는 일(메뉴 아래 작은 글씨) */
+  hint: string
   icon: LucideIcon
   /** 아직 만들지 않은 화면이면 몇 단계에서 나오는지 */
   later?: string
 }
 
 const ENTRIES: NavEntry[] = [
-  { id: 'home', label: '홈', icon: House },
-  { id: 'squad', label: '스쿼드', icon: Users },
-  { id: 'targets', label: '영입 후보', icon: UserSearch },
-  { id: 'compare', label: '선수 비교', icon: Scale },
-  { id: 'editor', label: '에디터', icon: PencilRuler },
-  { id: 'backups', label: '백업', icon: Archive }
+  { id: 'home', label: '홈', hint: 'FM 연결과 세이브 고르기', icon: House },
+  { id: 'squad', label: '스쿼드', hint: '내 팀 선수 능력치와 뎁스', icon: Users },
+  { id: 'targets', label: '영입 후보', hint: '모든 구단에서 선수 찾기', icon: UserSearch },
+  { id: 'compare', label: '선수 비교', hint: '최대 3명 나란히 보기', icon: Scale },
+  { id: 'editor', label: '에디터', hint: '능력치를 고쳐 게임에 넣기', icon: PencilRuler },
+  { id: 'backups', label: '백업', hint: '세이브 사본과 되돌리기', icon: Archive }
 ]
 
 /** 경기장 센터 서클을 딴 표식 */
@@ -70,8 +72,11 @@ export function Sidebar(props: { route: Route; onNavigate: (route: Route) => voi
               title={entry.later ? `${entry.label}: ${entry.later}에서 추가됩니다` : entry.label}
               onClick={() => entry.id && onNavigate(entry.id)}
             >
-              <Icon size={18} />
-              <span className="nav-label">{entry.label}</span>
+              <Icon size={19} />
+              <span className="nav-text">
+                <span className="nav-label">{entry.label}</span>
+                <span className="nav-hint">{entry.hint}</span>
+              </span>
               {entry.later && <span className="nav-later">{entry.later}</span>}
             </button>
           )
@@ -83,19 +88,33 @@ export function Sidebar(props: { route: Route; onNavigate: (route: Route) => voi
           title="설정"
           onClick={() => onNavigate('settings')}
         >
-          <SettingsIcon size={18} />
-          <span className="nav-label">설정</span>
+          <SettingsIcon size={19} />
+          <span className="nav-text">
+            <span className="nav-label">설정</span>
+            <span className="nav-hint">AI 키, 역할 가중치</span>
+          </span>
         </button>
       </nav>
 
-      <div className="watch-state" title={data.note || undefined}>
-        <span className={`dot ${game.connected ? 'on' : 'off'}`} />
-        <span>
-          {gameLine}
-          <br />
-          {data.save ? `${data.save.name} · ${data.source === 'game' ? '게임의 지금 값' : '세이브의 값'}` : '적용한 세이브 없음'}
+      <button className="status-card" title={data.note || '홈에서 자세히 보기'} onClick={() => onNavigate('home')}>
+        <span className="status-row">
+          <span className={`dot ${game.connected && !game.pluginOld ? 'on' : game.connected ? 'warn' : 'off'}`} />
+          <span>{gameLine}</span>
         </span>
-      </div>
+        <span className="status-row">
+          <span className={`dot ${data.save ? (data.source === 'game' ? 'on' : 'warn') : 'off'}`} />
+          <span>
+            {data.save ? (
+              <>
+                <span className="status-save">{data.save.name}</span>
+                <span className="status-sub">{data.source === 'game' ? '게임의 지금 값을 쓰는 중' : '세이브에 저장된 값을 쓰는 중'}</span>
+              </>
+            ) : (
+              '적용한 세이브 없음'
+            )}
+          </span>
+        </span>
+      </button>
     </aside>
   )
 }

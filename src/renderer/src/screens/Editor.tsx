@@ -14,6 +14,7 @@ import {
   type SaveAttributeId
 } from '@shared/world'
 import { api } from '@/api'
+import { attrBand } from '@/lib/format'
 
 /** 고치는 중인 값. 능력치는 저장값(1~100) 그대로 들고 있다 */
 interface Draft {
@@ -75,11 +76,21 @@ function toEdit(player: EditorPlayer, draft: Draft): EditorEdit {
 const clamp = (value: number, min: number, max: number): number => Math.min(max, Math.max(min, Math.round(value)))
 
 /** 숫자 한 칸. 바뀐 값은 눈에 띄게 하고, 원래 값을 풍선 도움말로 알려 준다 */
-function NumberCell(props: { label: string; value: number; original: number; min: number; max: number; onChange: (value: number) => void }) {
-  const { label, value, original, min, max, onChange } = props
+function NumberCell(props: {
+  label: string
+  value: number
+  original: number
+  min: number
+  max: number
+  /** 1~20 능력치처럼 단계 색을 입힐지 */
+  banded?: boolean
+  onChange: (value: number) => void
+}) {
+  const { label, value, original, min, max, banded, onChange } = props
   const changed = value !== original
+  const classes = ['edit-cell', changed ? 'changed' : '', banded ? `banded ${attrBand(value)}` : ''].filter(Boolean).join(' ')
   return (
-    <label className={changed ? 'edit-cell changed' : 'edit-cell'} title={changed ? `${label}: 원래 ${original}` : label}>
+    <label className={classes} title={changed ? `${label}: 원래 ${original}` : label}>
       <span>{label}</span>
       <input
         className="field num"
@@ -106,8 +117,9 @@ export function Editor(props: {
   link: LinkStatus
   openUid: number | null
   onOpened: () => void
+  onGoHome: () => void
 }) {
-  const { dataKey, link, openUid, onOpened } = props
+  const { dataKey, link, openUid, onOpened, onGoHome } = props
   const [search, setSearch] = useState('')
   const [items, setItems] = useState<EditorListItem[] | null>(null)
   const [saveName, setSaveName] = useState<string | null>(null)
@@ -223,7 +235,14 @@ export function Editor(props: {
             {items === null ? (
               <p className="muted">세이브를 읽는 중입니다.</p>
             ) : items.length === 0 ? (
-              <p className="muted">{problem ?? (search.trim() ? '그런 이름의 선수가 없습니다.' : '내 팀을 찾지 못했습니다. 이름으로 찾아 주세요.')}</p>
+              <div className="list-empty">
+                <p className="muted">{problem ?? (search.trim() ? '그런 이름의 선수가 없습니다.' : '내 팀을 찾지 못했습니다. 이름으로 찾아 주세요.')}</p>
+                {problem && !saveName && (
+                  <button className="btn primary" onClick={onGoHome}>
+                    홈에서 세이브 고르기
+                  </button>
+                )}
+              </div>
             ) : (
               items.map((item) => (
                 <button
@@ -253,12 +272,13 @@ export function Editor(props: {
             </p>
           )}
           {!player || !draft ? (
-            <div className="empty">
+            <div className="empty guide">
               <strong>고칠 선수를 왼쪽에서 고르세요</strong>
-              <p style={{ marginTop: 8 }}>
-                능력치, 포지션 숙련도, 현재·잠재 능력을 고칠 수 있습니다. 게임이 켜져 있어야 하고, “게임에 반영”을 누르면 바로
-                들어갑니다.
-              </p>
+              <ol className="guide-steps">
+                <li>왼쪽 목록에서 선수를 고릅니다. 다른 구단 선수는 위 칸에 이름을 쳐서 찾습니다.</li>
+                <li>능력치, 포지션 숙련도, 현재·잠재 능력을 고칩니다. 고친 칸은 노랗게 표시됩니다.</li>
+                <li>오른쪽 위 “게임에 반영”을 누르면 켜져 있는 게임에 바로 들어갑니다. 게임에서 저장해야 세이브에 남습니다.</li>
+              </ol>
             </div>
           ) : (
             <>
@@ -315,6 +335,7 @@ export function Editor(props: {
                         original={shownValue(player.attributes[index])}
                         min={1}
                         max={20}
+                        banded
                         // 게임 표시값(1~20)으로 고치고, 저장값(1~100)은 그 다섯 배로 적는다
                         onChange={(value) =>
                           update((d) => (d.attributes[index] = value === shownValue(player.attributes[index]) ? player.attributes[index] : value * 5))

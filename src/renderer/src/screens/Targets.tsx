@@ -122,8 +122,9 @@ export function Targets(props: {
   link: LinkStatus
   settings: Settings
   onEdit: (uid: number) => void
+  onGoHome: () => void
 }) {
-  const { dataKey, link, settings, onEdit } = props
+  const { dataKey, link, settings, onEdit, onGoHome } = props
   const [roleId, setRoleId] = useState('cb')
   const [category, setCategory] = useState<CandidateCategory>('starter')
   const [maxAge, setMaxAge] = useState('')
@@ -229,6 +230,11 @@ export function Targets(props: {
           <div className="empty" style={{ maxWidth: 560, margin: '0 auto' }}>
             <strong>아직 보여 줄 선수가 없습니다</strong>
             <p style={{ marginTop: 8 }}>{result.message}</p>
+            <div style={{ marginTop: 14 }}>
+              <button className="btn primary" onClick={onGoHome}>
+                홈으로 가기
+              </button>
+            </div>
           </div>
         </div>
       </>

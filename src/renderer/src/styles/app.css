@@ -1,35 +1,49 @@
 /*
   FM 보좌관 디자인 토큰.
-  방향: 밤 경기의 전술 보드. 순수한 검정 대신 녹색 기가 도는 짙은 회색을 바탕으로 쓰고,
-  분필 노랑은 지금 가장 중요한 한 가지(선택된 메뉴, 주 버튼, 최상위 능력치)에만 쓴다.
+  방향: 조명 켜진 밤 경기장. 녹색 기가 도는 짙은 바탕 위에서 글자는 분필처럼 또렷하게 읽혀야 한다.
+  조명 노랑은 지금 가장 중요한 한 가지(선택된 메뉴, 주 버튼, 고친 값)에만 쓴다.
+  능력치는 게임과 같은 네 단계(1~5, 6~10, 11~15, 16~20)를 색 칩으로 보여 준다. 색만이 아니라 굵기도 함께 바뀐다.
+  글자 대비: 본문 15:1, 보조 12:1, 흐린 글자 7.5:1 이상(바탕 #101714 기준).
 */
 :root {
-  --bg: #151b19;
-  --surface: #1c2421;
-  --raised: #242e2a;
-  --hover: #2b3632;
-  --line: #2e3a35;
-  --line-strong: #43534d;
+  --bg: #101714;
+  --surface: #17211d;
+  --raised: #1f2b26;
+  --hover: #26342e;
+  --zebra: rgba(255, 255, 255, 0.022);
+  --line: #2a3833;
+  --line-strong: #3f514a;
 
-  --text: #eef1ec;
-  --text-2: #b6c0b9;
-  --text-3: #86938c;
+  --text: #f3f6f2;
+  --text-2: #cfd8d2;
+  --text-3: #a3b1a9;
 
-  --accent: #f0ce5a;
-  --accent-ink: #1c1d10;
-  --accent-soft: rgba(240, 206, 90, 0.13);
-  --good: #74d19c;
-  --bad: #f08878;
+  --accent: #f5d061;
+  --accent-ink: #1d1a08;
+  --accent-soft: rgba(245, 208, 97, 0.14);
+  --good: #63d69d;
+  --warn: #f2b15a;
+  --bad: #f2867a;
 
-  --radius-s: 5px;
-  --radius-m: 8px;
+  /* 능력치 네 단계: 칩 바탕과 글자 */
+  --a1-bg: rgba(242, 134, 122, 0.16);
+  --a1-ink: #f7aa9f;
+  --a2-bg: rgba(207, 216, 210, 0.08);
+  --a2-ink: #d7dfda;
+  --a3-bg: rgba(99, 214, 157, 0.17);
+  --a3-ink: #93ebbf;
+  --a4-bg: rgba(245, 208, 97, 0.24);
+  --a4-ink: #ffe08f;
 
-  --row-h: 30px;
+  --radius-s: 6px;
+  --radius-m: 10px;
+
+  --row-h: 36px;
   --font: 'Pretendard Variable', Pretendard, 'Malgun Gothic', system-ui, sans-serif;
 }
 
 :root[data-density='comfortable'] {
-  --row-h: 38px;
+  --row-h: 44px;
 }
 
 * {
@@ -47,8 +61,8 @@ body {
   background: var(--bg);
   color: var(--text);
   font-family: var(--font);
-  font-size: 14px;
-  line-height: 1.5;
+  font-size: 15px;
+  line-height: 1.55;
   word-break: keep-all;
   -webkit-font-smoothing: antialiased;
   overflow: hidden;
@@ -92,7 +106,7 @@ textarea {
 
 .app {
   display: grid;
-  grid-template-columns: 212px minmax(0, 1fr);
+  grid-template-columns: 236px minmax(0, 1fr);
   height: 100%;
 }
 
@@ -110,8 +124,8 @@ textarea {
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 2px 8px 16px;
-  font-size: 16px;
+  padding: 4px 10px 18px;
+  font-size: 17px;
   font-weight: 700;
   letter-spacing: -0.01em;
 }
@@ -130,16 +144,17 @@ textarea {
 .nav-item {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 12px;
   width: 100%;
-  height: 36px;
-  padding: 0 10px;
+  min-height: 52px;
+  padding: 7px 12px;
   border: 0;
-  border-radius: var(--radius-s);
+  border-radius: var(--radius-m);
   background: transparent;
   color: var(--text-2);
   text-align: left;
   cursor: pointer;
+  transition: background-color 120ms ease, color 120ms ease;
 }
 
 .nav-item svg {
@@ -154,17 +169,35 @@ textarea {
 .nav-item[aria-current='page'] {
   background: var(--accent-soft);
   color: var(--accent);
-  font-weight: 600;
+  box-shadow: inset 3px 0 0 var(--accent);
+}
+.nav-item[aria-current='page'] .nav-label {
+  font-weight: 700;
+}
+.nav-item[aria-current='page'] .nav-hint {
+  color: var(--text-2);
 }
 
-.nav-item:disabled {
-  color: var(--text-3);
-  cursor: default;
+.nav-text {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
 }
 
 .nav-label {
-  flex: 1;
-  min-width: 0;
+  font-size: 15px;
+  font-weight: 600;
+  line-height: 1.3;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.nav-hint {
+  font-size: 12.5px;
+  line-height: 1.35;
+  color: var(--text-3);
   overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
@@ -181,15 +214,44 @@ textarea {
   background: var(--line);
 }
 
-.watch-state {
+.status-card {
+  display: grid;
+  gap: 8px;
+  margin-top: auto;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-m);
+  background: var(--bg);
+  color: var(--text-2);
+  font-size: 13px;
+  line-height: 1.45;
+  text-align: left;
+  cursor: pointer;
+}
+.status-card:hover {
+  border-color: var(--line-strong);
+  color: var(--text);
+}
+.status-row {
   display: flex;
   align-items: flex-start;
   gap: 8px;
-  margin-top: auto;
-  padding: 10px;
-  border-top: 1px solid var(--line);
-  font-size: 12px;
-  color: var(--text-2);
+  min-width: 0;
+}
+.status-row > span:last-child {
+  min-width: 0;
+}
+.status-save {
+  display: block;
+  color: var(--text);
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.status-sub {
+  display: block;
+  color: var(--text-3);
+  font-size: 12.5px;
 }
 
 .dot {
@@ -206,6 +268,9 @@ textarea {
 .dot.off {
   background: var(--bad);
 }
+.dot.warn {
+  background: var(--warn);
+}
 
 .main {
   display: flex;
@@ -219,26 +284,26 @@ textarea {
   align-items: center;
   gap: 12px;
   flex-wrap: wrap;
-  padding: 18px 24px 14px;
+  padding: 20px 28px 16px;
   border-bottom: 1px solid var(--line);
 }
 
 .page-head h1 {
-  font-size: 20px;
+  font-size: 23px;
   font-weight: 700;
   letter-spacing: -0.02em;
 }
 
 .page-sub {
   color: var(--text-2);
-  font-size: 13px;
+  font-size: 14px;
 }
 
 .page-body {
   flex: 1;
   min-height: 0;
   overflow: auto;
-  padding: 20px 24px 28px;
+  padding: 24px 28px 32px;
 }
 
 .spacer {
@@ -250,9 +315,9 @@ textarea {
 .btn {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  height: 32px;
-  padding: 0 12px;
+  gap: 7px;
+  height: 36px;
+  padding: 0 14px;
   border: 1px solid var(--line-strong);
   border-radius: var(--radius-s);
   background: var(--raised);
@@ -282,7 +347,7 @@ textarea {
   color: var(--text);
 }
 .btn.icon {
-  width: 32px;
+  width: 36px;
   padding: 0;
   justify-content: center;
 }
@@ -291,8 +356,8 @@ textarea {
 }
 
 .field {
-  height: 32px;
-  padding: 0 10px;
+  height: 36px;
+  padding: 0 11px;
   border: 1px solid var(--line-strong);
   border-radius: var(--radius-s);
   background: var(--bg);
@@ -314,13 +379,13 @@ select.field {
 }
 .search-box svg {
   position: absolute;
-  left: 9px;
+  left: 10px;
   color: var(--text-3);
   pointer-events: none;
 }
 .search-box .field {
-  width: 200px;
-  padding-left: 30px;
+  width: 220px;
+  padding-left: 32px;
 }
 
 .chips {
@@ -330,22 +395,29 @@ select.field {
 }
 
 .chip {
-  height: 28px;
-  padding: 0 10px;
+  height: 34px;
+  padding: 0 14px;
   border: 1px solid var(--line-strong);
-  border-radius: 14px;
+  border-radius: 17px;
   background: transparent;
-  color: var(--text-3);
-  font-size: 13px;
+  color: var(--text-2);
+  font-size: 14px;
   cursor: pointer;
+  transition: background-color 120ms ease, color 120ms ease, border-color 120ms ease;
 }
 .chip[aria-pressed='true'] {
-  border-color: var(--text-2);
-  background: var(--raised);
-  color: var(--text);
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-weight: 600;
 }
 .chip:hover {
   color: var(--text);
+  border-color: var(--text-3);
+}
+.chip .faint {
+  color: inherit;
+  opacity: 0.75;
 }
 
 .segmented {
@@ -355,12 +427,12 @@ select.field {
   overflow: hidden;
 }
 .segmented button {
-  height: 30px;
-  padding: 0 10px;
+  height: 34px;
+  padding: 0 12px;
   border: 0;
   background: transparent;
   color: var(--text-2);
-  font-size: 13px;
+  font-size: 14px;
   cursor: pointer;
 }
 .segmented button + button {
@@ -398,16 +470,16 @@ select.field {
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 14px 16px 0;
+  padding: 18px 20px 0;
 }
 
 .panel-head h2 {
-  font-size: 15px;
-  font-weight: 600;
+  font-size: 17px;
+  font-weight: 700;
 }
 
 .panel-body {
-  padding: 12px 16px 16px;
+  padding: 14px 20px 20px;
 }
 
 .muted {
@@ -457,15 +529,15 @@ kbd {
 }
 
 .empty {
-  padding: 28px 8px;
+  padding: 48px 16px;
   color: var(--text-2);
   text-align: center;
 }
 .empty strong {
   display: block;
-  margin-bottom: 4px;
+  margin-bottom: 6px;
   color: var(--text);
-  font-size: 15px;
+  font-size: 18px;
 }
 
 /* ---------- 스쿼드 표 ---------- */
@@ -473,9 +545,9 @@ kbd {
 .toolbar {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 12px;
   flex-wrap: wrap;
-  padding: 10px 24px;
+  padding: 12px 28px;
   border-bottom: 1px solid var(--line);
 }
 
@@ -498,14 +570,14 @@ kbd {
   border-collapse: separate;
   border-spacing: 0;
   table-layout: fixed;
-  font-size: 13px;
+  font-size: 14px;
   font-variant-numeric: tabular-nums;
 }
 
 .ptable th,
 .ptable td {
   height: var(--row-h);
-  padding: 0 8px;
+  padding: 0 10px;
   overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
@@ -516,17 +588,18 @@ kbd {
   position: sticky;
   z-index: 2;
   background: var(--surface);
-  color: var(--text-2);
-  font-weight: 500;
+  color: var(--text);
+  font-weight: 600;
   text-align: left;
 }
 
 .ptable .band th {
   top: 0;
-  height: 24px;
+  height: 28px;
   border-bottom: 0;
   color: var(--text-3);
-  font-size: 12px;
+  font-size: 13px;
+  font-weight: 600;
 }
 .ptable .band th.group-start,
 .ptable .heads th.group-start,
@@ -535,14 +608,14 @@ kbd {
 }
 
 .ptable .heads th {
-  top: 24px;
-  height: 32px;
+  top: 28px;
+  height: 38px;
   border-bottom: 1px solid var(--line-strong);
   cursor: pointer;
   user-select: none;
 }
 .ptable .heads th:hover {
-  color: var(--text);
+  color: var(--accent);
 }
 .ptable .heads th[aria-sort='ascending'],
 .ptable .heads th[aria-sort='descending'] {
@@ -581,11 +654,15 @@ kbd {
 }
 .ptable td.center {
   text-align: center;
-  padding: 0 2px;
+  padding: 0 3px;
 }
 
 .ptable tbody tr.row {
   cursor: pointer;
+}
+/* 줄무늬: 긴 줄을 따라 읽을 때 눈이 다른 줄로 넘어가지 않게 */
+.ptable tbody tr.row:nth-child(even) td {
+  background-image: linear-gradient(var(--zebra), var(--zebra));
 }
 .ptable tbody tr.row:hover td {
   background: var(--hover);
@@ -601,7 +678,7 @@ kbd {
   background: var(--hover);
 }
 .ptable td.name {
-  font-weight: 600;
+  font-weight: 700;
   color: var(--text);
 }
 .ptable td.text {
@@ -613,20 +690,41 @@ kbd {
   border: 0;
 }
 
-/* 능력치 값의 네 단계. 색상(hue)이 아니라 밝기와 굵기로 구분해 색각과 무관하게 읽힌다. */
-.a1 {
-  color: var(--text-3);
+/* 능력치 칩: 게임과 같은 네 단계. 색과 함께 굵기도 올라가서 색을 구분하기 어려워도 읽힌다. */
+.attr-chip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 32px;
+  height: 26px;
+  padding: 0 6px;
+  border-radius: 6px;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
 }
-.a2 {
-  color: var(--text-2);
+.attr-chip.a1 {
+  background: var(--a1-bg);
+  color: var(--a1-ink);
+  font-weight: 500;
 }
-.a3 {
-  color: var(--text);
-  font-weight: 600;
+.attr-chip.a2 {
+  background: var(--a2-bg);
+  color: var(--a2-ink);
+  font-weight: 500;
 }
-.a4 {
-  color: var(--accent);
-  font-weight: 700;
+.attr-chip.a3 {
+  background: var(--a3-bg);
+  color: var(--a3-ink);
+  font-weight: 650;
+}
+.attr-chip.a4 {
+  background: var(--a4-bg);
+  color: var(--a4-ink);
+  font-weight: 800;
+}
+:root[data-density='comfortable'] .attr-chip {
+  height: 30px;
+  min-width: 36px;
 }
 .ranged {
   font-size: 11.5px;
@@ -637,12 +735,15 @@ kbd {
 .legend {
   display: flex;
   align-items: center;
-  gap: 12px;
-  font-size: 12px;
+  gap: 6px;
+  font-size: 13px;
   color: var(--text-3);
 }
-.legend span b {
-  margin-right: 4px;
+.legend .attr-chip {
+  padding: 0 8px;
+}
+.legend b {
+  font-weight: inherit;
 }
 
 /* ---------- 뎁스 차트 ---------- */
@@ -948,13 +1049,13 @@ kbd {
 .compare-table {
   width: 100%;
   border-collapse: collapse;
-  font-size: 13px;
+  font-size: 14px;
   font-variant-numeric: tabular-nums;
 }
 .compare-table th,
 .compare-table td {
-  height: 28px;
-  padding: 0 8px;
+  height: 36px;
+  padding: 0 10px;
   border-bottom: 1px solid var(--line);
   text-align: left;
   white-space: nowrap;
@@ -974,9 +1075,9 @@ kbd {
   color: var(--text-2);
 }
 .compare-group th {
-  padding-top: 10px;
-  color: var(--text-3);
-  font-size: 12px;
+  padding-top: 14px;
+  color: var(--text-2);
+  font-size: 13px;
   font-weight: 600;
 }
 /* 줄에서 가장 높은 값: 색이 아니라 앞에 붙는 점으로 표시한다 */
@@ -1153,7 +1254,7 @@ a {
   border-bottom: 1px solid var(--line);
 }
 .drawer-head h2 {
-  font-size: 18px;
+  font-size: 21px;
   font-weight: 700;
   letter-spacing: -0.01em;
 }
@@ -1166,9 +1267,9 @@ a {
 .facts {
   display: grid;
   grid-template-columns: auto 1fr;
-  gap: 4px 14px;
-  margin: 0 0 16px;
-  font-size: 13px;
+  gap: 6px 16px;
+  margin: 0 0 18px;
+  font-size: 14px;
 }
 .facts dt {
   color: var(--text-3);
@@ -1196,9 +1297,10 @@ a {
 .attr-list div {
   display: flex;
   justify-content: space-between;
+  align-items: center;
   gap: 8px;
   padding: 3px 0;
-  font-size: 13px;
+  font-size: 14px;
 }
 .attr-list dt {
   color: var(--text-2);
@@ -1223,9 +1325,9 @@ a {
     grid-template-columns: 56px minmax(0, 1fr);
   }
   .brand span,
-  .nav-label,
+  .nav-text,
   .nav-later,
-  .watch-state span:not(.dot) {
+  .status-row > span:not(.dot) {
     display: none;
   }
   .brand {
@@ -1234,10 +1336,12 @@ a {
   }
   .nav-item {
     justify-content: center;
+    min-height: 44px;
     padding: 0;
   }
-  .watch-state {
-    justify-content: center;
+  .status-card {
+    justify-items: center;
+    padding: 10px 0;
   }
   .page-head,
   .toolbar {
@@ -1319,7 +1423,7 @@ a {
   flex: 1;
   min-height: 0;
   display: grid;
-  grid-template-columns: 300px minmax(0, 1fr);
+  grid-template-columns: 320px minmax(0, 1fr);
 }
 
 .editor-list {
@@ -1333,8 +1437,9 @@ a {
   width: 100%;
 }
 .editor-list-note {
-  margin: 10px 2px 6px;
-  font-size: 12px;
+  margin: 12px 4px 8px;
+  font-size: 13px;
+  font-weight: 600;
 }
 .editor-players {
   flex: 1;
@@ -1349,11 +1454,11 @@ a {
 .editor-player {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 3px;
   width: 100%;
-  padding: 7px 10px;
+  padding: 10px 12px;
   border: 0;
-  border-radius: var(--radius-s);
+  border-radius: var(--radius-m);
   background: transparent;
   color: var(--text);
   text-align: left;
@@ -1363,8 +1468,8 @@ a {
   background: var(--hover);
 }
 .editor-player[aria-current='true'] {
-  background: var(--raised);
-  box-shadow: inset 2px 0 0 var(--accent);
+  background: var(--accent-soft);
+  box-shadow: inset 3px 0 0 var(--accent);
 }
 .editor-player strong {
   display: flex;
@@ -1373,7 +1478,7 @@ a {
   font-weight: 600;
 }
 .editor-player span.muted {
-  font-size: 12px;
+  font-size: 13px;
 }
 
 .editor-form {
@@ -1387,52 +1492,82 @@ a {
   gap: 12px;
 }
 .editor-who h2 {
-  font-size: 20px;
+  font-size: 24px;
   font-weight: 700;
   letter-spacing: -0.01em;
 }
 .editor-group {
-  margin-top: 20px;
+  margin-top: 18px;
+  padding: 16px 18px 18px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-m);
+  background: var(--surface);
 }
 .editor-group h3 {
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--text-2);
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--text);
 }
 .editor-group > p.faint {
-  margin-top: 3px;
-  font-size: 12px;
+  margin-top: 4px;
+  font-size: 13px;
 }
 .edit-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(168px, 1fr));
-  gap: 4px 20px;
-  margin-top: 8px;
+  grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
+  gap: 6px 24px;
+  margin-top: 12px;
 }
 .edit-cell {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 8px;
-  height: 32px;
-  font-size: 13px;
+  gap: 10px;
+  height: 38px;
+  font-size: 14px;
   color: var(--text-2);
 }
 .edit-cell input {
-  width: 62px;
-  height: 28px;
-  padding: 0 6px;
+  width: 68px;
+  height: 34px;
+  padding: 0 8px;
   text-align: right;
+  font-size: 15px;
+}
+/* 숫자 칸의 위아래 화살표가 값을 가려서 감춘다(키보드 위아래 키와 직접 입력은 그대로 된다) */
+.edit-cell input::-webkit-inner-spin-button,
+.edit-cell input::-webkit-outer-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+/* 1~20 능력치 칸: 표와 같은 단계 색 */
+.edit-cell.banded.a1 input {
+  background: var(--a1-bg);
+  color: var(--a1-ink);
+}
+.edit-cell.banded.a2 input {
+  background: var(--a2-bg);
+  color: var(--a2-ink);
+}
+.edit-cell.banded.a3 input {
+  background: var(--a3-bg);
+  color: var(--a3-ink);
+  font-weight: 650;
+}
+.edit-cell.banded.a4 input {
+  background: var(--a4-bg);
+  color: var(--a4-ink);
+  font-weight: 800;
 }
 /* 바뀐 값: 색만이 아니라 굵기와 테두리로도 드러낸다 */
 .edit-cell.changed {
   color: var(--text);
   font-weight: 600;
 }
-.edit-cell.changed input {
-  border-color: var(--accent);
-  background: var(--accent-soft);
-  font-weight: 700;
+.edit-cell.changed input,
+.edit-cell.changed.banded input {
+  border: 2px solid var(--accent);
+  font-weight: 800;
 }
 
 @media (max-width: 860px) {
@@ -1514,4 +1649,82 @@ a {
 }
 .start .facts dd {
   margin: 0;
+}
+
+/* ---------- 리디자인: 처음 쓰는 사람을 위한 안내 ---------- */
+
+/* 빈 화면: 무엇을 하면 되는지 순서대로 */
+.empty.guide {
+  max-width: 560px;
+  margin: 0 auto;
+  text-align: left;
+}
+.empty.guide strong {
+  text-align: center;
+}
+.guide-steps {
+  display: grid;
+  gap: 10px;
+  margin: 16px 0 0;
+  padding: 0;
+  list-style: none;
+  counter-reset: guide;
+}
+.guide-steps li {
+  position: relative;
+  padding: 12px 14px 12px 50px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-m);
+  background: var(--surface);
+  color: var(--text-2);
+  font-size: 14px;
+  counter-increment: guide;
+}
+.guide-steps li::before {
+  content: counter(guide);
+  position: absolute;
+  left: 14px;
+  top: 12px;
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: var(--raised);
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.list-empty {
+  display: grid;
+  gap: 12px;
+  justify-items: start;
+  padding: 8px 4px;
+}
+
+/* 홈의 단계 표시: 끝난 단계는 초록 */
+.step {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 28px;
+  height: 28px;
+  border: 2px solid var(--line-strong);
+  border-radius: 50%;
+  color: var(--text-2);
+  font-size: 14px;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+}
+.step.done {
+  border-color: var(--good);
+  background: rgba(99, 214, 157, 0.16);
+  color: var(--good);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * {
+    transition: none !important;
+  }
 }

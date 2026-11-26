@@ -178,16 +178,16 @@ export function Squad(props: {
           <div className="spacer" />
           {fitted && (
             <div className="legend" aria-label="능력치 표시 기준">
-              <span className="a1">
-                <b>1–7</b>
+              <span className="attr-chip a1" title="약함">
+                <b>1–5</b>
               </span>
-              <span className="a2">
-                <b>8–11</b>
+              <span className="attr-chip a2" title="보통">
+                <b>6–10</b>
               </span>
-              <span className="a3">
-                <b>12–15</b>
+              <span className="attr-chip a3" title="좋음">
+                <b>11–15</b>
               </span>
-              <span className="a4">
+              <span className="attr-chip a4" title="뛰어남">
                 <b>16–20</b>
               </span>
             </div>

@@ -129,6 +129,8 @@ export class GameLink {
       try {
         if (!isSaveFile(path) || !existsSync(path)) return { ok: false, message: '세이브 파일을 찾지 못했습니다.' }
         const world = this.world.apply(path)
+        // 세이브를 다 읽었으면 바로 알린다. 게임의 지금 값을 받는 데는 몇 초 더 걸릴 수 있어, 그동안 화면이 비어 있지 않게
+        this.changed()
         await this.pullLive(false)
         const team = world.teamId === undefined ? ' 내 팀은 아직 찾지 못했습니다. 게임을 켜고 이 세이브를 불러오면 찾습니다.' : ''
         return { ok: true, message: `“${basename(path)}”을 적용했습니다. 선수 ${world.count.toLocaleString()}명을 읽었습니다.${team}` }

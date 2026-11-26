@@ -11,14 +11,17 @@ export function formatTime(iso: string): string {
   return timeFormat.format(new Date(iso))
 }
 
-/** 능력치 값(1~20)을 네 단계로 나눈다: 1~7, 8~11, 12~15, 16~20 */
+/** 능력치 값(1~20)을 네 단계로 나눈다: 1~5 약함, 6~10 보통, 11~15 좋음, 16~20 뛰어남. 값이 없으면 빈 글자 */
 export function attrBand(value: number | null): string {
-  if (value === null) return 'a1'
+  if (value === null) return ''
   if (value >= 16) return 'a4'
-  if (value >= 12) return 'a3'
-  if (value >= 8) return 'a2'
+  if (value >= 11) return 'a3'
+  if (value >= 6) return 'a2'
   return 'a1'
 }
+
+/** 능력치 단계의 이름(풍선 도움말과 범례에 쓴다) */
+export const BAND_LABEL: Record<string, string> = { a1: '약함', a2: '보통', a3: '좋음', a4: '뛰어남' }
 
 export function attrTitle(label: string, cell: CellValue | undefined): string {
   if (!cell || cell.raw === '') return `${label}: 값 없음`
