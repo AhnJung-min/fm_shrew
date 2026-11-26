@@ -1,0 +1,316 @@
+/*
+  대시보드의 "구단 재정·시설과 선수단 건강" 카드.
+  값은 게임이 보여 주는 글자 그대로이고, 막대는 그 값을 눈으로 비교하기 위한 보조다(숫자와 글자를 늘 함께 적는다).
+*/
+
+/* 카드의 바탕은 대시보드의 .dash-card가 정하면 그것을 따른다(:where는 우선순위가 없다) */
+:where(.game-cards) {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-m);
+  padding: 16px 18px;
+}
+
+.game-cards h2 {
+  font-size: 17px;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.game-cards .gc-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.game-cards .gc-refresh {
+  min-height: 32px;
+  padding: 0 12px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-s);
+  background: var(--raised);
+  color: var(--text);
+  font: inherit;
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.game-cards .gc-refresh:hover:not(:disabled) {
+  background: var(--hover);
+}
+
+.game-cards .gc-refresh:focus-visible,
+.game-cards .gc-paths summary:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.game-cards .gc-refresh:disabled {
+  color: var(--text-3);
+  cursor: default;
+}
+
+.game-cards .gc-off {
+  margin-top: 8px;
+  color: var(--text-2);
+  font-size: 15px;
+}
+
+/* 네 묶음 */
+.game-cards .gc-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+  gap: 12px;
+}
+
+.game-cards .gc-block {
+  background: var(--raised);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-m);
+  padding: 12px 14px 10px;
+  min-width: 0;
+}
+
+.game-cards .gc-block h3 {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--accent);
+  margin-bottom: 8px;
+}
+
+.game-cards dl {
+  margin: 0;
+}
+
+.game-cards .gc-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 12px;
+  padding: 5px 0;
+  border-top: 1px solid var(--line);
+}
+
+.game-cards .gc-row:first-child {
+  border-top: 0;
+}
+
+.game-cards dt {
+  color: var(--text-3);
+  font-size: 14px;
+  flex: none;
+}
+
+.game-cards dd {
+  margin: 0;
+  color: var(--text);
+  font-size: 15px;
+  font-weight: 600;
+  text-align: right;
+  overflow-wrap: anywhere;
+}
+
+.game-cards dd small,
+.game-cards .gc-facility-text small {
+  display: block;
+  color: var(--text-3);
+  font-size: 12.5px;
+  font-weight: 400;
+}
+
+.game-cards .gc-unknown {
+  color: var(--text-3);
+  font-weight: 400;
+}
+
+.game-cards .gc-note {
+  margin-top: 6px;
+  color: var(--text-3);
+  font-size: 12.5px;
+}
+
+.game-cards .gc-source {
+  margin-top: 8px;
+  color: var(--text-3);
+  font-size: 12.5px;
+}
+
+/* 시설 */
+.game-cards .gc-facilities {
+  display: grid;
+  gap: 2px;
+}
+
+.game-cards .gc-facility {
+  display: grid;
+  grid-template-columns: 5.5em 1fr minmax(0, 7.5em);
+  align-items: center;
+  gap: 10px;
+  padding: 6px 0;
+  border-top: 1px solid var(--line);
+}
+
+.game-cards .gc-facility:first-child {
+  border-top: 0;
+}
+
+.game-cards .gc-facility-name {
+  color: var(--text-3);
+  font-size: 14px;
+}
+
+.game-cards .gc-facility-text {
+  color: var(--text);
+  font-size: 15px;
+  font-weight: 600;
+  text-align: right;
+  overflow-wrap: anywhere;
+}
+
+.game-cards .gc-bar {
+  display: block;
+  height: 8px;
+  border-radius: 4px;
+  background: var(--bg);
+  border: 1px solid var(--line-strong);
+  overflow: hidden;
+}
+
+.game-cards .gc-bar i {
+  display: block;
+  height: 100%;
+  background: var(--text-2);
+}
+
+.game-cards .gc-bar.gc-high i {
+  background: var(--good);
+}
+
+.game-cards .gc-bar.gc-mid i {
+  background: var(--accent);
+}
+
+.game-cards .gc-bar.gc-low i {
+  background: var(--warn);
+}
+
+.game-cards .gc-bar.gc-none {
+  border-style: dashed;
+}
+
+/* 선수단 건강 */
+.game-cards .gc-health {
+  margin-top: 12px;
+}
+
+.game-cards .gc-count {
+  color: var(--text-2);
+  font-size: 14px;
+  margin-bottom: 8px;
+}
+
+.game-cards .gc-groups {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  gap: 12px 18px;
+}
+
+.game-cards .gc-group h4 {
+  display: flex;
+  justify-content: space-between;
+  margin: 0 0 4px;
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.game-cards .gc-group h4 span {
+  color: var(--text-3);
+  font-weight: 400;
+}
+
+.game-cards .gc-group ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.game-cards .gc-empty {
+  color: var(--text-3);
+  font-size: 14px;
+}
+
+.game-cards .gc-person {
+  display: grid;
+  grid-template-columns: 28px minmax(0, 9em) 1fr;
+  align-items: center;
+  gap: 10px;
+  padding: 4px 0;
+  border-top: 1px solid var(--line);
+}
+
+.game-cards .gc-person:first-child {
+  border-top: 0;
+}
+
+.game-cards .gc-person-name {
+  color: var(--text);
+  font-size: 15px;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.game-cards .gc-person-name small {
+  margin-left: 6px;
+  color: var(--text-3);
+  font-size: 12.5px;
+  font-weight: 400;
+}
+
+.game-cards .gc-person-detail {
+  color: var(--text-2);
+  font-size: 14px;
+  text-align: right;
+  overflow-wrap: anywhere;
+}
+
+/* 읽은 경로 확인 */
+.game-cards .gc-paths {
+  margin-top: 12px;
+  color: var(--text-3);
+  font-size: 13px;
+}
+
+.game-cards .gc-paths summary {
+  cursor: pointer;
+  width: fit-content;
+}
+
+.game-cards .gc-paths ul {
+  list-style: none;
+  margin: 8px 0 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  gap: 2px 18px;
+}
+
+.game-cards .gc-paths li {
+  display: flex;
+  gap: 8px;
+  min-width: 0;
+}
+
+.game-cards .gc-paths code {
+  color: var(--text-2);
+  font-family: ui-monospace, Consolas, monospace;
+  flex: none;
+}
+
+.game-cards .gc-paths li span {
+  overflow-wrap: anywhere;
+}

@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs'
 import { extractDatabase, extractFile, gameDateOf, openContainer } from './container'
-import { contractInEffect, dateKey, findContracts } from './contracts'
+import { contractInEffect, dateKey, findContracts, loanLender } from './contracts'
 import {
   ATTRIBUTE_COUNT,
   BLOCK_SIZE,
@@ -25,10 +25,26 @@ import {
  * - 팀 목록이 기록 안 어디에 있는지는 구단마다 다르다. 대신 대표 팀 번호가 (순번 + 차이)이고 그 차이가
  *   같은 나라의 구단끼리 같다는 점을 쓴다: "000000, 수, 번호" 모양인 곳을 모두 후보로 모은 뒤,
  *   이웃한 구단들에 똑같이 나오는 차이를 고른다.
- * - 고유 번호가 20억 이상인 구단은 여자 팀이다.
+ * - 여자 구단(clubs[].women)은 그 구단 선수들의 성별 다수로 정한다. 고유 번호(20억 이상)로는 새로 만들어진
+ *   남자 구단과 가릴 수 없다. 선수 한 명의 성별은 SaveWorld.sex(사람 기록에 적힌 값)를 쓴다.
+ *
+ * 성별(26.3.2 세이브를 분석해 알아낸 것):
+ *   사람 기록 끝의 꼬리표(ownerTag) 바로 앞 8바이트가 [플래그 u32][작은 수 u32]이고, 플래그의 둘째 바이트(꼬리표 -7)에서
+ *   0x10 비트가 켜져 있으면 여자, 꺼져 있으면 남자다. 같은 바이트의 다른 비트(0x02, 0x40, 0x80)는 성별과 무관하다.
+ *   확인 방법: 켜져 있는 게임이 여자 팀이라고 알려 준 팀의 선수 9,442명은 모두 켜져 있고, 남자 팀의 선수 81,956명은
+ *   하나도 켜져 있지 않았다(어긋난 선수 0명). 새로 만들어진 선수(고유 번호 20억 이상)와 기존 선수 양쪽에서 같았다.
+ *   소속이 없는 선수 8,491명 중 2,294명(27%)이 여자로 나오는데, 이들의 이름은 여자 이름이고 사람 기록의 머리 모양 값
+ *   (생일 뒤 7바이트째의 0x02 비트, 여자의 95%·남자의 6%에서 켜짐)과도 92% 맞는다.
  */
 
 export const NO_TEAM = 0xffffffff
+/** SaveWorld.sex 값 */
+export const SEX_UNKNOWN = 0
+export const SEX_MALE = 1
+export const SEX_FEMALE = 2
+/** 꼬리표 앞 플래그에서 성별을 나타내는 바이트의 위치(꼬리표 기준)와 여자 비트 */
+const SEX_BYTE_BEFORE_TAG = 7
+const SEX_FEMALE_BIT = 0x10
 /** 몸값 자리에 이 값이 적혀 있으면 몸값이 정해지지 않은 것이다 */
 const VALUE_PLACEHOLDER = 300_000_000
 const WOMEN_CLUB_UID = 2_000_000_000
@@ -42,6 +58,7 @@ export interface ClubInfo {
   uid: number
   name: string
   short: string
+  /** 여자 구단인지(선수들의 성별 다수로 정함). 선수가 없는 구단은 고유 번호로 어림한 값 */
   women: boolean
 }
 
@@ -66,10 +83,17 @@ export interface SaveWorld {
   wage: Uint32Array
   /** 계약 만료일(연도 × 1000 + 연중 일수). 모르면 0 */
   contractEnd: Uint32Array
+  /**
+   * 임대 중이면 임대를 보낸 팀(원 소속)의 번호, 아니면 NO_TEAM. 선수의 소속 팀은 임대를 받은 팀이다.
+   * 임대 선수는 계약 기록이 둘이다: 원 소속과 맺은 계약(만료일이 있음)과, 임대받은 팀과 맺은 만료일 없는 기록. contracts.ts의 loanLender 참고.
+   */
+  loanFrom: Uint32Array
   /** 계약상 입지(게임의 값 그대로, shared/world.ts의 SQUAD_STATUS_LABEL). 모르면 0 */
   squadStatus: Uint8Array
   /** 국적의 나라 번호(게임 안의 순번). 모르면 0 */
   nationId: Uint16Array
+  /** 성별: 0 모름, 1 남자, 2 여자. 세이브에서 읽는다(SEX_* 상수) */
+  sex: Uint8Array
   /** 생일을 모르면 0 */
   birthYear: Uint16Array
   birthDay: Uint16Array
@@ -206,11 +230,11 @@ const MAX_RECORD_KIND = 0x10
  * 켜져 있는 게임의 메모리와 대조했을 때 선수 99,873명 모두 이 규칙으로 맞았다(26.3.2).
  * 앞 사람의 꼬리표를 읽지 못한 기록은 블록 뒤에서 처음 나오는 꼬리표를 쓴다.
  */
-export function ownerTag(db: Buffer, block: number, end: number): { uid: number; index: number } | null {
+export function ownerTag(db: Buffer, block: number, end: number): { uid: number; index: number; at: number } | null {
   const before = db.readUInt32LE(block - 39)
   const wanted = before !== 0 && before === db.readUInt32LE(block - 35) ? db.readUInt32LE(block - 43) + 1 : -1
   const last = Math.min(end, db.length) - 13
-  let first: { uid: number; index: number } | null = null
+  let first: { uid: number; index: number; at: number } | null = null
   for (let at = block + BLOCK_SIZE; at <= last; at++) {
     const uid = db.readUInt32LE(at + 4)
     if (uid === 0 || uid === 0xffffffff || uid !== db.readUInt32LE(at + 8)) continue
@@ -220,11 +244,21 @@ export function ownerTag(db: Buffer, block: number, end: number): { uid: number;
     if (db.readUInt32LE(at - 4) > 0xff) continue
     const kind = db[at + 12]
     if (kind === 0 || kind > MAX_RECORD_KIND) continue
-    if (index === wanted) return { uid, index }
-    if (first === null) first = { uid, index }
+    if (index === wanted) return { uid, index, at }
+    if (first === null) first = { uid, index, at }
     if (wanted < 0) break
   }
   return first
+}
+
+/**
+ * 꼬리표(ownerTag의 at) 앞 플래그로 성별을 읽는다. 플래그가 선수 기록 안(능력치 블록 뒤)이 아니면 모른다(SEX_UNKNOWN).
+ * 레이아웃은 파일 맨 위 설명 참고.
+ */
+export function sexAt(db: Buffer, block: number, tagAt: number): number {
+  const at = tagAt - SEX_BYTE_BEFORE_TAG
+  if (at < block + BLOCK_SIZE || at >= db.length) return SEX_UNKNOWN
+  return (db[at] & SEX_FEMALE_BIT) !== 0 ? SEX_FEMALE : SEX_MALE
 }
 
 /** 선수의 고유 번호만. 찾지 못하면 0 */
@@ -270,8 +304,10 @@ export function buildWorld(db: Buffer, pickTeam?: (world: SaveWorld) => number |
     value: new Uint32Array(count),
     wage: new Uint32Array(count),
     contractEnd: new Uint32Array(count),
+    loanFrom: new Uint32Array(count).fill(NO_TEAM),
     squadStatus: new Uint8Array(count),
     nationId: new Uint16Array(count),
+    sex: new Uint8Array(count),
     birthYear: new Uint16Array(count),
     birthDay: new Uint16Array(count),
     positions: new Uint8Array(count * POSITION_COUNT),
@@ -294,11 +330,25 @@ export function buildWorld(db: Buffer, pickTeam?: (world: SaveWorld) => number |
     const owner = ownerTag(db, block, recordEnd(k))
     world.uids[k] = owner?.uid ?? 0
     ownerIndex[k] = owner?.index ?? 0
+    world.sex[k] = owner ? sexAt(db, block, owner.at) : SEX_UNKNOWN
     const value = block + BLOCK_SIZE + 4 <= db.length ? db.readUInt32LE(block + BLOCK_SIZE) : 0
     world.value[k] = value === VALUE_PLACEHOLDER ? 0 : value
     world.positions.set(db.subarray(block, block + POSITION_COUNT), k * POSITION_COUNT)
     world.attributes.set(db.subarray(block + POSITION_COUNT, block + BLOCK_SIZE), k * ATTRIBUTE_COUNT)
   }
+
+  // 여자 구단: 고유 번호(20억 이상)로는 새로 만들어진 남자 구단과 가릴 수 없어, 그 구단 선수들의 성별 다수로 정한다
+  const femaleCount = new Int32Array(world.clubs.length)
+  const maleCount = new Int32Array(world.clubs.length)
+  for (let k = 0; k < count; k++) {
+    const club = world.club[k]
+    if (club < 0) continue
+    if (world.sex[k] === SEX_FEMALE) femaleCount[club]++
+    else if (world.sex[k] === SEX_MALE) maleCount[club]++
+  }
+  world.clubs.forEach((club, i) => {
+    if (femaleCount[i] + maleCount[i] > 0) club.women = femaleCount[i] > maleCount[i]
+  })
 
   // 게임의 오늘은 꾸러미의 game_info에서 읽어 받는다(today). 받지 못했을 때만 선수 기록에서 어림한다:
   // 내 팀 선수들의 기록에서 가장 흔한 날짜. 이 어림은 게임 시작일로 나오기도 해서 믿기 어렵다.
@@ -313,7 +363,10 @@ export function buildWorld(db: Buffer, pickTeam?: (world: SaveWorld) => number |
   // 계약: 여러 기록 가운데 지금 효력이 있는 것을 고르려면 게임의 오늘이 필요해서 마지막에 읽는다
   for (let k = 0; k < count; k++) {
     if (ownerIndex[k] === 0) continue
-    const contract = contractInEffect(findContracts(db, blocks[k] + BLOCK_SIZE, recordEnd(k), ownerIndex[k]), world.gameDate)
+    const records = findContracts(db, blocks[k] + BLOCK_SIZE, recordEnd(k), ownerIndex[k])
+    const lender = loanLender(records, world.gameDate, world.teamIds[k])
+    if (lender !== null) world.loanFrom[k] = lender
+    const contract = contractInEffect(records, world.gameDate)
     if (!contract) continue
     world.wage[k] = contract.wage
     world.contractEnd[k] = contract.end ? dateKey(contract.end) : 0

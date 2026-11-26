@@ -71,31 +71,19 @@ describe('선수 값 고치기', () => {
 })
 
 describe('영입 후보의 유형', () => {
+  // 유형 판정의 자세한 경계는 tests/norms.test.ts에서 본다. 여기서는 세이브 값과 이어지는 것만 확인한다
   const bench: CandidateBench = { starter: { name: '주전', score: 80, ca: 150 }, backup: { name: '후보', score: 72 } }
   const player = { score: 70, age: 25, ca: 140, pa: 145, hasClub: true }
 
-  it('주전 이상이면 즉시 전력감, 두 번째 선수 이상이면 교체 자원이다', () => {
+  it('주전 수준이면 즉시 전력감, 첫 후보 수준 이상이면 교체 자원이다(기준 분포 없이도 계산된다)', () => {
     expect(categoriesOf({ ...player, score: 80 }, bench)).toEqual(['starter'])
     expect(categoriesOf({ ...player, score: 75 }, bench)).toEqual(['rotation'])
-    expect(categoriesOf({ ...player, score: 71.9 }, bench)).toEqual([])
+    expect(categoriesOf({ ...player, score: 60 }, bench)).toEqual([])
   })
 
-  it('두 번째 선수가 없으면 주전보다 6점 낮은 데까지를 교체 자원으로 본다', () => {
-    const alone: CandidateBench = { starter: bench.starter, backup: null }
-    expect(categoriesOf({ ...player, score: 74 }, alone)).toEqual(['rotation'])
-    expect(categoriesOf({ ...player, score: 73.9 }, alone)).toEqual([])
-  })
-
-  it('어리고, 잠재 능력이 내 주전의 현재 능력 이상이고, 더 클 여지가 있으면 유망주다', () => {
-    expect(categoriesOf({ ...player, age: 19, ca: 120, pa: 160 }, bench)).toEqual(['prospect'])
-    expect(categoriesOf({ ...player, age: 22, ca: 120, pa: 160 }, bench)).toEqual([])
-    expect(categoriesOf({ ...player, age: 19, ca: 120, pa: 149 }, bench)).toEqual([])
-    expect(categoriesOf({ ...player, age: 19, ca: 155, pa: 160 }, bench)).toEqual([])
-    expect(categoriesOf({ ...player, age: null, ca: 120, pa: 160 }, bench)).toEqual([])
-  })
-
-  it('소속 구단이 없으면 자유 계약이고, 다른 유형과 겹칠 수 있다', () => {
+  it('소속 구단이 없으면 자유 계약이 붙지만, 위 유형에 들지 못하면 붙지 않는다', () => {
     expect(categoriesOf({ ...player, score: 85, hasClub: false }, bench)).toEqual(['starter', 'free'])
+    expect(categoriesOf({ ...player, score: 60, hasClub: false }, bench)).toEqual([])
   })
 
   it('저장값을 게임 표시값으로 바꾼다', () => {

@@ -1,22 +1,31 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { NO_DATA, NO_GAME, type LinkStatus } from '@shared/game'
 import type { AppStatus, Settings as SettingsData } from '@shared/types'
 import { api } from './api'
 import { Sidebar, type Route } from './components/Sidebar'
 import { Backups } from './screens/Backups'
 import { Compare, MAX_COMPARE } from './screens/Compare'
+import { Dashboard } from './screens/Dashboard'
 import { Editor } from './screens/Editor'
 import { Home } from './screens/Home'
 import { Settings } from './screens/Settings'
 import { Squad } from './screens/Squad'
 import { Targets } from './screens/Targets'
 
-const ROUTES: Route[] = ['home', 'squad', 'targets', 'compare', 'editor', 'backups', 'settings']
+const ROUTES: Route[] = ['dashboard', 'home', 'squad', 'targets', 'compare', 'editor', 'backups', 'settings']
+
+/** 주소의 #화면이름이 있으면 그 화면 */
+function hashRoute(): Route | null {
+  const fromHash = location.hash.replace('#', '') as Route
+  return ROUTES.includes(fromHash) ? fromHash : null
+}
 
 function initialRoute(): Route {
-  const fromHash = location.hash.replace('#', '') as Route
-  return ROUTES.includes(fromHash) ? fromHash : 'home'
+  return hashRoute() ?? 'home'
 }
+
+/** 앱을 켠 뒤 이 시간 안에 세이브가 적용되면(지난번 세이브를 자동으로 다시 읽는 중) 대시보드로 연다 */
+const AUTO_OPEN_MS = 20_000
 
 /**
  * 적용한 세이브나 게임에서 받은 값이 바뀌면 달라지는 글자.
@@ -29,6 +38,13 @@ function dataKeyOf(link: LinkStatus): string {
 
 export function App() {
   const [route, setRoute] = useState<Route>(initialRoute)
+  /** 사용자가 화면을 직접 골랐는지(주소의 #화면이름 포함). 고르지 않았으면 세이브가 적용될 때 대시보드로 연다 */
+  const chosen = useRef(hashRoute() !== null)
+  const startedAt = useRef(Date.now())
+  const navigate = useCallback((next: Route): void => {
+    chosen.current = true
+    setRoute(next)
+  }, [])
   const [status, setStatus] = useState<AppStatus | null>(null)
   const [settings, setSettings] = useState<SettingsData | null>(null)
   const [link, setLink] = useState<LinkStatus>({ game: NO_GAME, data: NO_DATA, busy: false })
@@ -51,10 +67,22 @@ export function App() {
   }, [settings])
 
   useEffect(() => {
-    const onHash = (): void => setRoute(initialRoute())
+    const onHash = (): void => {
+      chosen.current = true
+      setRoute(initialRoute())
+    }
     window.addEventListener('hashchange', onHash)
     return () => window.removeEventListener('hashchange', onHash)
   }, [])
+
+  // 켤 때 적용된 세이브가 있으면 시작 화면 대신 대시보드로 연다(사용자가 이미 화면을 골랐다면 그대로 둔다)
+  const hasSave = link.data.save !== null
+  useEffect(() => {
+    if (hasSave && !chosen.current && Date.now() - startedAt.current < AUTO_OPEN_MS) {
+      chosen.current = true
+      setRoute((current) => (current === 'home' ? 'dashboard' : current))
+    }
+  }, [hasSave])
 
   // 다른 세이브를 적용하면 담아 둔 비교 선수는 비운다
   const savePath = link.data.save?.path ?? ''
@@ -77,22 +105,35 @@ export function App() {
 
   return (
     <div className="app">
-      <Sidebar route={route} onNavigate={setRoute} link={link} />
+      <Sidebar route={route} onNavigate={navigate} link={link} />
       <main className="main">
-        {route === 'home' && <Home status={status} link={link} onNavigate={setRoute} />}
+        {route === 'dashboard' && (
+          <Dashboard
+            dataKey={dataKey}
+            link={link}
+            settings={settings}
+            onGoStart={() => navigate('home')}
+            onGoSquad={() => navigate('squad')}
+            onFindTargets={(slot) => {
+              setTargetSlot({ ...slot, at: Date.now() })
+              navigate('targets')
+            }}
+          />
+        )}
+        {route === 'home' && <Home status={status} link={link} onNavigate={navigate} />}
         {route === 'squad' && (
           <Squad
             dataKey={dataKey}
             link={link}
             settings={settings}
             onSettings={(patch) => void changeSettings(patch)}
-            onGoHome={() => setRoute('home')}
+            onGoHome={() => navigate('home')}
             compare={compare}
             onToggleCompare={toggleCompare}
-            onOpenCompare={() => setRoute('compare')}
+            onOpenCompare={() => navigate('compare')}
             onFindTargets={(slot) => {
               setTargetSlot({ ...slot, at: Date.now() })
-              setRoute('targets')
+              navigate('targets')
             }}
           />
         )}
@@ -102,18 +143,18 @@ export function App() {
             link={link}
             settings={settings}
             slotRequest={targetSlot}
-            onGoHome={() => setRoute('home')}
+            onGoHome={() => navigate('home')}
             onEdit={(uid) => {
               setEditorUid(uid)
-              setRoute('editor')
+              navigate('editor')
             }}
           />
         )}
         {route === 'compare' && (
-          <Compare dataKey={dataKey} idxs={compare} onIdxs={setCompare} settings={settings} onGoSquad={() => setRoute('squad')} />
+          <Compare dataKey={dataKey} idxs={compare} onIdxs={setCompare} settings={settings} onGoSquad={() => navigate('squad')} />
         )}
         {route === 'editor' && (
-          <Editor dataKey={dataKey} link={link} openUid={editorUid} onOpened={() => setEditorUid(null)} onGoHome={() => setRoute('home')} />
+          <Editor dataKey={dataKey} link={link} openUid={editorUid} onOpened={() => setEditorUid(null)} onGoHome={() => navigate('home')} />
         )}
         {route === 'backups' && <Backups settings={settings} onChange={changeSettings} />}
         {route === 'settings' && <Settings status={status} settings={settings} onChange={changeSettings} />}

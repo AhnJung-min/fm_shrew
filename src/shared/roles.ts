@@ -25,6 +25,10 @@ const role = (id: string, label: string, positions: PositionKey[], key: string[]
  * 기본 역할 프리셋.
  * 게임 내부 계산식이 아니라, 각 역할에 흔히 중요하다고 보는 능력치로 직접 짠 것이다.
  * 설정 화면에서 가중치를 고칠 수 있다.
+ *
+ * 검토 1회차에서 "도움(2)"으로 더한 능력치: 가속·민첩(거의 모든 역할), 속력(수비형 미드·딥라잉·플레이메이커·공격형 미드·타깃맨),
+ * 결단력(풀백·윙백), 힘(풀백). 근거: 세이브 전체에서 현재 능력(CA)을 능력치로 회귀하면 이 능력치들이 크게 걸린다
+ * (위치군별 R² 0.97~0.99). 게임의 역할 화면 표시와는 아직 대조하지 않았다. 이미 핵심(4)이거나 도움(2)으로 있던 것은 그대로 두었다.
  */
 export const ROLES: RoleDef[] = [
   role('gk', '골키퍼', ['GK'],
@@ -32,31 +36,31 @@ export const ROLES: RoleDef[] = [
     ['communication', 'kicking', 'agility', 'decisions', 'anticipation', 'throwing']),
   role('cb', '센터백', ['DC'],
     ['marking', 'tackling', 'heading', 'positioning', 'jumping', 'strength'],
-    ['anticipation', 'concentration', 'bravery', 'composure', 'pace', 'decisions']),
+    ['anticipation', 'concentration', 'bravery', 'composure', 'pace', 'decisions', 'acceleration', 'agility']),
   role('bpd', '볼 플레잉 센터백', ['DC'],
     ['marking', 'tackling', 'positioning', 'passing', 'composure', 'heading'],
-    ['firstTouch', 'technique', 'vision', 'anticipation', 'jumping', 'strength', 'pace', 'decisions']),
+    ['firstTouch', 'technique', 'vision', 'anticipation', 'jumping', 'strength', 'pace', 'decisions', 'acceleration', 'agility']),
   role('fb', '풀백', ['DL', 'DR'],
     ['tackling', 'marking', 'positioning', 'pace', 'stamina', 'workRate'],
-    ['crossing', 'anticipation', 'concentration', 'acceleration', 'teamwork', 'passing']),
+    ['crossing', 'anticipation', 'concentration', 'acceleration', 'teamwork', 'passing', 'determination', 'agility', 'strength']),
   role('wb', '윙백', ['DL', 'DR', 'WBL', 'WBR'],
     ['crossing', 'stamina', 'workRate', 'pace', 'acceleration', 'tackling'],
-    ['dribbling', 'offTheBall', 'teamwork', 'marking', 'positioning', 'technique', 'passing']),
+    ['dribbling', 'offTheBall', 'teamwork', 'marking', 'positioning', 'technique', 'passing', 'determination', 'agility']),
   role('dm', '수비형 미드필더', ['DM'],
     ['tackling', 'positioning', 'anticipation', 'workRate', 'teamwork', 'concentration'],
-    ['marking', 'passing', 'stamina', 'strength', 'decisions', 'composure', 'bravery']),
+    ['marking', 'passing', 'stamina', 'strength', 'decisions', 'composure', 'bravery', 'acceleration', 'agility', 'pace']),
   role('dlp', '딥라잉 플레이메이커', ['DM', 'MC'],
     ['passing', 'vision', 'firstTouch', 'technique', 'composure', 'decisions'],
-    ['teamwork', 'anticipation', 'positioning', 'tackling']),
+    ['teamwork', 'anticipation', 'positioning', 'tackling', 'acceleration', 'agility', 'pace']),
   role('b2b', '박스 투 박스', ['MC'],
     ['stamina', 'workRate', 'passing', 'tackling', 'offTheBall', 'teamwork'],
-    ['firstTouch', 'decisions', 'anticipation', 'strength', 'longShots', 'dribbling', 'positioning', 'pace']),
+    ['firstTouch', 'decisions', 'anticipation', 'strength', 'longShots', 'dribbling', 'positioning', 'pace', 'acceleration', 'agility']),
   role('ap', '플레이메이커', ['MC', 'AMC'],
     ['passing', 'vision', 'technique', 'firstTouch', 'decisions', 'flair'],
-    ['composure', 'offTheBall', 'dribbling', 'anticipation', 'teamwork', 'agility']),
+    ['composure', 'offTheBall', 'dribbling', 'anticipation', 'teamwork', 'agility', 'pace']),
   role('am', '공격형 미드필더', ['AMC'],
     ['offTheBall', 'firstTouch', 'technique', 'passing', 'anticipation', 'finishing'],
-    ['dribbling', 'longShots', 'composure', 'vision', 'flair', 'decisions', 'acceleration']),
+    ['dribbling', 'longShots', 'composure', 'vision', 'flair', 'decisions', 'acceleration', 'pace', 'agility']),
   role('winger', '윙어', ['ML', 'MR', 'AML', 'AMR'],
     ['crossing', 'dribbling', 'pace', 'acceleration', 'technique', 'agility'],
     ['offTheBall', 'firstTouch', 'flair', 'stamina', 'workRate', 'passing', 'balance']),
@@ -68,7 +72,7 @@ export const ROLES: RoleDef[] = [
     ['pace', 'heading', 'dribbling', 'technique', 'decisions', 'strength', 'balance']),
   role('tm', '타깃맨', ['ST'],
     ['heading', 'jumping', 'strength', 'finishing', 'firstTouch', 'bravery'],
-    ['offTheBall', 'composure', 'teamwork', 'anticipation', 'balance', 'passing', 'aggression'])
+    ['offTheBall', 'composure', 'teamwork', 'anticipation', 'balance', 'passing', 'aggression', 'acceleration', 'pace', 'agility'])
 ]
 
 export const ROLE_BY_ID: Record<string, RoleDef> = Object.fromEntries(ROLES.map((r) => [r.id, r]))

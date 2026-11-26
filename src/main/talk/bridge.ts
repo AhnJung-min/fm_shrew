@@ -1,5 +1,6 @@
 import { readFile } from 'node:fs/promises'
 import { join } from 'node:path'
+import { parsePluginAnswer, type PluginAnswer } from '@shared/club'
 import { parseTree, readGameScene, readMatchInfo, type GameScene } from '@shared/gameUi'
 
 /**
@@ -279,4 +280,24 @@ export async function liveAll(rescan = false): Promise<Buffer | null> {
   } catch {
     return null
   }
+}
+
+/** 한 번에 물을 수 있는 선수 수(플러그인의 PersonInfo.MaxPeople과 맞춘다) */
+export const HEALTH_BATCH = 30
+
+/**
+ * 내 구단의 프로필·시설·재정을 켜져 있는 게임에 묻는다(플러그인 0.11.0 이상).
+ * 게임이 꺼져 있거나 답하지 못하면 null.
+ */
+export async function gameClub(teamId: number): Promise<PluginAnswer | null> {
+  const text = await ask(`/club?team=${Math.trunc(teamId)}`, 40_000)
+  return text === null ? null : parsePluginAnswer(text)
+}
+
+/** 1군 선수들의 건강·경기력을 켜져 있는 게임에 묻는다. 게임에서 찾지 못한 선수는 빠진다. 게임이 꺼져 있거나 답하지 못하면 null */
+export async function gameHealth(uids: number[], teamId?: number): Promise<PluginAnswer | null> {
+  if (uids.length === 0) return { records: [], paths: {}, skipped: [] }
+  const team = teamId !== undefined && teamId > 0 ? `&team=${Math.trunc(teamId)}` : ''
+  const text = await ask(`/health?uids=${uids.slice(0, HEALTH_BATCH).join(',')}${team}`, 60_000)
+  return text === null ? null : parsePluginAnswer(text)
 }

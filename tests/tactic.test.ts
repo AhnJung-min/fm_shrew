@@ -3,6 +3,7 @@ import { bestRoleOf, buildDepth, FORMATION_BY_ID } from '../src/shared/depth'
 import { FIELDS } from '../src/shared/fields'
 import { depthCard } from '../src/shared/insights'
 import { attributesOf, effectiveWeights, prepareRole, ROLES, savedRoleScore, scoreRole } from '../src/shared/roles'
+import type { RoleNorm } from '../src/shared/norms'
 import {
   analyseTactic,
   daysBetween,
@@ -158,14 +159,17 @@ describe('전술 분석', () => {
     for (const slot of analysis.slots) expect(slot.factors.find((each) => each.id === 'contract')!.points).toBe(0)
   })
 
-  it('오늘 날짜나 계약 만료일을 모르면 계약 항목을 빼고 나머지를 다시 나눈다', () => {
+  it('오늘 날짜나 계약 만료일을 모르면 항목을 빼지 않고 보통 위험(0.15)으로 계산하며 그렇게 적는다', () => {
     const analysis = analyseTactic(base(squad(), { today: undefined }))!
     for (const slot of analysis.slots) {
       const contract = slot.factors.find((each) => each.id === 'contract')!
-      expect(contract.counted).toBe(false)
-      expect(contract.note).toContain('반영하지 않았습니다')
+      expect(contract.counted).toBe(true)
+      expect(contract.assumed).toBe(true)
+      expect(contract.points).toBeGreaterThan(2)
+      expect(contract.points).toBeLessThan(2.5)
+      expect(contract.note).toContain('보통 수준으로 보았습니다')
       const max = slot.factors.reduce((total, each) => total + each.max, 0)
-      expect(max).toBeGreaterThan(99.6)
+      expect(max).toBe(100)
     }
   })
 
@@ -364,5 +368,132 @@ describe('스쿼드 진단의 포지션 뎁스 카드', () => {
   })
   it('분석을 못 했으면 자료 없음', () => {
     expect(depthCard(null, '4-4-2').tone).toBe('missing')
+  })
+})
+
+describe('역할 기준 분포로 재는 보강 필요도', () => {
+  const norm = (mu: number, sigma = 3): RoleNorm => ({ mu, sigma, beta: 0.28, n: 100, caRef: 150 })
+  const find = (analysis: NonNullable<ReturnType<typeof analyseTactic>>, position: string) => analysis.slots.find((each) => each.slot.position === position)!
+
+  it('주전 전력은 같은 역할 기준에서 z로 잰다: z +0.53이면 위험 (1 - z)/3, 전력 점수 7.0', () => {
+    // 4-4-2의 왼풀백은 level 13 = 65점. 풀백 기준 mu 63.4, σ 3 → z = +0.533
+    const analysis = analyseTactic(base(squad(), { norms: { fb: norm(63.4) } }))!
+    const left = find(analysis, 'DL')
+    expect(left.starterZ).toBeCloseTo(0.533, 2)
+    expect(left.factors.find((each) => each.id === 'quality')!.points).toBeCloseTo((45 * (1 - 0.5333)) / 3, 1)
+    expect(left.normSource).toBe('world')
+  })
+
+  it('점수가 같아도 역할 기준에서 더 약하면 필요도가 높다(같은 65점: 풀백 z 0, 윙어 z -1.67)', () => {
+    const analysis = analyseTactic(base(squad(), { norms: { fb: norm(65), winger: norm(70) } }))!
+    const quality = (position: string): number => find(analysis, position).factors.find((each) => each.id === 'quality')!.points
+    expect(find(analysis, 'DL').starterScore).toBe(find(analysis, 'ML').starterScore)
+    expect(quality('ML')).toBeGreaterThan(quality('DL'))
+  })
+
+  it('기준 분포가 없으면 우리 팀 주전 평균을 기준으로 대신하고 그렇게 표시한다', () => {
+    const analysis = analyseTactic(base(squad()))!
+    for (const slot of analysis.slots) {
+      expect(slot.normSource).toBe('fallback')
+      expect(slot.norm.mu).toBe(analysis.fitAverage)
+    }
+  })
+
+  it('이유 문장은 사실과 맞다: 적합도가 기준보다 높은데 못 미친다고 쓰지 않는다', () => {
+    let state = 99
+    const random = (): number => {
+      state = (state * 1103515245 + 12345) & 0x7fffffff
+      return state / 0x7fffffff
+    }
+    let checked = 0
+    for (let trial = 0; trial < 60; trial++) {
+      const rows = squad().map((row) => {
+        const level = 8 + Math.floor(random() * 11)
+        for (const field of ATTRS) row.cells[field.label] = num(level)
+        return row
+      })
+      const norms = Object.fromEntries(ROLES.map((role) => [role.id, norm(60 + random() * 20, 2.5 + random() * 3)]))
+      const analysis = analyseTactic(base(rows, { norms }))!
+      for (const slot of analysis.slots) {
+        const z = slot.starterZ!
+        expect(slot.reason).not.toContain('기준(70점)')
+        if (slot.reason.includes('크게 낮습니다')) expect(z, slot.reason).toBeLessThan(-1)
+        if (slot.reason.includes('조금 낮습니다')) {
+          expect(z, slot.reason).toBeGreaterThanOrEqual(-1)
+          expect(z, slot.reason).toBeLessThan(0)
+        }
+        if (slot.reason.includes('조금 높은 수준')) expect(z, slot.reason).toBeGreaterThanOrEqual(0)
+        // 이유로 올라온 항목은 실제로 5점 넘게 더한 항목이다
+        const quality = slot.factors.find((each) => each.id === 'quality')!.points
+        if (quality < 5) expect(slot.reason).not.toMatch(/상위권 평균/)
+        checked++
+      }
+    }
+    expect(checked).toBeGreaterThan(500)
+  })
+
+  it('이름 뒤 조사를 받침에 맞게 쓴다(반 다이크가 34세입니다)', () => {
+    const rows = [
+      ...squad().filter((row) => row.name !== '오른풀백'),
+      player({ name: '반 다이크', position: 'D (R)', level: 13, age: 34, end: 20290630 })
+    ]
+    const analysis = analyseTactic(base(rows))!
+    expect(find(analysis, 'DR').factors.find((each) => each.id === 'age')!.note).toContain('주전 반 다이크가 34세입니다')
+  })
+
+  it('알 수 없는 나이·계약은 빼지 않고 보통 위험으로 계산하며, 이유로 올리지 않는다', () => {
+    const analysis = analyseTactic(base(squad(), { today: undefined }))!
+    for (const slot of analysis.slots) {
+      expect(slot.factors.every((each) => each.counted)).toBe(true)
+      expect(slot.reason).not.toContain('계약')
+    }
+  })
+
+  it('후보가 없으면 두께 위험이 1이다. 첫 후보와의 격차는 σ로 잰다', () => {
+    const analysis = analyseTactic(base(squad()))!
+    const gk = find(analysis, 'GK')
+    expect(gk.factors.find((each) => each.id === 'depth')!.points).toBeLessThanOrEqual(25)
+    const lonely = analyseTactic(base(squad().filter((row) => row.name !== '골키퍼2')))!
+    expect(find(lonely, 'GK').factors.find((each) => each.id === 'depth')!.points).toBe(25)
+  })
+})
+
+describe('주전 배정(헝가리안)', () => {
+  const lines = (position: string, level: number, name: string): PlayerRow => player({ name, position, level })
+  // 센터백과 수비형 미드를 둘 다 뛰는 A가 센터백에서도 가장 높아, 탐욕 배정이면 A가 센터백을 차지하고 수비형 미드가 빈다
+  const rows = [lines('D (C), DM', 16, '에이'), lines('D (C)', 14, '비')]
+  const formation = { id: 't', label: 't', rows: [['DC'], ['DM']] as never }
+
+  it('가능한 한 많은 자리를 채우고 뛸 수 없는 자리에는 아무도 넣지 않는다', () => {
+    const slots = buildDepth(rows, COLUMNS, formation, {}, {})
+    expect(slots[0].starter?.name).toBe('비')
+    expect(slots[1].starter?.name).toBe('에이')
+    const none = buildDepth([lines('D (C)', 14, '비')], COLUMNS, formation, {}, {})
+    expect(none[1].starter).toBeNull()
+  })
+
+  it('입력 순서가 달라도 같은 결과다', () => {
+    const many = squad()
+    const a = analyseTactic(base(many))!
+    const b = analyseTactic(base([...many].reverse()))!
+    expect(a.slots.map((each) => each.slot.starter?.idx)).toEqual(b.slots.map((each) => each.slot.starter?.idx))
+  })
+
+  it('4-4-2 전체에서 숙련 15 미만 자리에는 배정하지 않는다', () => {
+    const slots = buildDepth(squad(), COLUMNS, FORMATION_BY_ID['4-4-2'], {}, {})
+    for (const slot of slots) {
+      if (!slot.starter) continue
+      const row = squad().find((each) => each.name === slot.starter!.name)
+      expect(row).toBeDefined()
+    }
+    expect(slots.filter((slot) => slot.starter).length).toBe(11)
+  })
+
+  it('기준 분포가 있으면 약한 자리를 z로 가린다', () => {
+    const norms = Object.fromEntries(ROLES.map((role) => [role.id, { mu: 60, sigma: 3, beta: 0.28, n: 100, caRef: 150 }]))
+    norms.fb = { ...norms.fb, mu: 70 }
+    const slots = buildDepth(squad(), COLUMNS, FORMATION_BY_ID['4-4-2'], {}, {}, 2, norms)
+    // 풀백 기준만 높아 풀백 자리(DL, DR)가 약하다
+    expect(slots.filter((slot) => slot.weak).map((slot) => slot.position).sort()).toEqual(['DL', 'DR'])
   })
 })

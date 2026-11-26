@@ -1,3 +1,6 @@
+import type { RoleNorms } from './norms'
+import type { ClubSnapshot } from './club'
+import type { DashboardData } from './dashboard'
 import type { ApplyResult, LinkStatus, SaveFileInfo } from './game'
 import type { SeasonResult } from './season'
 import type { TalkEffort, TalkStats, TalkStatus } from './talk'
@@ -51,6 +54,8 @@ export interface SquadResult {
   today?: { year: number; month: number; day: number }
   /** 내 구단의 고유 번호(엠블럼용). 모르면 없다 */
   clubUid?: number
+  /** 역할별 기준 분포(전술 분석이 점수를 역할마다 같은 눈금으로 재는 데 쓴다). 세이브 전체에서 구한 값이라 모르면 없다 */
+  roleNorms?: RoleNorms
 }
 
 export type Density = 'compact' | 'comfortable'
@@ -138,6 +143,10 @@ export interface Api {
   worldSquad(): Promise<SquadResult>
   /** 적용한 세이브에서 읽은 내 팀의 지난 경기·앞으로 할 경기와 리그 순위표 */
   worldSeason(): Promise<SeasonResult>
+  /** 대시보드에 필요한 값 전부(적용한 세이브와 전술 설정에서 계산) */
+  worldDashboard(): Promise<DashboardData>
+  /** 켜져 있는 게임에 물어 받는 구단 프로필·시설·재정과 선수단 건강·경기력. force면 기억해 둔 것을 쓰지 않는다 */
+  worldClub(force?: boolean): Promise<ClubSnapshot>
 
   // 세이브 전체(모든 구단의 선수)
   /** 고른 역할로 영입 후보를 유형별로 고른다 */

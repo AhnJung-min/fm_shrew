@@ -18,7 +18,7 @@ namespace FmBojwagwan.Bridge;
 /// </summary>
 internal static class PersonInfo
 {
-    private const string Root = GameData.OurRoot + "q.";
+    internal const string Root = GameData.OurRoot + "q.";
     private const string HumanNode = Root + "human";
     public const int MaxPeople = 30;
     public const int MaxNames = 60;
@@ -29,18 +29,47 @@ internal static class PersonInfo
     private const int PollMs = 100;
     private const int MaxFailures = 5;
 
-    /// <summary>앱에 돌려줄 이름, 대상 마디 아래의 경로, 수로 돌려줄지. 첫 항목은 누구에게나 있는 것이어야 한다</summary>
-    private sealed class Field
+    /// <summary>
+    /// 앱에 돌려줄 이름, 대상 마디 아래의 경로, 수로 돌려줄지. 첫 항목은 누구에게나 있는 것이어야 한다.
+    /// 같은 이름의 항목이 여럿이면 앞에서부터 값이 온 첫 항목을 쓴다(경로를 정확히 모를 때 후보를 늘어놓는 방법).
+    /// checks가 있으면 그 (대상 클래스, 항목 이름)을 게임이 실제로 받는지 먼저 확인해, 받지 않는 경로는 청하지 않는다.
+    /// </summary>
+    internal sealed class Field
     {
         public readonly string Key;
         public readonly string Path;
         public readonly bool Number;
+        public readonly (string Owner, string Leaf)[] Checks;
 
-        public Field(string key, string path, bool number = false)
+        public Field(string key, string path, bool number = false, params (string Owner, string Leaf)[] checks)
         {
             Key = key;
             Path = path;
             Number = number;
+            Checks = checks;
+        }
+    }
+
+    /// <summary>한 번의 물음에 대한 답: 대상마다의 JSON 배열, 키마다 값이 온 경로, 게임이 받지 않아 청하지 않은 경로</summary>
+    internal sealed class Answer
+    {
+        public string Json = "[]";
+        public readonly Dictionary<string, string> Paths = new();
+        public readonly List<string> Skipped = new();
+    }
+
+    /// <summary>같은 부모 아래에 이름을 붙여 올려 두는 기록(항목이 요구하는 조건. 예: 선수의 사기는 "team"을 요구한다)</summary>
+    internal sealed class Context
+    {
+        public readonly string Name;
+        public readonly GameData.RecordKind Kind;
+        public readonly int Index;
+
+        public Context(string name, GameData.RecordKind kind, int index)
+        {
+            Name = name;
+            Kind = kind;
+            Index = index;
         }
     }
 
@@ -63,7 +92,7 @@ internal static class PersonInfo
     private static readonly object Gate = new();
     private static int failures;
 
-    private static string Quote(string value)
+    internal static string Quote(string value)
     {
         var text = new StringBuilder("\"");
         foreach (var c in value)
@@ -77,7 +106,7 @@ internal static class PersonInfo
 
     private static string Node(uint id) => Root + "x" + id.ToString(CultureInfo.InvariantCulture);
 
-    private static List<uint> Parse(string text, int max)
+    internal static List<uint> Parse(string text, int max)
     {
         var ids = new List<uint>();
         foreach (var part in text.Split(',', StringSplitOptions.RemoveEmptyEntries))
@@ -113,29 +142,39 @@ internal static class PersonInfo
         };
     }
 
+    private static string Query(GameData.RecordKind kind, List<(uint Id, int Index)> targets, Field[] fields, string idKey) =>
+        Run(kind, targets, fields, idKey, null).Json;
+
     /// <summary>요청을 받은 스레드에서 불린다. 게임을 건드리는 일만 메인 스레드에 맡기고 값이 올 때까지 기다린다.</summary>
-    private static string Query(GameData.RecordKind kind, List<(uint Id, int Index)> targets, Field[] fields, string idKey)
+    internal static Answer Run(GameData.RecordKind kind, List<(uint Id, int Index)> targets, Field[] fields, string idKey, List<Context> contexts)
     {
         if (failures >= MaxFailures) throw new HttpError(503, "game queries are off after repeated failures");
-        if (targets.Count == 0) return "[]";
+        if (targets.Count == 0) return new Answer();
         lock (Gate)
         {
             try
             {
-                var placed = MainThread.Run(() => Ask(kind, targets, fields));
+                var answer = new Answer();
+                var active = fields;
+                var placed = MainThread.Run(() =>
+                {
+                    active = Accepted(fields, answer.Skipped);
+                    return Ask(kind, targets, active, contexts);
+                }, 30_000); // 처음에는 게임이 받는 항목 이름표를 읽느라 오래 걸릴 수 있다
                 if (placed != "ok") throw new HttpError(503, placed);
                 var watch = Stopwatch.StartNew();
                 long firstsAt = -1;
                 while (true)
                 {
                     Thread.Sleep(PollMs);
-                    var state = MainThread.Run(() => Arrived(targets, fields));
+                    var state = MainThread.Run(() => Arrived(targets, active));
                     if (state == "all") break;
                     if (state == "firsts" && firstsAt < 0) firstsAt = watch.ElapsedMilliseconds;
                     if (firstsAt >= 0 && watch.ElapsedMilliseconds - firstsAt >= SettleMs) break;
                     if (watch.ElapsedMilliseconds >= WaitMs) break;
                 }
-                return MainThread.Run(() => Collect(targets, fields, idKey));
+                answer.Json = MainThread.Run(() => Collect(targets, active, idKey, answer.Paths));
+                return answer;
             }
             catch (HttpError)
             {
@@ -170,13 +209,29 @@ internal static class PersonInfo
         }
     }
 
+    /// <summary>메인 스레드: 게임이 받지 않는다고 확인된 경로를 뺀다(확인할 수 없으면 청해 본다). 첫 항목은 늘 남긴다.</summary>
+    private static Field[] Accepted(Field[] fields, List<string> skipped)
+    {
+        var kept = new List<Field>();
+        foreach (var field in fields)
+        {
+            var refused = kept.Count > 0 && field.Checks.Any(check => DataNames.Accepts(check.Owner, check.Leaf) == false);
+            if (refused) skipped.Add(field.Path);
+            else kept.Add(field);
+        }
+        return kept.ToArray();
+    }
+
     /// <summary>메인 스레드: 대상을 가리키는 마디를 올리고 항목을 청한다.</summary>
-    private static string Ask(GameData.RecordKind kind, List<(uint Id, int Index)> targets, Field[] fields)
+    private static string Ask(GameData.RecordKind kind, List<(uint Id, int Index)> targets, Field[] fields, List<Context> contexts)
     {
         if (!GameData.Available) return "game data is not available";
         GameData.Drop(Root);
         // 몸값·계약처럼 "누가 보는지"에 따라 달라지는 항목은 같은 부모 아래의 human 마디에서 감독을 찾는다
         if (!GameData.Put(HumanNode, "Human")) return "not in a game";
+        if (contexts != null)
+            foreach (var context in contexts)
+                GameData.PutRecord(Root + context.Name, context.Kind, context.Index);
         var asked = 0;
         foreach (var (id, index) in targets)
         {
@@ -209,7 +264,7 @@ internal static class PersonInfo
     }
 
     /// <summary>메인 스레드: 온 값들을 JSON으로.</summary>
-    private static string Collect(List<(uint Id, int Index)> targets, Field[] fields, string idKey)
+    private static string Collect(List<(uint Id, int Index)> targets, Field[] fields, string idKey, Dictionary<string, string> paths)
     {
         var json = new StringBuilder("[");
         var first = true;
@@ -220,19 +275,23 @@ internal static class PersonInfo
             if (GameData.Text(node + "." + fields[0].Path) == null) continue;
             json.Append(first ? "" : ",").Append("{\"").Append(idKey).Append("\":").Append(id.ToString(CultureInfo.InvariantCulture));
             first = false;
+            var written = new HashSet<string>();
             foreach (var field in fields)
             {
+                if (written.Contains(field.Key)) continue;
                 var text = GameData.Text(node + "." + field.Path);
                 if (string.IsNullOrEmpty(text) || text == "null") continue;
                 if (field.Number)
                 {
-                    if (long.TryParse(text, NumberStyles.AllowLeadingSign, CultureInfo.InvariantCulture, out var number))
-                        json.Append(",\"").Append(field.Key).Append("\":").Append(number.ToString(CultureInfo.InvariantCulture));
+                    if (!long.TryParse(text, NumberStyles.AllowLeadingSign, CultureInfo.InvariantCulture, out var number)) continue;
+                    json.Append(',').Append(Quote(field.Key)).Append(':').Append(number.ToString(CultureInfo.InvariantCulture));
                 }
                 else
                 {
-                    json.Append(",\"").Append(field.Key).Append("\":").Append(Quote(text));
+                    json.Append(',').Append(Quote(field.Key)).Append(':').Append(Quote(text));
                 }
+                written.Add(field.Key);
+                paths.TryAdd(field.Key, field.Path);
             }
             json.Append('}');
         }

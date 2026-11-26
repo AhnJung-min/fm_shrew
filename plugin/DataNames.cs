@@ -31,6 +31,46 @@ internal static class DataNames
         return table;
     }
 
+    private static Dictionary<string, uint> idsByName;
+    private static readonly Dictionary<string, IntPtr> ClassCache = new();
+
+    /// <summary>
+    /// 대상 클래스(예: FM.UI.StadiumReference)가 그 이름의 항목을 받는지. 게임이 그 이름을 아예 모르면 false,
+    /// 클래스를 찾지 못하거나 확인하다 문제가 나면 null(모르겠다). 메인 스레드에서 부른다. 읽기만 한다.
+    /// </summary>
+    public static bool? Accepts(string typeName, string propertyName)
+    {
+        try
+        {
+            properties ??= Table("SI.Bindable.Reference.Core.PropertyIdentifierSet");
+            if (idsByName == null)
+            {
+                idsByName = new Dictionary<string, uint>(StringComparer.OrdinalIgnoreCase);
+                foreach (var (id, name) in properties) idsByName.TryAdd(name, id);
+            }
+            if (!idsByName.TryGetValue(propertyName, out var propertyId)) return false;
+            if (!ClassCache.TryGetValue(typeName, out var klass))
+            {
+                try
+                {
+                    klass = Il2.FindClass(typeName);
+                }
+                catch (HttpError)
+                {
+                    klass = IntPtr.Zero;
+                }
+                ClassCache[typeName] = klass;
+            }
+            if (klass == IntPtr.Zero) return null;
+            return Il2.Bool(Il2.CallStatic(klass, "AcceptsPropertyInternal", propertyId.ToString()));
+        }
+        catch (Exception error)
+        {
+            Plugin.Logger.LogWarning($"accepts {typeName}.{propertyName}: {error.Message}");
+            return null;
+        }
+    }
+
     /// <summary>값의 종류: 다른 대상이면 그 이름, 아니면 형식 이름.</summary>
     private static string KindOf(IntPtr klass, uint id)
     {

@@ -66,7 +66,7 @@ describe('buildDepth', () => {
   it('가중치를 바꾸면 순위가 바뀐다', () => {
     // 센터백 역할에서 수비 능력치를 모두 끄고 침착성만 남기면, 침착성이 같은 순서로 다시 줄을 선다
     const off = Object.fromEntries(
-      ['marking', 'tackling', 'heading', 'positioning', 'jumping', 'strength', 'anticipation', 'concentration', 'bravery', 'pace', 'decisions'].map((a) => [a, 0])
+      ['marking', 'tackling', 'heading', 'positioning', 'jumping', 'strength', 'anticipation', 'concentration', 'bravery', 'pace', 'decisions', 'acceleration', 'agility'].map((a) => [a, 0])
     )
     const slots = buildDepth(rows, columns, formation, {}, { cb: { ...off, composure: 5 } })
     expect(slots[1].starter?.score).toBe(65)

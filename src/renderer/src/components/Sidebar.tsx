@@ -2,6 +2,7 @@ import { ClubLogo } from '@/components/ClubLogo'
 import {
   Archive,
   House,
+  LayoutDashboard,
   PencilRuler,
   Scale,
   Settings as SettingsIcon,
@@ -11,7 +12,7 @@ import {
 } from 'lucide-react'
 import type { LinkStatus } from '@shared/game'
 
-export type Route = 'home' | 'squad' | 'targets' | 'compare' | 'editor' | 'backups' | 'settings'
+export type Route = 'dashboard' | 'home' | 'squad' | 'targets' | 'compare' | 'editor' | 'backups' | 'settings'
 
 interface NavEntry {
   id: Route | null
@@ -24,7 +25,8 @@ interface NavEntry {
 }
 
 const ENTRIES: NavEntry[] = [
-  { id: 'home', label: '홈', hint: 'FM 연결과 세이브 고르기', icon: House },
+  { id: 'dashboard', label: '대시보드', hint: '구단 현황과 할 일', icon: LayoutDashboard },
+  { id: 'home', label: '시작', hint: 'FM 연결과 세이브 고르기', icon: House },
   { id: 'squad', label: '스쿼드', hint: '내 팀 선수 능력치와 뎁스', icon: Users },
   { id: 'targets', label: '영입 후보', hint: '모든 구단에서 선수 찾기', icon: UserSearch },
   { id: 'compare', label: '선수 비교', hint: '최대 3명 나란히 보기', icon: Scale },
@@ -103,7 +105,7 @@ export function Sidebar(props: { route: Route; onNavigate: (route: Route) => voi
         </button>
       </nav>
 
-      <button className="status-card" title={data.note || '홈에서 자세히 보기'} onClick={() => onNavigate('home')}>
+      <button className="status-card" title={data.note || '시작 화면에서 자세히 보기'} onClick={() => onNavigate('home')}>
         <span className="status-row">
           <span className={`dot ${game.connected && !game.pluginOld ? 'on' : game.connected ? 'warn' : 'off'}`} />
           <span>{gameLine}</span>

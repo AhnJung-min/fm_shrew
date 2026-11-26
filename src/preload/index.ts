@@ -19,6 +19,8 @@ const api: Api = {
   },
   worldSquad: () => ipcRenderer.invoke('world:squad'),
   worldSeason: () => ipcRenderer.invoke('world:season'),
+  worldDashboard: () => ipcRenderer.invoke('world:dashboard'),
+  worldClub: (force) => ipcRenderer.invoke('world:club', force === true),
 
   talkStatus: () => ipcRenderer.invoke('talk:status'),
   talkSetKey: (key) => ipcRenderer.invoke('talk:setKey', key),

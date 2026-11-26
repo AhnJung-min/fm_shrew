@@ -89,6 +89,25 @@ export function findContracts(db: Buffer, from: number, to: number, ownerIndex: 
 }
 
 /**
+ * 임대 중인 선수의 원 소속 팀. 임대가 아니면 null.
+ *
+ * 임대 선수의 계약 기록은 둘이다(세이브에서 확인): 원 소속과 맺은 계약(만료일이 있다)과,
+ * 임대받은 팀과 맺은 기록(만료일 칸이 없고 입지가 0). 후자의 팀이 선수의 현재 소속 팀과 같으면 임대로 본다.
+ * 지금 효력이 있는 계약은 둘 중 늦게 시작한 쪽이라(원 소속이 재계약하면 원 소속 쪽) 임대 여부를 가리는 데 쓸 수 없다.
+ * 오늘까지 시작한 기록만 본다(앞으로 효력이 생길 이적 합의는 임대가 아니다).
+ */
+export function loanLender(records: SaveContract[], today: GameDate | null, currentTeam: number): number | null {
+  const started = today ? records.filter((record) => !record.start || dateKey(record.start) <= dateKey(today)) : records
+  if (!started.some((record) => record.end === null && record.teamId === currentTeam)) return null
+  const startOf = (record: SaveContract): number => (record.start ? dateKey(record.start) : 0)
+  let parent: SaveContract | null = null
+  for (const record of started) {
+    if (record.end !== null && record.teamId !== currentTeam && (!parent || startOf(record) >= startOf(parent))) parent = record
+  }
+  return parent ? parent.teamId : null
+}
+
+/**
  * 지금 효력이 있는 계약: 오늘까지 시작한 것 가운데 가장 늦게 시작한 것.
  * 오늘을 모르거나 아직 시작한 것이 없으면 가장 먼저 시작하는 것.
  */

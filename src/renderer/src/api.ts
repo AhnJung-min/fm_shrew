@@ -1,6 +1,6 @@
 import type { LinkStatus, SaveFileInfo } from '@shared/game'
 import type { Api, BackupEntry, Settings } from '@shared/types'
-import { mockCandidates, mockEditorList, mockEditorPlayer, mockProfile, mockSeason, mockSquad } from './lib/mockWorld'
+import { mockCandidates, mockClub, mockDashboard, mockEditorList, mockEditorPlayer, mockProfile, mockSeason, mockSquad } from './lib/mockWorld'
 
 declare global {
   interface Window {
@@ -104,6 +104,11 @@ function createMockApi(): Api {
     },
     worldSquad: async () => mockSquad(applied === null),
     worldSeason: async () => mockSeason(applied === null),
+    worldDashboard: async () => mockDashboard(applied === null, settings),
+    worldClub: async () => {
+      await new Promise((resolve) => setTimeout(resolve, 350))
+      return mockClub({ empty: applied === null, off: gameOff, old: oldPlugin })
+    },
 
     // 세이브 전체: 미리보기에서는 지어낸 선수들로 화면만 보여 준다
     worldCandidates: async (query) => mockCandidates(query, applied === null),

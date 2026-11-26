@@ -2,7 +2,7 @@ import { PencilRuler, Search } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { FIELDS } from '@shared/fields'
 import { formatPounds as pounds } from '@shared/playerView'
-import { recommendTier, TERM_HELP } from '@shared/recommend'
+import { RECOMMEND_TIER_LABEL, TERM_HELP } from '@shared/recommend'
 import { ROLE_BY_ID, ROLES } from '@shared/roles'
 import { analyseTactic } from '@shared/tactic'
 import type { LinkStatus } from '@shared/game'
@@ -78,7 +78,7 @@ function toRow(row: CandidateRow, idx: number, market: PlayerMarket | undefined)
   const cells: Record<string, CellValue> = {
     [NAME.header]: text(row.name),
     [RECO.header]: number(row.recommend.total, String(Math.round(row.recommend.total))),
-    [KIND.header]: text(row.categories.map((category) => CATEGORY_LABEL[category]).join(' · ')),
+    [KIND.header]: text(row.categories.length > 0 ? row.categories.map((category) => CATEGORY_LABEL[category]).join(' · ') : '어느 유형에도 들지 않음'),
     [SCORE.header]: number(row.score, String(Math.round(row.score))),
     [GAP.header]: number(row.gap, row.gap === null ? '' : `${row.gap > 0 ? '+' : ''}${row.gap.toFixed(1)}`),
     [AGE.header]: number(row.age),
@@ -170,7 +170,8 @@ export function Targets(props: {
             today: squadSnap.today,
             formation: settings.formation,
             slotRoles: settings.slotRoles,
-            roleWeights: settings.roleWeights
+            roleWeights: settings.roleWeights,
+            norms: squadSnap.roleNorms
           })
         : null,
     [squadSnap, settings.formation, settings.slotRoles, settings.roleWeights]
@@ -281,7 +282,7 @@ export function Targets(props: {
     const candidate = result?.rows[row.idx]
     if (!candidate) return null
     if (col.field === 'recommend') {
-      const tier = recommendTier(candidate.recommend.total)
+      const tier = { id: candidate.tier, label: RECOMMEND_TIER_LABEL[candidate.tier] }
       return (
         <span className="reco-cell" title={`${tier.label}(${candidate.recommend.total}점). ${TERM_HELP.recommend}`}>
           <span className="reco-num num">{Math.round(candidate.recommend.total)}</span>
@@ -434,7 +435,7 @@ export function Targets(props: {
           <input type="checkbox" checked={onlyEligible} onChange={(event) => setOnlyEligible(event.target.checked)} />
           <span>{activeSlot ? '이 자리(포지션)를 뛸 수 있는 선수만' : '이 역할의 자리에서 뛸 수 있는 선수만'}</span>
         </label>
-        <label className="inline-field" title="세이브에서 소속 구단을 알아내지 못한 선수들입니다. 여자 팀 선수가 섞여 있을 수 있습니다.">
+        <label className="inline-field" title="세이브에서 소속 구단을 알아내지 못한 선수들입니다.">
           <input type="checkbox" checked={includeUnknownClub} onChange={(event) => setIncludeUnknownClub(event.target.checked)} />
           <span>구단을 알아내지 못한 선수도</span>
         </label>
@@ -446,14 +447,23 @@ export function Targets(props: {
         <div className="spacer" />
         <span className="page-sub num">
           {result?.ok &&
-            (result.matched > result.rows.length
-              ? `${CATEGORY_HELP[category]}: ${result.matched.toLocaleString()}명 중 위에서 ${result.rows.length}명`
-              : `${CATEGORY_HELP[category]}: ${result.matched.toLocaleString()}명`)}
+            (search.trim()
+              ? `이름이 맞는 선수 ${result.matched.toLocaleString()}명(유형 자격과 상관없이 보여 줍니다)`
+              : result.matched > result.rows.length
+                ? `${CATEGORY_HELP[category]}: ${result.matched.toLocaleString()}명 중 위에서 ${result.rows.length}명`
+                : `${CATEGORY_HELP[category]}: ${result.matched.toLocaleString()}명`)}
         </span>
       </div>
 
       {result?.ok && (
-        <RecommendPanel row={selectedCandidate} category={category} baseline={result.baseline ?? null} need={result.need ?? null} />
+        <RecommendPanel
+          row={selectedCandidate}
+          category={category}
+          baseline={result.baseline ?? null}
+          need={result.need ?? null}
+          ranked={result.ranked ?? null}
+          norm={result.norm ?? null}
+        />
       )}
 
       <div className="table-wrap">
@@ -464,7 +474,9 @@ export function Targets(props: {
         ) : sorted.length === 0 ? (
           <div className="empty" style={{ flex: 1 }}>
             <strong>조건에 맞는 선수가 없습니다</strong>
-            유형을 “전체”로 바꾸거나 역할·나이 조건을 풀어 보세요.
+            {category === 'free'
+              ? '소속이 없는 선수 가운데 이 자리의 주전 수준에 가까운 선수가 없습니다. 유형을 “전체”로 바꾸거나 역할·나이 조건을 풀어 보세요.'
+              : '유형을 “전체”로 바꾸거나 역할·나이 조건을 풀어 보세요. 이름으로 찾으면 유형 자격과 상관없이 보여 줍니다.'}
           </div>
         ) : (
           <PlayerTable

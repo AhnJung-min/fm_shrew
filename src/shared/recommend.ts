@@ -1,30 +1,37 @@
+import { withJosa } from './korean'
+import { FALLBACK_NORM, gainOf, type RoleNorm } from './norms'
 import { formatPounds } from './playerView'
 import { PLAYABLE_RATING } from './positions'
-import { SQUAD_STATUS_LABEL, type CandidateCategory } from './world'
+import { benchmarkOf, growthRatio, projectedScore, SQUAD_STATUS_LABEL, type CandidateCategory } from './world'
 
 /**
  * 영입 추천 점수 (0~100).
  *
  * 역할 점수 하나로 줄을 세우면 "능력은 좋지만 내 팀 최고 주급을 요구하는 34세"가 맨 위에 오른다.
- * 그래서 영입을 정할 때 실제로 따지는 일곱 가지를 따로 점수로 매겨 더한다. 항목마다 0~1의 "충족도"를 구하고,
+ * 그래서 영입을 정할 때 실제로 따지는 여섯 가지를 따로 점수로 매겨 더한다. 항목마다 0~1의 "충족도"를 구하고,
  * 선택한 유형에 따라 정해진 가중치(합 100)를 곱한다. 가중치는 RECOMMEND_WEIGHTS 표에 모여 있다.
+ * 그 합에 포지션 보정(posGate, 0~1)을 곱한 것이 총점이다.
+ *
+ * 순서: 자격(유형 판정, shared/world.ts의 categoriesOf) → 곱셈 보정(포지션 숙련) → 더하는 점수(항목 여섯 개).
+ * 실력이 모자란 선수가 다른 항목 점수만으로 위에 오르지 않도록, 점수를 매기기 전에 자격을 먼저 따진다.
  *
  * 원칙
- * - 모르는 값으로 점수를 만들지 않는다. 값이 없어 못 구한 항목은 빼고, 남은 항목의 가중치를 합이 100이 되도록
- *   다시 나눈다(항목의 counted가 false이고 설명에 "반영하지 않았습니다"가 적힌다).
+ * - 모르는 값 때문에 항목을 빼거나 가중치를 다시 나누지 않는다. 항목은 늘 들어가고, 모르는 값은 보통(0.5)으로 보며
+ *   설명에 "정보가 없어 보통(0.5)으로 보았습니다"를 적는다. (값이 없는 선수가 값이 있는 선수보다 유리해지지 않게 한다.)
+ * - 점수 차이는 그 역할의 표준편차(σ)로 잰다(shared/norms.ts). 역할이 달라도 같은 σ 단위 차이는 같은 점수를 받는다.
  * - 이 점수는 게임의 계산식이 아니라 이 앱이 정한 어림 기준이다. 숫자 하나하나의 이유는 각 항목의 설명에 적는다.
- * - 이적 예산, 선수의 성격(야망·충성심 등), 이적 가능 표시는 세이브에서 읽지 못해 쓰지 않는다.
+ * - 이적 예산, 선수의 성격(야망·충성심 등), 이적 가능 표시는 세이브에서 읽지 못해 쓰지 않는다. 대신 어려울 수 있는 경우는
+ *   경고 문구(warnings)로만 알리고 점수에는 넣지 않는다.
  *
  * 이 모듈은 순수 계산만 한다(세이브·화면을 모른다).
  */
 
-export type ComponentId = 'immediate' | 'position' | 'growth' | 'age' | 'cost' | 'ease' | 'reliability'
+export type ComponentId = 'immediate' | 'growth' | 'age' | 'cost' | 'ease' | 'reliability'
 
-export const COMPONENT_ORDER: ComponentId[] = ['immediate', 'position', 'growth', 'age', 'cost', 'ease', 'reliability']
+export const COMPONENT_ORDER: ComponentId[] = ['immediate', 'growth', 'age', 'cost', 'ease', 'reliability']
 
 export const COMPONENT_LABEL: Record<ComponentId, string> = {
   immediate: '즉시 전력',
-  position: '포지션 숙련',
   growth: '성장 가능성',
   age: '나이 가치',
   cost: '비용 부담',
@@ -34,9 +41,8 @@ export const COMPONENT_LABEL: Record<ComponentId, string> = {
 
 /** 점수 설명에 쓰는 항목별 한 줄 풀이 */
 export const COMPONENT_HELP: Record<ComponentId, string> = {
-  immediate: '이 자리 역할의 적합도가 내 주전과 두 번째 선수보다 얼마나 높은가. 차이가 클수록 좋지만 어느 정도부터는 더 얹히는 점수가 줄어듭니다. 보강 필요도가 높은 자리일수록 이 항목의 비중이 커집니다.',
-  position: '그 역할의 자리가 자연스러운 자리인가, 능숙하게 뛸 수 있는 자리인가, 겨우 뛸 수 있는 자리인가.',
-  growth: '잠재 능력이 현재 능력보다 얼마나 높은가. 어릴수록 크게 쳐주고 28세부터는 0점입니다. 내 주전의 현재 능력을 넘어설 만큼 클 때만 인정합니다.',
+  immediate: '이 자리 역할의 적합도가 내 주전과 두 번째 선수보다 얼마나 높은가. 차이는 그 역할 선수들의 보통 점수 차이로 재고, 차이가 클수록 좋지만 어느 정도부터는 더 얹히는 점수가 줄어듭니다. 주전이 31세를 넘으면(골키퍼는 34세) 내년 하락을 감안해 기준을 낮춥니다. 보강 필요도가 높은 자리일수록 이 항목의 비중이 커집니다.',
+  growth: '지금 점수가 아니라 크고 난 뒤 점수가 내 주전 기준을 얼마나 더 넘어서는가. 어릴수록, 잠재 능력이 현재 능력보다 높을수록 크고 27세부터는 0점입니다.',
   age: '지금 나이가 전성기에 가까운가. 필드 선수는 24~29세, 골키퍼는 27~33세를 전성기로 봅니다. 너무 어리면 당장은 약하고, 전성기가 지나면 가치가 떨어집니다.',
   cost: '이 선수의 주급과 몸값이 내 팀의 주급·몸값 수준에 비해 부담스럽지 않은가. 팀에서 가장 많이 받게 되는 선수는 크게 깎습니다.',
   ease: '데려오기 쉬운가. 계약이 얼마 안 남았거나 자유 계약이면 쉽고, 구단이 핵심 선수로 약속한 선수는 어렵습니다.',
@@ -46,78 +52,141 @@ export const COMPONENT_HELP: Record<ComponentId, string> = {
 /** 화면 어디서나 같은 말로 쓰는 세 가지 점수의 풀이(풍선 도움말과 설명에 그대로 쓴다) */
 export const TERM_HELP = {
   fit: '적합도: 그 자리 역할에 중요한 능력치를 가중 평균해 0~100점으로 만든 값입니다. 스쿼드, 전술판, 영입 후보가 모두 같은 식으로 계산합니다.',
-  need: '보강 필요도: 이 자리에 선수를 더 영입해야 하는 정도(0~100)입니다. 주전의 적합도, 후보 수, 주전의 나이와 계약 기간으로 계산합니다.',
-  recommend: '추천 점수: 영입 후보를 즉시 전력, 포지션 숙련, 성장 가능성, 나이 가치, 비용 부담, 영입 난이도, 신뢰성으로 나눠 매긴 0~100점입니다.'
+  need: '보강 필요도: 이 자리에 선수를 더 영입해야 하는 정도(0~100)입니다. 주전이 같은 역할의 상위권 선수들에 견줘 얼마나 약한지, 후보 수와 격차, 주전의 나이와 계약 기간으로 계산합니다.',
+  recommend: '추천 점수: 영입 후보를 즉시 전력, 성장 가능성, 나이 가치, 비용 부담, 영입 난이도, 신뢰성으로 나눠 매긴 0~100점이고, 그 자리 포지션 숙련도에 따라 보정합니다. 즉시 전력·로테이션·유망주 가운데 하나 이상의 자격을 갖춘 선수만 점수를 매깁니다.'
 } as const
 
 /**
  * 유형별 가중치(합 100). 같은 선수라도 무엇을 찾느냐에 따라 중요한 것이 다르다.
+ * ('포지션 숙련'은 더하는 항목이 아니라 곱하는 보정 posGate로 옮겼다.)
  *
  * - 전체: 골고루. 즉시 전력을 가장 크게 본다.
- * - 즉시 전력: 지금 주전을 바꿀 선수를 찾는 것이므로 즉시 전력이 압도적이고 성장은 거의 보지 않는다.
+ * - 즉시 전력: 지금 주전을 바꿀 선수를 찾는 것이므로 즉시 전력이 절반이고 성장은 거의 보지 않는다.
  * - 로테이션 자원: 주전이 아닌 뒤를 받칠 선수라 능력 격차보다 몸값·주급 부담과 데려오기 쉬운지가 더 중요하다.
  * - 유망주: 지금 능력은 거의 보지 않고 성장 가능성이 40이다. 나이 가치(어릴수록 되팔 때 값이 오른다)도 본다.
  * - 자유 계약: 이적료가 없고 데려오기 쉬운 것은 모두에게 같으므로 비용·난이도는 0으로 두고(세이브에는 소속 없는
  *   선수의 주급도 적혀 있지 않다), 실력과 믿음직함(영입 뒤 문제를 덜 일으키는가)을 더 본다.
  */
 export const RECOMMEND_WEIGHTS: Record<CandidateCategory, Record<ComponentId, number>> = {
-  all: { immediate: 30, position: 10, growth: 12, age: 10, cost: 14, ease: 12, reliability: 12 },
-  starter: { immediate: 40, position: 10, growth: 4, age: 10, cost: 14, ease: 10, reliability: 12 },
-  rotation: { immediate: 30, position: 12, growth: 6, age: 8, cost: 18, ease: 14, reliability: 12 },
-  prospect: { immediate: 8, position: 6, growth: 40, age: 8, cost: 14, ease: 12, reliability: 12 },
-  free: { immediate: 38, position: 10, growth: 14, age: 14, cost: 0, ease: 0, reliability: 24 }
+  all: { immediate: 40, growth: 12, age: 10, cost: 14, ease: 12, reliability: 12 },
+  starter: { immediate: 50, growth: 4, age: 10, cost: 14, ease: 10, reliability: 12 },
+  rotation: { immediate: 36, growth: 6, age: 8, cost: 20, ease: 16, reliability: 14 },
+  prospect: { immediate: 12, growth: 40, age: 10, cost: 14, ease: 12, reliability: 12 },
+  free: { immediate: 50, growth: 12, age: 14, cost: 0, ease: 0, reliability: 24 }
+}
+
+// ---------- 등급 ----------
+
+export type RecommendTierId = 'top' | 'good' | 'maybe' | 'low' | 'outside'
+
+export const RECOMMEND_TIER_LABEL: Record<RecommendTierId, string> = {
+  top: '강력 추천',
+  good: '추천',
+  maybe: '고려',
+  low: '보류',
+  outside: '유형 밖'
+}
+
+/**
+ * 등급은 점수의 절대값이 아니라 "같은 유형 탭의 자격 후보 전체" 안에서의 순위(백분위)로 매긴다.
+ * 유형마다 점수 눈금이 달라서 75점 같은 고정 경계는 유형에 따라 다른 뜻이 되기 때문이다.
+ * 누적 비율: 상위 5% 강력 추천, 다음 15%(상위 20%까지) 추천, 다음 30%(상위 50%까지) 고려, 나머지 보류. (비율은 이 앱이 정한 어림)
+ */
+export const TIER_CUMULATIVE_SHARE = [0.05, 0.2, 0.5] as const
+/** 점수가 이보다 낮으면 순위가 높아도 보류(절대 하한. 추정: 모든 항목이 중간쯤인 선수가 50점 안팎) */
+export const TIER_MIN_TOTAL = 50
+
+/** 자격 후보들의 총점 목록으로 등급을 매기는 함수를 만든다. 같은 점수는 같은 등급이고, 후보가 한 명이면 50점 이상일 때 강력 추천이다 */
+export function tierRanker(totals: number[]): (total: number) => Exclude<RecommendTierId, 'outside'> {
+  const sorted = [...totals].sort((a, b) => b - a)
+  const count = sorted.length
+  return (total) => {
+    if (total < TIER_MIN_TOTAL || count === 0) return 'low'
+    // 나보다 점수가 높은 후보 수(이분 탐색)
+    let low = 0
+    let high = count
+    while (low < high) {
+      const mid = (low + high) >> 1
+      if (sorted[mid] > total) low = mid + 1
+      else high = mid
+    }
+    const share = low / count
+    if (share < TIER_CUMULATIVE_SHARE[0]) return 'top'
+    if (share < TIER_CUMULATIVE_SHARE[1]) return 'good'
+    if (share < TIER_CUMULATIVE_SHARE[2]) return 'maybe'
+    return 'low'
+  }
+}
+
+/** 유형마다 등급의 뜻(한 줄) */
+export const TIER_MEANING: Record<CandidateCategory, string> = {
+  all: '즉시 전력·로테이션·유망주 자격을 갖춘 선수들 안에서의 순위입니다.',
+  starter: '주전 경쟁: 지금 주전과 자리를 다툴 만한 선수들 안에서의 순위입니다.',
+  rotation: '쓸 만한 대안: 주전은 아니어도 번갈아 쓸 만한 선수들 안에서의 순위입니다.',
+  prospect: '미래 자산: 크고 나면 주전 수준이 될 것으로 보이는 어린 선수들 안에서의 순위입니다.',
+  free: '소속이 없는 선수 가운데 위 자격을 갖춘 선수들 안에서의 순위입니다.'
+}
+
+/**
+ * 점수만 알고 순위를 모르는 곳(짧은 목록)에서 쓰는 임시 등급. 화면은 CandidateRow.tier(백분위 등급)를 써야 한다.
+ * 추정: 경계는 어림이다.
+ */
+export const RECOMMEND_TIERS: Array<{ min: number; id: Exclude<RecommendTierId, 'outside'>; label: string }> = [
+  { min: 70, id: 'top', label: '강력 추천' },
+  { min: 60, id: 'good', label: '추천' },
+  { min: TIER_MIN_TOTAL, id: 'maybe', label: '고려' },
+  { min: 0, id: 'low', label: '보류' }
+]
+
+export function recommendTier(total: number): { id: Exclude<RecommendTierId, 'outside'>; label: string } {
+  const tier = RECOMMEND_TIERS.find((each) => total >= each.min) ?? RECOMMEND_TIERS[RECOMMEND_TIERS.length - 1]
+  return { id: tier.id, label: tier.label }
 }
 
 // ---------- 즉시 전력 ----------
 
 /**
  * 고른 자리의 보강 필요도(0~100, shared/tactic.ts)가 즉시 전력의 비중을 키우거나 줄인다.
- * 필요도 50이면 표의 가중치 그대로, 0이면 0.6배, 100이면 1.4배. 곱한 뒤 구한 항목의 가중치 합을 100으로 다시 나누므로
+ * 필요도 50이면 표의 가중치 그대로, 0이면 0.8배, 100이면 1.2배. 곱한 뒤 가중치 합을 100으로 다시 나누므로
  * 필요한 자리의 업그레이드는 점수에서 더 크게, 이미 탄탄한 자리의 업그레이드는 더 작게 반영된다.
- * 직접 고른 역할(자리를 고르지 않음)이면 필요도를 몰라 곱하지 않는다.
+ * (1회차 검토에서 0.6~1.4배가 지나치다고 보아 줄였다: 같은 자리 목록에서는 모든 후보에 똑같이 곱해지므로
+ * 즉시 전력과 나머지 항목의 균형만 바꾼다.) 자리를 고르지 않았으면 필요도를 50으로 본다.
  */
-export const NEED_WEIGHT_LOW = 0.6
-export const NEED_WEIGHT_HIGH = 1.4
+export const NEED_WEIGHT_LOW = 0.8
+export const NEED_WEIGHT_HIGH = 1.2
+export const NEED_DEFAULT = 50
 
-/**
- * 역할 점수 차이를 충족도로 바꾸는 폭. 충족도 = 0.5 + 0.5 × tanh(차이 / 8).
- * 같으면 0.5, 8점 높으면 0.88, 15점 높으면 0.98(더 높아도 거의 안 오른다: 수확 체감), 8점 낮으면 0.12.
- * 8점은 같은 포지션 후보들의 역할 점수 편차가 보통 한 자리 수라서 "확실한 차이"의 기준으로 잡았다.
- */
-export const UPGRADE_SCALE = 8
-/** 내 팀에 그 역할을 뛸 선수가 없을 때 역할 점수 자체를 보는 구간: 40점 이하 0, 80점 이상 1 */
-export const ABSOLUTE_FLOOR = 40
-export const ABSOLUTE_TOP = 80
 /**
  * 즉시 전력에서 주전과 견주는 몫(나머지는 두 번째 선수와 견준다).
  * 로테이션 자원을 찾을 때는 두 번째 선수를 넘는지가 핵심이라 주전 몫을 줄인다.
  */
 export const STARTER_SHARE: Record<CandidateCategory, number> = { all: 0.7, starter: 0.85, rotation: 0.3, prospect: 0.7, free: 0.7 }
 
-// ---------- 포지션 숙련 ----------
+// ---------- 포지션 숙련(보정) ----------
 
-/** 숙련도 20이 자연스러운 자리다 */
-export const POSITION_NATURAL = 20
-/** 능숙한 자리(15~19)는 0.6에서 시작해 1점마다 0.075씩 올라 19에서 0.9가 된다 */
-export const POSITION_ACCOMPLISHED_BASE = 0.6
-export const POSITION_ACCOMPLISHED_STEP = 0.075
-/** 15 미만은 겨우 뛰는 자리라 숙련도 / 15 × 0.35 (최대 0.35) */
-export const POSITION_POOR_MAX = 0.35
-
-// ---------- 성장 가능성 ----------
-
-/** 이 나이 이하는 성장 시간을 전부 인정한다 */
-export const GROWTH_AGE_FULL = 19
-/** 이 나이부터는 성장을 기대하지 않는다(0). 그 사이는 직선으로 줄어든다: 23세 0.56, 26세 0.22 */
-export const GROWTH_AGE_END = 28
-/** 잠재 능력이 현재 능력보다 이만큼 높으면 만점. 유망주 대부분이 40 안쪽이다 */
-export const HEADROOM_FULL = 40
 /**
- * 성장해도 내 주전의 현재 능력을 못 넘으면 쓸모가 적다. 잠재 능력 / 내 주전 현재 능력이
- * 0.9 이하면 0, 1.1 이상이면 1로 보고 그 사이는 직선으로 잇는다.
+ * 포지션 보정 posGate(r), r = 그 자리의 숙련도(1~20):
+ *   20 이상 1 / 15~19 0.85 + 0.03(r-15) / 10~14 0.55 + 0.06(r-10) / 10 미만 0.055·r
+ * 15(능숙)에서 0.85, 10에서 0.55로 끊기지 않게 이어진다. 못 뛰는 자리의 선수는 총점이 5.5% 이하가 된다.
+ * 근거: 더하는 항목(최대 4점 차)으로는 숙련 1~3인 선수가 필터를 풀었을 때 위로 올라오는 것을 막지 못했다(검토 1회차).
  */
-export const CEILING_LOW = 0.9
-export const CEILING_HIGH = 1.1
+export const POSITION_NATURAL = 20
+export const GATE_ACCOMPLISHED_BASE = 0.85
+export const GATE_ACCOMPLISHED_STEP = 0.03
+/** 숙련 10 이상 15 미만(어색하지만 뛸 수는 있음) */
+export const GATE_AWKWARD_FROM = 10
+export const GATE_AWKWARD_BASE = 0.55
+export const GATE_AWKWARD_STEP = 0.06
+/** 숙련 10 미만: 1점마다 0.055 */
+export const GATE_POOR_PER_POINT = 0.055
+
+export function positionGate(rating: number): number {
+  const r = Math.max(0, rating)
+  if (r >= POSITION_NATURAL) return 1
+  if (r >= PLAYABLE_RATING) return GATE_ACCOMPLISHED_BASE + GATE_ACCOMPLISHED_STEP * (r - PLAYABLE_RATING)
+  if (r >= GATE_AWKWARD_FROM) return GATE_AWKWARD_BASE + GATE_AWKWARD_STEP * (r - GATE_AWKWARD_FROM)
+  return GATE_POOR_PER_POINT * r
+}
 
 // ---------- 나이 가치 ----------
 
@@ -152,6 +221,12 @@ export const COST_MIN_TOP_RATIO = 1.2
  */
 export const FEE_FULL_DAYS = 730
 export const FEE_FLOOR = 0.2
+
+// ---------- 모르는 값 ----------
+
+/** 값을 모를 때의 충족도. 좋지도 나쁘지도 않다고 본다 */
+export const UNKNOWN_FIT = 0.5
+const UNKNOWN_NOTE = '정보가 없어 보통(0.5)으로 보았습니다.'
 
 // ---------- 영입 난이도 ----------
 
@@ -203,6 +278,15 @@ const TRAIT_LABEL: Record<TraitId, string> = {
 }
 const LOWER_IS_BETTER: ReadonlySet<TraitId> = new Set<TraitId>(['injuryProneness', 'dirtiness'])
 
+// ---------- 경고(점수에는 넣지 않는다) ----------
+
+/** 소속팀에서 중요한 선수로 약속된 입지 코드: 핵심 선수 1, 중요 선수 2, 주전 3, 주전 골키퍼 15 */
+export const IMPORTANT_STATUS: ReadonlySet<number> = new Set([1, 2, 3, 15])
+/** 현재 능력이 내 주전보다 이만큼 이상 높으면 큰 구단의 핵심일 수 있다고 알린다 */
+export const WARN_CA_MARGIN = 10
+/** 계약이 이 일수(4년) 이상 남았으면 이적료가 비쌀 수 있다고 알린다 */
+export const WARN_LONG_CONTRACT_DAYS = 4 * 365
+
 // ---------- 입력과 출력 ----------
 
 export type Traits = Record<TraitId, number | null>
@@ -213,7 +297,7 @@ export interface RecommendInput {
   goalkeeper: boolean
   /** 고른 역할의 점수(0~100) */
   roleScore: number
-  /** 그 역할의 자리들 가운데 가장 높은 포지션 숙련도(1~20). 모르면 null */
+  /** 그 역할의 자리(들) 가운데 가장 높은 포지션 숙련도(1~20). 모르면 null(보정하지 않는다) */
   roleRating: number | null
   age: number | null
   ca: number
@@ -242,33 +326,45 @@ export interface SquadMoney {
 
 export interface RecommendContext {
   /** 내 팀에서 이 역할 점수가 가장 높은 선수. 없으면 null */
-  starter: { score: number; ca: number } | null
+  starter: { name?: string; score: number; ca: number; age?: number | null } | null
   backup: { score: number } | null
   /** 게임의 오늘(연도, 연중 일수). 모르면 null */
   today: { year: number; day: number } | null
   /** 내 팀의 주급·몸값 수준. 알 수 없으면 null */
   money: SquadMoney | null
-  /** 고른 자리의 보강 필요도(0~100). 자리를 고르지 않았으면 없다 */
+  /** 고른 자리의 보강 필요도(0~100). 자리를 고르지 않았으면 없다(50으로 본다) */
   need?: number | null
+  /** 이 역할의 기준 분포. 없으면 FALLBACK_NORM */
+  norm?: RoleNorm
 }
 
 export interface RecommendComponent {
   id: ComponentId
   label: string
-  /** 이 항목이 더해 준 점수(소수 첫째 자리) */
+  /** 이 항목이 더해 준 점수(소수 첫째 자리). 포지션 보정을 곱하기 전의 점수다 */
   points: number
-  /** 이 항목이 줄 수 있는 최고 점수. 못 구한 항목은 0이고, 구한 항목의 합이 100이다 */
+  /** 이 항목이 줄 수 있는 최고 점수. 이 유형에서 쓰지 않는 항목은 0이고, 쓰는 항목의 합이 100이다 */
   max: number
-  /** 점수에 반영했는지 */
+  /** 점수에 반영했는지(이 유형에서 가중치가 0이면 false) */
   counted: boolean
+  /** 값을 몰라 보통(0.5)으로 본 항목인지 */
+  assumed: boolean
   /** 왜 이 점수인지 쉬운 말로 */
   note: string
 }
 
 export interface Recommendation {
-  /** 0~100 */
+  /** 0~100. base × gate */
   total: number
+  /** 항목 점수의 합(포지션 보정 전, 소수 첫째 자리) */
+  base: number
+  /** 포지션 보정(0~1) */
+  gate: number
+  /** 포지션 보정을 한 줄로 */
+  gateNote: string
   components: RecommendComponent[]
+  /** 점수에는 넣지 않았지만 알려 둘 것(영입이 어려울 수 있는 이유) */
+  warnings: string[]
 }
 
 // ---------- 도구 ----------
@@ -339,29 +435,32 @@ export function ageFit(age: number, goalkeeper: boolean): number {
   return Math.max(0, 1 - AGE_DECLINE_PER_YEAR * (age - to))
 }
 
-/** 성장 가능성의 충족도(나이 × 잠재 여유 × 내 주전을 넘는가) */
-export function growthFit(age: number, ca: number, pa: number, starterCa: number | null): number {
-  const time = clamp01((GROWTH_AGE_END - age) / (GROWTH_AGE_END - GROWTH_AGE_FULL))
-  const room = clamp01((pa - ca) / HEADROOM_FULL)
-  const ceiling = starterCa === null ? 1 : clamp01((pa / starterCa - CEILING_LOW) / (CEILING_HIGH - CEILING_LOW))
-  return time * room * ceiling
-}
+type BenchContext = Pick<RecommendContext, 'starter' | 'backup' | 'norm'>
 
-/** 포지션 숙련도의 충족도 */
-export function positionFit(rating: number): number {
-  if (rating >= POSITION_NATURAL) return 1
-  if (rating >= PLAYABLE_RATING) return POSITION_ACCOMPLISHED_BASE + POSITION_ACCOMPLISHED_STEP * (rating - PLAYABLE_RATING)
-  return (POSITION_POOR_MAX * Math.max(0, rating)) / PLAYABLE_RATING
-}
-
-/** 즉시 전력의 충족도. 주전·두 번째와의 점수 차이로 */
-export function immediateFit(roleScore: number, ctx: Pick<RecommendContext, 'starter' | 'backup'>, category: CandidateCategory): number {
-  const gain = (delta: number): number => 0.5 + 0.5 * Math.tanh(delta / UPGRADE_SCALE)
-  if (!ctx.starter) return clamp01((roleScore - ABSOLUTE_FLOOR) / (ABSOLUTE_TOP - ABSOLUTE_FLOOR))
-  const vsStarter = gain(roleScore - ctx.starter.score)
+/** 즉시 전력의 충족도. 주전(나이 하락 반영)·두 번째와의 점수 차이를 그 역할의 σ로 재서 */
+export function immediateFit(roleScore: number, ctx: BenchContext, category: CandidateCategory, goalkeeper = false): number {
+  const norm = ctx.norm ?? FALLBACK_NORM
+  if (!ctx.starter) return gainOf(roleScore - norm.mu, norm)
+  const { anchor } = benchmarkOf(ctx.starter, norm, goalkeeper)
+  const vsStarter = gainOf(roleScore - anchor, norm)
   if (!ctx.backup) return vsStarter
   const share = STARTER_SHARE[category]
-  return share * vsStarter + (1 - share) * gain(roleScore - ctx.backup.score)
+  return share * vsStarter + (1 - share) * gainOf(roleScore - ctx.backup.score, norm)
+}
+
+/**
+ * 성장 가능성의 충족도: 성장으로 "추가로" 얻는 효용.
+ * max(0, g(예상 적합도 - 기준) - g(지금 적합도 - 기준)). 지금도 이미 충분히 높은 선수는 성장해도 더 얹히는 것이 적고,
+ * 27세 이상은 성장을 기대하지 않아 0이다.
+ */
+export function growthFit(roleScore: number, age: number | null, ca: number, pa: number, ctx: BenchContext, goalkeeper = false): number {
+  if (age === null) return 0
+  const norm = ctx.norm ?? FALLBACK_NORM
+  const anchor = ctx.starter
+    ? benchmarkOf(ctx.starter, norm, goalkeeper).anchor
+    : norm.mu
+  const projected = projectedScore(roleScore, age, ca, pa, norm.beta)
+  return Math.max(0, gainOf(projected - anchor, norm) - gainOf(roleScore - anchor, norm))
 }
 
 /** 신뢰성의 충족도와, 아는 값이 하나도 없으면 null */
@@ -381,73 +480,82 @@ export function reliabilityFit(traits: Traits): number | null {
 // ---------- 항목별 계산 ----------
 
 interface Part {
-  /** 0~1. 못 구했으면 null */
-  fit: number | null
+  /** 0~1 */
+  fit: number
+  /** 값을 몰라 보통(0.5)으로 본 항목 */
+  assumed: boolean
   note: string
 }
 
-const skipped = (reason: string): Part => ({ fit: null, note: `${reason} 이 항목은 점수에 반영하지 않았습니다.` })
+const unknown = (reason: string): Part => ({ fit: UNKNOWN_FIT, assumed: true, note: `${reason} ${UNKNOWN_NOTE}` })
 
 function immediatePart(input: RecommendInput, ctx: RecommendContext, notes: boolean): Part {
-  const fit = immediateFit(input.roleScore, ctx, input.category)
-  if (!notes) return { fit, note: '' }
+  const norm = ctx.norm ?? FALLBACK_NORM
+  const fit = immediateFit(input.roleScore, ctx, input.category, input.goalkeeper)
+  if (!notes) return { fit, assumed: false, note: '' }
   const own = `적합도 ${fixed1(input.roleScore)}점`
   const need = ctx.need ?? null
   const weighting =
     need === null ? '' : need >= 60 ? ` 이 자리는 보강 필요도가 ${Math.round(need)}로 높아 이 항목의 비중을 키웠습니다.` : need <= 35 ? ` 이 자리는 보강 필요도가 ${Math.round(need)}로 낮아 이 항목의 비중을 줄였습니다.` : ''
-  if (!ctx.starter) return { fit, note: `내 팀에 이 자리를 뛸 선수가 없어, ${own} 자체를 40~80점 구간에서 보았습니다.${weighting}` }
+  if (!ctx.starter) {
+    return {
+      fit,
+      assumed: false,
+      note: `내 팀에 이 자리를 뛸 선수가 없어, ${own}을 이 역할 상위권 평균(${fixed1(norm.mu)}점)과 견주었습니다(점수 차이 ${fixed1(input.roleScore - norm.mu)}점).${weighting}`
+    }
+  }
+  const { drop } = benchmarkOf(ctx.starter, norm, input.goalkeeper)
   const delta = input.roleScore - ctx.starter.score
   const versus = `내 주전(${fixed1(ctx.starter.score)}점)보다 ${fixed1(Math.abs(delta))}점 ${delta >= 0 ? '높습니다' : '낮습니다'}`
-  if (!ctx.backup) return { fit, note: `${versus}. 두 번째 선수가 없어 주전과만 견주었습니다.${weighting}` }
+  const aging =
+    drop > 0
+      ? ` ${ctx.starter.name ? withJosa(ctx.starter.name, '이/가') : '주전이'} ${ctx.starter.age}세라 내년 하락을 감안해 기준을 ${fixed1(drop)}점 낮춰(${fixed1(ctx.starter.score - drop)}점) 견주었습니다.`
+      : ''
+  const scale = ` 이 역할에서 점수 차이의 보통 크기(표준편차)는 ${fixed1(norm.sigma)}점입니다.`
+  if (!ctx.backup) return { fit, assumed: false, note: `${versus}. 두 번째 선수가 없어 주전과만 견주었습니다.${aging}${scale}${weighting}` }
   const second = input.roleScore - ctx.backup.score
   return {
     fit,
-    note: `${versus}. 두 번째 선수(${fixed1(ctx.backup.score)}점)보다는 ${fixed1(Math.abs(second))}점 ${second >= 0 ? '높습니다' : '낮습니다'}.${weighting}`
+    assumed: false,
+    note: `${versus}. 두 번째 선수(${fixed1(ctx.backup.score)}점)보다는 ${fixed1(Math.abs(second))}점 ${second >= 0 ? '높습니다' : '낮습니다'}.${aging}${scale}${weighting}`
   }
-}
-
-function positionPart(input: RecommendInput, notes: boolean): Part {
-  const rating = input.roleRating
-  if (rating === null) return skipped('이 역할의 자리 숙련도를 알 수 없어서,')
-  const fit = positionFit(rating)
-  if (!notes) return { fit, note: '' }
-  if (rating >= POSITION_NATURAL) return { fit, note: `이 역할의 자리가 자연스러운 자리(숙련도 ${rating})입니다.` }
-  if (rating >= PLAYABLE_RATING) return { fit, note: `이 역할의 자리를 능숙하게 뛸 수 있습니다(숙련도 ${rating}, 자연스러운 자리는 20).` }
-  return { fit, note: `이 역할의 자리는 숙련도 ${rating}로 아직 어색합니다(능숙은 ${PLAYABLE_RATING} 이상).` }
 }
 
 function growthPart(input: RecommendInput, ctx: RecommendContext, notes: boolean): Part {
-  if (input.age === null) return skipped('나이를 알 수 없어서,')
-  const fit = growthFit(input.age, input.ca, input.pa, ctx.starter?.ca ?? null)
-  if (!notes) return { fit, note: '' }
-  if (input.age >= GROWTH_AGE_END) return { fit, note: `${input.age}세는 더 크기를 기대하지 않아 0점입니다(${GROWTH_AGE_END}세부터).` }
+  if (input.age === null) return { fit: 0, assumed: false, note: notes ? '나이를 알 수 없어 성장은 따지지 않았습니다(0점).' : '' }
+  const norm = ctx.norm ?? FALLBACK_NORM
+  const fit = growthFit(input.roleScore, input.age, input.ca, input.pa, ctx, input.goalkeeper)
+  if (!notes) return { fit, assumed: false, note: '' }
   const room = input.pa - input.ca
-  const base = `${input.age}세이고 잠재 능력이 현재 능력보다 ${room} 높습니다(${input.ca} → ${input.pa}).`
-  if (room <= 0) return { fit, note: `${input.age}세이지만 잠재 능력이 현재 능력과 같아 더 크지 않습니다.` }
-  if (ctx.starter && input.pa / ctx.starter.ca < CEILING_HIGH) {
-    return { fit, note: `${base} 다만 잠재 능력 ${input.pa}이 내 주전의 현재 능력 ${ctx.starter.ca}을 크게 넘지는 못해 깎았습니다.` }
+  if (growthRatio(input.age) === 0) return { fit, assumed: false, note: `${input.age}세는 더 크기를 기대하지 않아 0점입니다(27세부터).` }
+  if (room <= 0) return { fit, assumed: false, note: `${input.age}세이지만 잠재 능력이 현재 능력과 같아 더 크지 않습니다.` }
+  const projected = projectedScore(input.roleScore, input.age, input.ca, input.pa, norm.beta)
+  return {
+    fit,
+    assumed: false,
+    note: `${input.age}세이고 잠재 능력이 현재 능력보다 ${room} 높습니다(${input.ca} → ${input.pa}). 다 크면 적합도가 ${fixed1(input.roleScore)}점에서 약 ${fixed1(projected)}점으로 오를 것으로 보고, 내 주전 기준을 넘는 정도가 지금보다 얼마나 늘어나는지만 점수에 넣었습니다.`
   }
-  return { fit, note: base }
 }
 
 function agePart(input: RecommendInput, notes: boolean): Part {
-  if (input.age === null) return skipped('나이를 알 수 없어서,')
+  if (input.age === null) return unknown('나이를 알 수 없어서,')
   const fit = ageFit(input.age, input.goalkeeper)
-  if (!notes) return { fit, note: '' }
+  if (!notes) return { fit, assumed: false, note: '' }
   const [from, to] = input.goalkeeper ? PEAK_GOALKEEPER : PEAK_OUTFIELD
   const kind = input.goalkeeper ? '골키퍼' : '필드 선수'
   const where = input.age < from ? '아직 전성기 전입니다' : input.age <= to ? '전성기입니다' : '전성기가 지났습니다'
-  return { fit, note: `${input.age}세로 ${where}(${kind}의 전성기는 ${from}~${to}세).` }
+  return { fit, assumed: false, note: `${input.age}세로 ${where}(${kind}의 전성기는 ${from}~${to}세).` }
 }
 
 function costPart(input: RecommendInput, ctx: RecommendContext, notes: boolean): Part {
-  if (!ctx.money) return skipped('내 팀의 주급·몸값 수준을 알 수 없어서,')
-  if (input.wage === null) return skipped(input.hasClub ? '이 선수의 주급을 알 수 없어서,' : '자유 계약 선수는 세이브에 주급이 적혀 있지 않아서,')
+  if (!ctx.money) return unknown('내 팀의 주급·몸값 수준을 알 수 없어서,')
   const { medianWage, topWage, medianValue, topValue } = ctx.money
-  const wageFit = affordability(input.wage, medianWage, topWage)
+  const wageKnown = input.wage !== null
+  const wageFit = wageKnown ? affordability(input.wage!, medianWage, topWage) : UNKNOWN_FIT
 
-  let valueFit: number | null = null
+  let valueFit: number = UNKNOWN_FIT
   let feeNote = ''
+  let feeKnown = true
   if (!input.hasClub) {
     valueFit = 1
     feeNote = '소속 구단이 없어 이적료가 들지 않습니다.'
@@ -459,47 +567,69 @@ function costPart(input: RecommendInput, ctx: RecommendContext, notes: boolean):
     valueFit = affordability(fee, medianValue, topValue)
     feeNote = `몸값 ${formatPounds(input.value)}${fee < input.value ? `(계약이 짧아 ${formatPounds(Math.round(fee))}쯤으로 봄)` : ''}는 내 팀 선수 몸값 중간(${formatPounds(medianValue)}) 기준 ${valueFit >= 0.7 ? '부담이 크지 않습니다' : valueFit >= 0.4 ? '다소 큽니다' : '매우 큽니다'}.`
   } else {
-    feeNote = '몸값을 알 수 없어 주급만 보았습니다.'
+    feeKnown = false
+    feeNote = `몸값은 정보가 없어 보통(${UNKNOWN_FIT})으로 보았습니다.`
   }
-  const fit = valueFit === null ? wageFit : WAGE_SHARE * wageFit + (1 - WAGE_SHARE) * valueFit
-  if (!notes) return { fit, note: '' }
-  const ratio = input.wage / medianWage
-  const wageNote =
-    input.wage > topWage
-      ? `주급 ${formatPounds(input.wage)}는 내 팀 최고 주급(${formatPounds(topWage)})보다 많아 팀에서 가장 많이 받는 선수가 됩니다.`
+  const fit = WAGE_SHARE * wageFit + (1 - WAGE_SHARE) * valueFit
+  const assumed = !wageKnown || !feeKnown
+  if (!notes) return { fit, assumed, note: '' }
+  const ratio = wageKnown ? input.wage! / medianWage : 0
+  const wageNote = !wageKnown
+    ? `주급은 정보가 없어 보통(${UNKNOWN_FIT})으로 보았습니다${input.hasClub ? '' : '(자유 계약 선수는 세이브에 주급이 적혀 있지 않습니다)'}.`
+    : input.wage! > topWage
+      ? `주급 ${formatPounds(input.wage!)}는 내 팀 최고 주급(${formatPounds(topWage)})보다 많아 팀에서 가장 많이 받는 선수가 됩니다.`
       : ratio < COST_LOW_RATIO
-        ? `주급 ${formatPounds(input.wage)}는 내 팀 중간(${formatPounds(medianWage)})의 절반에도 못 미쳐 부담이 거의 없습니다.`
-        : `주급 ${formatPounds(input.wage)}는 내 팀 중간(${formatPounds(medianWage)})의 ${fixed1(ratio)}배입니다.`
-  return { fit, note: `${wageNote} ${feeNote}` }
+        ? `주급 ${formatPounds(input.wage!)}는 내 팀 중간(${formatPounds(medianWage)})의 절반에도 못 미쳐 부담이 거의 없습니다.`
+        : `주급 ${formatPounds(input.wage!)}는 내 팀 중간(${formatPounds(medianWage)})의 ${fixed1(ratio)}배입니다.`
+  return { fit, assumed, note: `${wageNote} ${feeNote}` }
 }
 
 function easePart(input: RecommendInput, ctx: RecommendContext, notes: boolean): Part {
-  if (!input.hasClub) return { fit: 1, note: notes ? '소속 구단이 없어 협상할 상대가 선수 본인뿐이라 가장 쉽습니다.' : '' }
+  if (!input.hasClub) return { fit: 1, assumed: false, note: notes ? '소속 구단이 없어 협상할 상대가 선수 본인뿐이라 가장 쉽습니다.' : '' }
   const days = input.contractEnd && ctx.today ? daysUntil(input.contractEnd, ctx.today) : null
   const contractFit = days === null ? null : interpolate(CONTRACT_EASE, Math.max(0, days))
   const statusFit = STATUS_EASE[input.squadStatus] ?? null
   let fit: number | null = null
   if (contractFit !== null && statusFit !== null) fit = CONTRACT_SHARE * contractFit + (1 - CONTRACT_SHARE) * statusFit
   else fit = contractFit ?? statusFit
-  if (fit === null) return skipped('계약 만료일과 계약상 입지를 모두 알 수 없어서,')
-  if (!notes) return { fit, note: '' }
+  if (fit === null) return unknown('계약 만료일과 계약상 입지를 모두 알 수 없어서,')
+  if (!notes) return { fit, assumed: false, note: '' }
   const parts: string[] = []
   if (days !== null) parts.push(days <= 0 ? '계약이 곧 끝납니다' : days < 60 ? `계약이 ${days}일 남았습니다` : `계약이 ${Math.round(days / 30.44)}개월 남았습니다`)
   else parts.push('계약 만료일은 알 수 없어 반영하지 않았습니다')
   const label = SQUAD_STATUS_LABEL[input.squadStatus]
   if (statusFit !== null && label) parts.push(`구단이 약속한 입지는 "${label}"입니다`)
   else parts.push('계약상 입지는 알 수 없어 반영하지 않았습니다')
-  return { fit, note: `${parts.join(', ')}.` }
+  return { fit, assumed: false, note: `${parts.join(', ')}.` }
 }
 
 function reliabilityPart(input: RecommendInput, notes: boolean): Part {
   const fit = reliabilityFit(input.traits)
-  if (fit === null) return skipped('숨은 능력치를 읽지 못해서,')
-  if (!notes) return { fit, note: '' }
+  if (fit === null) return unknown('숨은 능력치를 읽지 못해서,')
+  if (!notes) return { fit, assumed: false, note: '' }
   const shown = (['consistency', 'injuryProneness', 'importantMatches', 'naturalFitness'] as TraitId[])
     .filter((id) => input.traits[id] !== null)
     .map((id) => `${TRAIT_LABEL[id]} ${input.traits[id]}${LOWER_IS_BETTER.has(id) ? '(낮을수록 좋음)' : ''}`)
-  return { fit, note: `${shown.join(', ')} 등으로 꾸준함과 건강을 보았습니다.` }
+  return { fit, assumed: false, note: `${shown.join(', ')} 등으로 꾸준함과 건강을 보았습니다.` }
+}
+
+/** 점수에는 넣지 않고 알려만 두는 것들 */
+export function warningsOf(input: RecommendInput, ctx: Pick<RecommendContext, 'starter' | 'today'>): string[] {
+  const found: string[] = []
+  if (input.hasClub && IMPORTANT_STATUS.has(input.squadStatus)) found.push('소속팀에서 중요한 선수라 데려오기 어려울 수 있습니다.')
+  if (ctx.starter && input.ca >= ctx.starter.ca + WARN_CA_MARGIN) found.push('현재 능력이 우리 주전보다 높아 큰 구단의 핵심일 수 있습니다.')
+  if (input.hasClub && input.contractEnd && ctx.today && daysUntil(input.contractEnd, ctx.today) >= WARN_LONG_CONTRACT_DAYS) {
+    found.push('계약이 길게 남아 이적료가 비쌀 수 있습니다.')
+  }
+  return found
+}
+
+function gateNoteOf(rating: number | null, gate: number): string {
+  if (rating === null) return '이 역할 자리의 숙련도를 알 수 없어 포지션 보정을 하지 않았습니다(×1).'
+  const shown = `×${Math.round(gate * 1000) / 1000}`
+  if (rating >= POSITION_NATURAL) return `포지션 보정 ${shown}(숙련 ${rating}, 자연스러운 자리라 보정이 없습니다)`
+  if (rating >= PLAYABLE_RATING) return `포지션 보정 ${shown}(숙련 ${rating}, 능숙하지만 자연스러운 자리(20)는 아닙니다)`
+  return `포지션 보정 ${shown}(숙련 ${rating}, 능숙(${PLAYABLE_RATING}) 미만이라 크게 깎았습니다)`
 }
 
 /**
@@ -508,12 +638,10 @@ function reliabilityPart(input: RecommendInput, notes: boolean): Part {
  */
 export function recommend(input: RecommendInput, ctx: RecommendContext, withNotes = true): Recommendation {
   const weights = { ...RECOMMEND_WEIGHTS[input.category] }
-  const need = ctx.need ?? null
-  const needFactor = need === null ? 1 : NEED_WEIGHT_LOW + (NEED_WEIGHT_HIGH - NEED_WEIGHT_LOW) * clamp01(need / 100)
-  weights.immediate *= needFactor
+  const need = ctx.need ?? NEED_DEFAULT
+  weights.immediate *= NEED_WEIGHT_LOW + (NEED_WEIGHT_HIGH - NEED_WEIGHT_LOW) * clamp01(need / 100)
   const parts: Record<ComponentId, Part> = {
     immediate: immediatePart(input, ctx, withNotes),
-    position: positionPart(input, withNotes),
     growth: growthPart(input, ctx, withNotes),
     age: agePart(input, withNotes),
     cost: costPart(input, ctx, withNotes),
@@ -521,42 +649,37 @@ export function recommend(input: RecommendInput, ctx: RecommendContext, withNote
     reliability: reliabilityPart(input, withNotes)
   }
 
-  // 구한 항목의 가중치 합이 100이 되도록 다시 나눈다
-  let counted = 0
-  for (const id of COMPONENT_ORDER) if (parts[id].fit !== null && weights[id] > 0) counted += weights[id]
-  const scale = counted > 0 ? 100 / counted : 0
-
+  // 항목은 늘 들어간다. 가중치 합이 100이 되도록 나누는 것은 필요도에 따른 즉시 전력 비중 조정 때문이다
   let total = 0
+  for (const id of COMPONENT_ORDER) total += weights[id]
+  const scale = total > 0 ? 100 / total : 0
+
+  let sum = 0
   const components = COMPONENT_ORDER.map((id): RecommendComponent => {
-    const { fit, note } = parts[id]
-    const used = fit !== null && weights[id] > 0
+    const { fit, assumed, note } = parts[id]
+    const used = weights[id] > 0
     const max = used ? weights[id] * scale : 0
-    const points = used ? fit! * max : 0
-    total += points
+    const points = used ? fit * max : 0
+    sum += points
     return {
       id,
       label: COMPONENT_LABEL[id],
       points: round1(points),
       max: round1(max),
       counted: used,
-      note: !withNotes ? '' : weights[id] > 0 ? note : '이 유형에서는 점수에 반영하지 않습니다.'
+      assumed: used && assumed,
+      note: !withNotes ? '' : used ? note : '이 유형에서는 점수에 반영하지 않습니다.'
     }
   })
-  return { total: round1(Math.min(100, Math.max(0, total))), components }
-}
 
-/**
- * 추천 점수를 한마디로: 색에만 기대지 않도록 화면에 이 말을 같이 적는다.
- * 경계는 이 앱이 정한 어림이다(75 이상이면 대부분의 항목이 좋은 선수).
- */
-export const RECOMMEND_TIERS: Array<{ min: number; id: 'top' | 'good' | 'maybe' | 'low'; label: string }> = [
-  { min: 75, id: 'top', label: '강력 추천' },
-  { min: 60, id: 'good', label: '추천' },
-  { min: 45, id: 'maybe', label: '고려' },
-  { min: 0, id: 'low', label: '보류' }
-]
-
-export function recommendTier(total: number): { id: 'top' | 'good' | 'maybe' | 'low'; label: string } {
-  const tier = RECOMMEND_TIERS.find((each) => total >= each.min) ?? RECOMMEND_TIERS[RECOMMEND_TIERS.length - 1]
-  return { id: tier.id, label: tier.label }
+  const base = round1(Math.min(100, Math.max(0, sum)))
+  const gate = input.roleRating === null ? 1 : positionGate(input.roleRating)
+  return {
+    total: round1(base * gate),
+    base,
+    gate,
+    gateNote: withNotes ? gateNoteOf(input.roleRating, gate) : '',
+    components,
+    warnings: withNotes ? warningsOf(input, ctx) : []
+  }
 }

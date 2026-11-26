@@ -33,7 +33,9 @@ function SlotDetail(props: {
       </header>
       <p className="slot-reason">{slot.reason}</p>
       <p className="muted slot-facts">
-        {slot.starterScore !== null ? `주전 적합도 ${slot.starterScore}점` : '주전 없음'}
+        {slot.starterScore !== null
+          ? `주전 적합도 ${slot.starterScore}점(${slot.normSource === 'world' ? '같은 역할 상위권 평균' : '팀 주전 평균'} ${Math.round(slot.norm.mu * 10) / 10}점)`
+          : '주전 없음'}
         {slot.backupScore !== null ? ` · 첫 후보 ${slot.backupScore}점` : ''} · 이 자리를 뛸 수 있는 선수 {slot.eligible}명
       </p>
 
@@ -47,7 +49,7 @@ function SlotDetail(props: {
                 <span style={{ width: factor.max > 0 ? `${(factor.points / factor.max) * 100}%` : '0%' }} />
               </span>
               <span className="num factor-points">
-                {factor.counted ? `${factor.points}/${factor.max}` : '제외'}
+                {factor.counted ? `${factor.points}/${factor.max}${factor.assumed ? ' (보통으로 계산)' : ''}` : '제외'}
               </span>
             </div>
             <p>{factor.note}</p>

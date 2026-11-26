@@ -2,6 +2,7 @@ import { useMemo } from 'react'
 import { buildDepth, FORMATION_BY_ID, FORMATIONS, type DepthPlayer, type DepthSlot } from '@shared/depth'
 import { POSITION_LABEL } from '@shared/insights'
 import { ROLE_BY_ID, rolesFor } from '@shared/roles'
+import type { RoleNorms } from '@shared/norms'
 import type { ColumnInfo, PlayerRow, Settings } from '@shared/types'
 
 function PlayerLine(props: { rank: number; player: DepthPlayer; onPick: (idx: number) => void }) {
@@ -70,15 +71,17 @@ function SlotCard(props: {
 export function DepthChart(props: {
   columns: ColumnInfo[]
   rows: PlayerRow[]
+  /** 역할별 기준 분포. 있으면 약한 자리를 그 역할의 눈금으로 가린다 */
+  norms?: RoleNorms
   settings: Settings
   onChange: (patch: Partial<Settings>) => void
   onPick: (idx: number) => void
 }) {
-  const { columns, rows, settings, onChange, onPick } = props
+  const { columns, rows, norms, settings, onChange, onPick } = props
   const formation = FORMATION_BY_ID[settings.formation] ?? FORMATIONS[0]
   const slots = useMemo(
-    () => buildDepth(rows, columns, formation, settings.slotRoles, settings.roleWeights),
-    [rows, columns, formation, settings.slotRoles, settings.roleWeights]
+    () => buildDepth(rows, columns, formation, settings.slotRoles, settings.roleWeights, 2, norms),
+    [rows, columns, formation, settings.slotRoles, settings.roleWeights, norms]
   )
 
   const hasAttributes = columns.some((col) => col.isAttr)
@@ -116,7 +119,7 @@ export function DepthChart(props: {
         <p className="muted">
           {weakCount === 0
             ? '주전 점수가 고르게 나옵니다. 눈에 띄게 약한 자리가 없습니다.'
-            : `약한 자리 ${weakCount}곳: 주전 점수가 다른 자리 평균보다 5점 이상 낮습니다.`}
+            : `약한 자리 ${weakCount}곳: 같은 역할 기준으로 다른 자리 주전들보다 뚜렷이 낮거나 뛸 선수가 없습니다.`}
         </p>
       </div>
 

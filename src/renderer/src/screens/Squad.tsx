@@ -121,7 +121,8 @@ export function Squad(props: {
             today: snapshot.today,
             formation: formation.id,
             slotRoles: settings.slotRoles,
-            roleWeights: settings.roleWeights
+            roleWeights: settings.roleWeights,
+            norms: snapshot.roleNorms
           })
         : null,
     [snapshot, formation.id, settings.slotRoles, settings.roleWeights]
@@ -318,6 +319,7 @@ export function Squad(props: {
           <DepthChart
             columns={snapshot.columns}
             rows={snapshot.rows}
+            norms={snapshot.roleNorms}
             settings={settings}
             onChange={onSettings}
             onPick={pick}

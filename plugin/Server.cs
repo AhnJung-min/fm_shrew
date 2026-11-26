@@ -211,6 +211,14 @@ internal static class Server
                 return PersonInfo.People(Need("uids"));
             case "/names":
                 return PersonInfo.Names(Need("kind"), Need("ids"));
+            // 내 구단의 프로필·시설·재정, 1군 선수들의 건강과 경기력(게임에 물어 받아 온다)
+            case "/club":
+                return ClubInfo.Club(Need("team"));
+            case "/health":
+                return ClubInfo.Health(Need("uids"), query["team"]);
+            // 개발용: 한 팀이나 선수에 임의의 항목 경로를 청해 본다
+            case "/fields":
+                return ClubInfo.Fields(Need("kind"), Need("id"), Need("f"), query["team"]);
             // 개발용: 번호로 선수를 가리키는 마디를 올린다. 그 뒤 /bind로 항목을 청해 본다
             case "/alias/person":
             {

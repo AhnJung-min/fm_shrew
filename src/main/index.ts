@@ -5,6 +5,8 @@ import { app, BrowserWindow, ipcMain, Menu, nativeImage, net, protocol, shell, T
 import type { AppStatus, Settings } from '@shared/types'
 import type { CandidateQuery, EditorEdit } from '@shared/world'
 import { BackupManager } from './backup'
+import { ClubService } from './clubService'
+import { DashboardService } from './dashboardService'
 import { GameLink } from './gameLink'
 import { FaceFinder, imageRequestFrom, LogoFinder } from './graphics'
 import { SeasonService } from './seasonService'
@@ -42,6 +44,8 @@ let keys: KeyStore
 let backups: BackupManager
 let world: WorldService
 let season: SeasonService
+let dashboard: DashboardService
+let club: ClubService
 let link: GameLink
 let tray: Tray | null = null
 /** 정말 끄는 중인지(트레이 메뉴의 종료, 시스템 종료). 아니면 창을 닫아도 앱은 남는다 */
@@ -171,6 +175,8 @@ function registerIpc(): void {
   ipcMain.handle('link:refresh', (_event, rescan: boolean) => link.refresh(rescan === true))
   ipcMain.handle('world:squad', () => world.squad())
   ipcMain.handle('world:season', () => season.season())
+  ipcMain.handle('world:dashboard', () => dashboard.dashboard())
+  ipcMain.handle('world:club', (_event, force: boolean) => club.snapshot(force === true))
 
   ipcMain.handle('backup:list', () => backups.list())
   ipcMain.handle('backup:now', async () => {
@@ -275,11 +281,13 @@ app.whenReady().then(async () => {
     current: () => (world.path && world.world ? { path: world.path, world: world.world } : null),
     namesDir: join(dataDir, 'names')
   })
+  dashboard = new DashboardService({ world, season, settings: () => settings.get(), namesDir: join(dataDir, 'names') })
   link = new GameLink(
     world,
     () => settings.get().saveDir,
     (status) => mainWindow?.webContents.send('link:changed', status)
   )
+  club = new ClubService(world, () => link.status())
   saveWatcher = new SaveWatcher((path) => {
     void backupSave(path)
     // 적용해 둔 세이브를 게임이 다시 저장했으면 그 내용을 다시 읽는다

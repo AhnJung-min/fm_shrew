@@ -24,7 +24,7 @@ namespace FmBojwagwan.Bridge;
 internal static unsafe class GameData
 {
     public const string OurRoot = "fmb.";
-    private const int MaxWatches = 900;
+    private const int MaxWatches = 1500;
     private const int MaxFailures = 6;
 
     private sealed class Watch

@@ -183,7 +183,7 @@ export function TacticsPitch(props: {
         <p className="muted tp-summary">
           {weakCount === 0
             ? '주전 점수가 고르게 나옵니다. 눈에 띄게 약한 자리가 없습니다.'
-            : `약한 자리 ${weakCount}곳: 주전 점수가 다른 자리 평균보다 5점 이상 낮거나 뛸 선수가 없습니다.`}
+            : `약한 자리 ${weakCount}곳: 같은 역할 기준으로 다른 자리 주전들보다 뚜렷이 낮거나 뛸 선수가 없습니다.`}
         </p>
       </div>
 

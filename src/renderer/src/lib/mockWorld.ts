@@ -1,7 +1,21 @@
+import {
+  ageStructure,
+  buildBrief,
+  contractWindows,
+  firstTeamPlayers,
+  fitWageModel,
+  NO_DASHBOARD,
+  overpaidPlayers,
+  surplusReport,
+  type DashboardData,
+  type LoanEntry
+} from '@shared/dashboard'
+import { buildSnapshot, emptySnapshot, type ClubSnapshot, type GameFields } from '@shared/club'
 import { FIELD_BY_ID, FIELDS } from '@shared/fields'
 import { footValues, formatPounds, hiddenAttributes, isGoalkeeper, visibleAttributes } from '@shared/playerView'
 import { POSITION_KEYS, PLAYABLE_RATING, positionsLabel } from '@shared/positions'
-import { recommend, squadMoney, TRAIT_WEIGHTS, type RecommendContext, type RecommendInput, type TraitId, type Traits } from '@shared/recommend'
+import { FALLBACK_NORM } from '@shared/norms'
+import { recommend, squadMoney, tierRanker, TRAIT_WEIGHTS, type RecommendContext, type RecommendInput, type TraitId, type Traits } from '@shared/recommend'
 import { ROLE_BY_ID } from '@shared/roles'
 import { analyseTactic, slotBench } from '@shared/tactic'
 import type { SeasonMatch, SeasonResult, SeasonTableRow } from '@shared/season'
@@ -95,7 +109,7 @@ export function mockCandidates(query: CandidateQuery, empty: boolean): Candidate
     .sort((a, b) => b.score - a.score)
   const bench: CandidateBench =
     (analysis && slotFound ? slotBench(analysis, slotFound.slot.index) : null) ?? {
-      starter: mine[0] ? { name: mine[0].player.name, score: mine[0].score, ca: mine[0].player.ca } : null,
+      starter: mine[0] ? { name: mine[0].player.name, score: mine[0].score, ca: mine[0].player.ca, age: mine[0].player.age } : null,
       backup: mine[1] ? { name: mine[1].player.name, score: mine[1].score } : null
     }
   const mineAll = PLAYERS.filter((player) => player.mine)
@@ -105,12 +119,14 @@ export function mockCandidates(query: CandidateQuery, empty: boolean): Candidate
   )
   const need = slotFound ? slotFound.need : null
   const context: RecommendContext = {
-    starter: bench.starter ? { score: bench.starter.score, ca: bench.starter.ca } : null,
+    starter: bench.starter,
     backup: bench.backup ? { score: bench.backup.score } : null,
     today: { year: 2026, day: 182 },
     money,
     need
   }
+  // 미리보기에는 세이브 전체가 없어 기준 분포를 구하지 못한다: 대신하는 값으로 같은 식을 돌린다
+  const norm = FALLBACK_NORM
   const goalkeeper = role.positions.includes('GK')
   const statusCode = (player: MockPlayer): number => (player.club === '자유 계약' ? 0 : [1, 2, 3, 4][player.uid % 4])
   const inputOf = (player: MockPlayer, score: number): RecommendInput => {
@@ -140,14 +156,15 @@ export function mockCandidates(query: CandidateQuery, empty: boolean): Candidate
     .filter((player) => !search || player.name.includes(search))
     .map((player) => {
       const score = scoreOf(player)
-      const categories = categoriesOf({ score, age: player.age, ca: player.ca, pa: player.pa, hasClub: player.club !== '자유 계약' }, bench)
-      counts.all++
+      const categories = categoriesOf({ score, age: player.age, ca: player.ca, pa: player.pa, hasClub: player.club !== '자유 계약' }, bench, norm, goalkeeper)
+      if (categories.length > 0) counts.all++
       for (const category of categories) counts[category]++
       return { player, score, categories }
     })
-    .filter((row) => query.category === 'all' || row.categories.includes(query.category))
-    .map((row) => ({ ...row, recommend: recommend(inputOf(row.player, row.score), context) }))
+    .filter((row) => (query.category === 'all' ? row.categories.length > 0 : row.categories.includes(query.category)))
+    .map((row) => ({ ...row, recommend: recommend(inputOf(row.player, row.score), { ...context, norm }) }))
     .sort((a, b) => b.recommend.total - a.recommend.total || b.score - a.score)
+  const tierOf = tierRanker(picked.map((row) => row.recommend.total))
 
   return {
     ok: true,
@@ -155,6 +172,8 @@ export function mockCandidates(query: CandidateQuery, empty: boolean): Candidate
     bench,
     counts,
     matched: picked.length,
+    ranked: picked.length,
+    norm,
     need,
     baseline: money,
     rows: picked.map(({ player, score, categories, recommend: recommendation }) => ({
@@ -175,6 +194,7 @@ export function mockCandidates(query: CandidateQuery, empty: boolean): Candidate
       score,
       gap: bench.starter ? Math.round((score - bench.starter.score) * 10) / 10 : null,
       categories,
+      tier: tierOf(recommendation.total),
       attributes: player.attributes.map(shownValue)
     }))
   }
@@ -234,7 +254,7 @@ export function mockProfile(uid: number, gameOn: boolean): PlayerProfile | null 
 
 /** 내 팀 선수 표 */
 export function mockSquad(empty: boolean): SquadResult {
-  if (empty) return { ok: false, message: '먼저 홈 화면에서 세이브를 골라 적용해 주세요.', columns: [], rows: [] }
+  if (empty) return { ok: false, message: '먼저 시작 화면에서 세이브를 골라 적용해 주세요.', columns: [], rows: [] }
   const info = (header: string, field: string, numeric: boolean): ColumnInfo => ({
     header, field, group: 'info', short: header, label: header, isAttr: false, numeric
   })
@@ -355,4 +375,147 @@ export function mockSeason(empty: boolean): SeasonResult {
     ],
     table
   }
+}
+
+/** 대시보드 미리보기용: 지어낸 선수단과 경기 기록에 실제 앱과 같은 순수 계산을 적용한다 */
+export function mockDashboard(empty: boolean, settings: { formation: string; slotRoles: Record<string, string> }): DashboardData {
+  if (empty) return { ...NO_DASHBOARD, message: '먼저 세이브를 골라 적용해 주세요.' }
+  const squad = mockSquad(false)
+  const season = mockSeason(false)
+  const players = firstTeamPlayers(squad.rows, squad.columns)
+  const analysis = analyseTactic({ rows: squad.rows, columns: squad.columns, today: squad.today, formation: settings.formation, slotRoles: settings.slotRoles, roleWeights: {} })!
+  const contracts = contractWindows(players, squad.today)
+  const need = analysis.byNeed[0]
+
+  // 지어낸 주급 기준선: 선수마다 주급이 능력의 지수 함수에 가깝게 흩어지도록 만든 표본
+  const points = Array.from({ length: 400 }, (_, i) => {
+    const random = rng(i + 901)
+    const ca = 60 + Math.floor(random() * 110)
+    return { ca, wage: Math.exp(3.4 + 0.052 * ca + (random() - 0.5) * 1.4) }
+  })
+  const fit = fitWageModel(points)!
+  const over = overpaidPlayers(players, fit)
+
+  const candidates = mockCandidates(
+    {
+      roleId: need.slot.roleId, category: 'starter', maxAge: null, onlyEligible: true, includeUnknownClub: false, search: '', expiringWithinMonths: null,
+      slot: { formation: analysis.formation.id, slotRoles: settings.slotRoles, index: need.slot.index }
+    },
+    false
+  )
+  const loan = (uid: number, team: string, club: string): LoanEntry => {
+    const found = PLAYERS.find((player) => player.uid === uid)!
+    return { uid, name: found.name, age: found.age, position: found.position, ca: found.ca, pa: found.pa, team, otherClub: club, otherClubUid: null }
+  }
+  return {
+    ok: true,
+    meta: { saveName: '리버풀 2025.fm', savedAt: new Date(Date.now() - 0.4 * 3_600_000).toISOString(), gameDate: { year: 2026, month: 7, day: 1 }, abilitySource: 'save', liveAt: null, club: '한강 유나이티드', clubUid: null },
+    brief: buildBrief({
+      table: season.table ?? null,
+      recent: season.recent,
+      next: season.upcoming[0] ?? null,
+      need: { label: need.label, roleLabel: need.roleLabel, need: need.need, level: need.level, levelLabel: need.levelLabel, reason: need.reason, formation: analysis.formation.label },
+      expiring: { known: contracts.known, count: contracts.within1y.length, names: contracts.within1y.map((row) => row.name) }
+    }),
+    squad: {
+      firstTeam: players.length,
+      teams: [
+        { teamId: 101, name: '한강 유나이티드', first: true, players: players.length, averageAge: ageStructure(players).average },
+        { teamId: 102, name: '한강 유나이티드 U21', first: false, players: 19, averageAge: 19.8 },
+        { teamId: 103, name: '', first: false, players: 18, averageAge: 16.9 }
+      ],
+      loans: { in: [loan(1030, '한강 유나이티드', '북악 시티')], out: [loan(1040, '남해 FC', '남해 FC'), loan(1050, '서천 애슬레틱', '서천 애슬레틱')] },
+      ages: ageStructure(players)
+    },
+    contracts: { known: contracts.known, within1y: contracts.within1y, within2y: contracts.within2y, wageWithin1y: contracts.wageWithin1y },
+    surplus: { ok: true, formation: analysis.formation.label, ...surplusReport({ players, rows: squad.rows, columns: squad.columns, analysis, roleWeights: {} }) },
+    overpaid: { ok: true, model: { ...fit, scope: 'league', teams: 8 }, rows: over.rows, total: over.total },
+    recommend: {
+      ok: true,
+      matched: candidates.matched,
+      slot: {
+        formation: analysis.formation.id,
+        index: need.slot.index,
+        label: need.label,
+        roleLabel: need.roleLabel,
+        need: need.need,
+        levelLabel: need.levelLabel,
+        level: need.level,
+        reason: need.reason,
+        starter: need.slot.starter ? { name: need.slot.starter.name, score: need.slot.starter.score } : null,
+        backup: need.slot.backups[0] ? { name: need.slot.backups[0].name, score: need.slot.backups[0].score } : null
+      },
+      rows: candidates.rows.slice(0, 3).map((row) => ({
+        uid: row.uid, name: row.name, age: row.age, position: row.position, club: row.club, clubUid: null, ca: row.ca, pa: row.pa, total: row.recommend.total, tier: row.tier, score: row.score, gap: row.gap
+      }))
+    }
+  }
+}
+
+/**
+ * 구단 프로필·시설·재정과 선수단 건강(미리보기용). 플러그인이 돌려주는 것과 같은 모양의 글자를 지어 만들어,
+ * 실제 앱과 같은 변환(shared/club.ts)을 거치게 한다. 구단·경기장·금액은 모두 꾸며 낸 것이다.
+ */
+export function mockClub(state: { empty: boolean; off: boolean; old: boolean }): ClubSnapshot {
+  if (state.empty) return emptySnapshot('noSave', '먼저 홈 화면에서 세이브를 골라 적용해 주세요.')
+  if (state.off) return emptySnapshot('off', 'FM이 켜져 있어야 구단 재정·시설과 선수단 건강을 읽을 수 있습니다. 게임을 켜고 세이브를 불러와 주세요.')
+  if (state.old) return emptySnapshot('old', '이 정보는 게임 안 플러그인 0.11.0 이상에서 읽습니다(지금 올라가 있는 것은 0.8.0). FM을 완전히 껐다가 다시 켜 주세요.')
+  const club: GameFields = {
+    name: '한강 유나이티드',
+    club: '한강 유나이티드 FC',
+    division: '한국 1부 리그',
+    leaguePosition: '3위',
+    stadium: '한강 시티 스타디움',
+    capacity: '38,420',
+    averageAttendance: '33,905',
+    seasonTickets: '21,400',
+    founded: '1946',
+    training: '우수',
+    trainingStars: '4',
+    youthFacilities: '좋음',
+    youthFacilitiesStars: '3',
+    youthCoaching: '우수',
+    youthCoachingStars: '4.5',
+    youthRecruitment: '평균',
+    youthRecruitmentStars: '2.5',
+    transferBudget: '3200000',
+    wageBudget: '1450000',
+    wageSpend: '1388000',
+    wageRemaining: '62000',
+    balance: '12400000',
+    balanceStatus: '안정적'
+  }
+  const mine = PLAYERS.filter((player) => player.mine)
+  const health: GameFields[] = mine.map((player, i) => {
+    const random = rng(player.uid + 99)
+    const moraleOf = (share: number): { morale: number; moraleText: string } => ({
+      morale: Math.round(4 + share * 16),
+      moraleText: ['매우 낮음', '낮음', '보통', '좋음', '매우 좋음'][Math.min(4, Math.floor(share * 5))]
+    })
+    const hurt = i === 3 || i === 11 || i === 17
+    const banned = i === 8
+    const condition = Math.round((hurt ? 6200 : 7600 + random() * 2400))
+    return {
+      uid: player.uid,
+      injured: hurt ? 'True' : 'False',
+      ...(hurt ? { injuryName: ['햄스트링 염좌', '발목 인대 손상', '근육 피로 누적'][i % 3], injuryDuration: ['3주', '6주', '10일'][i % 3], injuryDays: [21, 42, 10][i % 3] } : {}),
+      ...(banned ? { banReason: '레드카드 퇴장', banLeft: '2' } : { banLeft: '0' }),
+      condition,
+      conditionText: `${Math.round(condition / 100)}%`,
+      sharpness: Math.round(5500 + random() * 4500),
+      ...moraleOf(random()),
+      appearances: String(Math.floor(random() * 14)),
+      goals: String(Math.floor(random() * 6)),
+      assists: String(Math.floor(random() * 5)),
+      rating: (6.2 + random() * 1.5).toFixed(2),
+      lastRating: (5.5 + random() * 3).toFixed(1)
+    }
+  })
+  const roster = mine.map((player) => ({ uid: player.uid, name: player.name, position: player.position }))
+  return buildSnapshot({
+    club: { records: [club], paths: {}, skipped: [] },
+    health: { records: health, paths: {}, skipped: [] },
+    roster,
+    readAt: new Date().toISOString()
+  })
 }

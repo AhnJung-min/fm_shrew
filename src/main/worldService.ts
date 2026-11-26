@@ -3,8 +3,19 @@ import { basename } from 'node:path'
 import { NO_DATA, type DataStatus, type SaveFileInfo } from '@shared/game'
 import { POSITION_KEYS, PLAYABLE_RATING, positionOrder, positionsLabel } from '@shared/positions'
 import { footValues, formatPounds, hiddenAttributes, isGoalkeeper, visibleAttributes } from '@shared/playerView'
+import { normOf, type RoleNorms } from '@shared/norms'
 import { prepareRole, ROLE_BY_ID, savedRoleScore } from '@shared/roles'
-import { recommend, squadMoney, TRAIT_WEIGHTS, type RecommendContext, type RecommendInput, type TraitId, type Traits } from '@shared/recommend'
+import {
+  recommend,
+  squadMoney,
+  tierRanker,
+  TRAIT_WEIGHTS,
+  type RecommendContext,
+  type RecommendInput,
+  type RecommendTierId,
+  type TraitId,
+  type Traits
+} from '@shared/recommend'
 import { analyseTactic, slotBench } from '@shared/tactic'
 import {
   categoriesOf,
@@ -27,7 +38,8 @@ import {
   SQUAD_STATUS_LABEL
 } from '@shared/world'
 import { ATTRIBUTE_COUNT, POSITION_COUNT } from './save/reader'
-import { ageAt, findTeamByNames, NO_TEAM, readWorld, teamHasPlayers, type SaveWorld } from './save/world'
+import { ageAt, findTeamByNames, NO_TEAM, readWorld, SEX_FEMALE, teamHasPlayers, type SaveWorld } from './save/world'
+import { computeRoleNorms } from './roleNorms'
 import { NameBook } from './names'
 import { calendar } from './save/contracts'
 import { squadTable, type SquadTable } from './squad'
@@ -91,6 +103,14 @@ export class WorldService {
   /** 이번에 물어봤지만 게임이 답하지 않은 번호(다시 묻지 않는다) */
   private readonly unanswered = { team: new Set<number>(), nation: new Set<number>() }
   private namesStage = 0
+
+  /**
+   * 세이브 안의 값(능력치·이름 정보)이 바뀔 때마다 늘린다. 이 값이 같으면 아래 캐시(여자 선수 표시, 역할 기준 분포)가 아직 맞다.
+   * 기준 분포는 선수 10만 명을 돌아 구하므로 (세이브 객체, 이 번호, 역할 가중치)가 같으면 다시 구하지 않는다.
+   */
+  private revision = 0
+  private femaleCache: { world: SaveWorld; revision: number; mask: Uint8Array } | null = null
+  private normCache: { world: SaveWorld; revision: number; weights: string; norms: RoleNorms } | null = null
 
   constructor(private readonly deps: WorldDeps) {
     this.names = new NameBook(deps.namesDir)
@@ -195,6 +215,7 @@ export class WorldService {
       world.attributes.set(packed.subarray(at + 8 + POSITION_COUNT, at + PACKED_SIZE), k * ATTRIBUTE_COUNT)
       matched++
     }
+    if (matched > 0) this.revision++
     if (matched > 0) {
       loaded.live = { at: Date.now(), matched }
       loaded.note = ''
@@ -257,7 +278,7 @@ export class WorldService {
   }
 
   /** 내 팀 선수 표 */
-  squad(): SquadTable & { ok: boolean; message?: string } {
+  squad(): SquadTable & { ok: boolean; message?: string; roleNorms?: RoleNorms } {
     const world = this.loaded?.world
     if (!world) return { ok: false, message: NO_SAVE, columns: [], rows: [] }
     if (world.teamId === undefined) {
@@ -268,7 +289,32 @@ export class WorldService {
         rows: []
       }
     }
-    return { ok: true, ...squadTable(world) }
+    return { ok: true, ...squadTable(world), roleNorms: this.roleNorms() ?? undefined }
+  }
+
+  /**
+   * 역할별 기준 분포(shared/norms.ts). 세이브 전체에서 한 번 구해 두고, 세이브·값·역할 가중치가 같으면 다시 구하지 않는다.
+   * 전술 분석(스쿼드·대시보드·영입 후보)이 모두 같은 값을 쓰도록 squad()가 함께 준다. 세이브를 적용하지 않았으면 null.
+   */
+  roleNorms(): RoleNorms | null {
+    const world = this.loaded?.world
+    if (!world) return null
+    const weights = JSON.stringify(this.deps.roleWeights())
+    const kept = this.normCache
+    if (kept && kept.world === world && kept.revision === this.revision && kept.weights === weights) return kept.norms
+    const norms = computeRoleNorms(world, this.deps.roleWeights(), this.femaleMask(world))
+    this.normCache = { world, revision: this.revision, weights, norms }
+    return norms
+  }
+
+  /** 선수마다 여자이면 1. 세이브가 적은 성별을 우선으로 하고, 게임이 알려 준 여자 팀의 선수도 더한다 */
+  private femaleMask(world: SaveWorld): Uint8Array {
+    const kept = this.femaleCache
+    if (kept && kept.world === world && kept.revision === this.revision) return kept.mask
+    const mask = new Uint8Array(world.count)
+    for (let k = 0; k < world.count; k++) mask[k] = this.isFemale(world, k) ? 1 : 0
+    this.femaleCache = { world, revision: this.revision, mask }
+    return mask
   }
 
   private clubName(world: SaveWorld, k: number): string {
@@ -280,12 +326,14 @@ export class WorldService {
     return team ? team.club || team.name : ''
   }
 
-  /** 여자 팀 선수인지. 게임이 알려 준 것이 있으면 그것을, 없으면 세이브에서 어림한 것을 쓴다 */
-  private onWomenTeam(world: SaveWorld, k: number): boolean {
+  /**
+   * 여자 선수인지. 세이브에 적힌 성별(world.sex)을 기준으로 하고, 게임이 알려 준 여자 팀의 선수도 여자로 본다.
+   * (구단 번호가 20억 이상이면 여자 구단이라는 어림은 새로 만든 남자 구단에도 걸려 쓰지 않는다.)
+   */
+  private isFemale(world: SaveWorld, k: number): boolean {
+    if (world.sex[k] === SEX_FEMALE) return true
     const team = this.names.team(world.teamIds[k])
-    if (team) return team.female
-    const club = world.club[k]
-    return club >= 0 && world.clubs[club].women
+    return team ? team.female : false
   }
 
   /**
@@ -320,6 +368,7 @@ export class WorldService {
       else this.names.setTeam(answer.id, { name: answer.name, club: answer.club ?? '', female: answer.gender === 'True' })
     }
     for (const id of asked) if (!answered.has(id)) this.unanswered[kind].add(id)
+    if (answers.length > 0) this.revision++
   }
 
   /** 이름을 어디까지 알아냈는지 적고(화면이 자료를 다시 읽는다) 파일에 남긴다. */
@@ -341,7 +390,10 @@ export class WorldService {
     }
   }
 
-  /** 고른 역할로 모든 선수의 점수를 매겨 유형별 영입 후보를 고른다. */
+  /**
+   * 고른 역할로 모든 선수의 점수를 매겨 유형별 영입 후보를 고른다.
+   * 순서: 걸러내기(내 구단·여자·조건) → 유형 자격(shared/world.ts categoriesOf) → 자격 후보에만 추천 점수 → 같은 유형 안의 백분위 등급.
+   */
   candidates(query: CandidateQuery): CandidateResult {
     const empty: Record<CandidateCategory, number> = { all: 0, starter: 0, rotation: 0, prospect: 0, free: 0 }
     const noBench: CandidateBench = { starter: null, backup: null }
@@ -354,15 +406,18 @@ export class WorldService {
       return fail('이 세이브에서 내 팀을 아직 찾지 못했습니다. 게임을 켜고 이 세이브를 불러오면 내 팀을 찾습니다.', saveName)
     }
     const roleWeights = this.deps.roleWeights()
+    const norms = this.roleNorms() ?? {}
+    const female = this.femaleMask(world)
     // 전술의 한 자리를 기준으로 찾으면 그 자리의 역할·주전·두 번째 선수·보강 필요도를 쓴다(스쿼드 전술판과 같은 계산)
     const table = squadTable(world)
     const analysis = query.slot
-      ? analyseTactic({ rows: table.rows, columns: table.columns, today: table.today, formation: query.slot.formation, slotRoles: query.slot.slotRoles, roleWeights })
+      ? analyseTactic({ rows: table.rows, columns: table.columns, today: table.today, formation: query.slot.formation, slotRoles: query.slot.slotRoles, roleWeights, norms })
       : null
     const slotFound = analysis?.slots[query.slot?.index ?? -1] ?? null
     const roleId = slotFound ? slotFound.slot.roleId : query.roleId
     const role = ROLE_BY_ID[roleId]
     if (!role) return fail('알 수 없는 역할입니다.', saveName)
+    const norm = normOf(norms, roleId)
 
     // 스쿼드 화면과 같은 값이 나오도록 게임 표시값(1~20)으로 계산한다(roles.ts의 savedRoleScore 하나)
     const prepared = prepareRole(roleId, roleWeights)
@@ -390,17 +445,18 @@ export class WorldService {
     mine.sort((a, b) => b.score - a.score)
     const bench: CandidateBench =
       (analysis && slotFound ? slotBench(analysis, slotFound.slot.index) : null) ?? {
-        starter: mine[0] ? { name: world.names[mine[0].k], score: mine[0].score, ca: world.ca[mine[0].k] } : null,
+        starter: mine[0] ? { name: world.names[mine[0].k], score: mine[0].score, ca: world.ca[mine[0].k], age: ageAt(world, mine[0].k) } : null,
         backup: mine[1] ? { name: world.names[mine[1].k], score: mine[1].score } : null
       }
     const money = squadMoney(myWages, myValues)
     const need = slotFound ? slotFound.need : null
     const context: RecommendContext = {
-      starter: bench.starter ? { score: bench.starter.score, ca: bench.starter.ca } : null,
+      starter: bench.starter,
       backup: bench.backup ? { score: bench.backup.score } : null,
       today: world.gameDate ? { year: world.gameDate.year, day: world.gameDate.day } : null,
       money,
-      need
+      need,
+      norm
     }
     const goalkeeper = role.positions.includes('GK')
     const traitAt = (id: TraitId): number => ATTRIBUTE_INDEX.get(id)!
@@ -433,34 +489,45 @@ export class WorldService {
       expiresBy = (world.gameDate.year + Math.floor((days - 1) / 365)) * 1000 + ((days - 1) % 365) + 1
     }
     const counts = { ...empty }
-    const picked: Array<{ k: number; score: number; age: number | null; categories: CandidateCategory[]; total: number }> = []
+    /** 고른 유형의 자격 후보 전체의 총점(등급의 백분위를 매기는 기준. 이름 검색과 상관없다) */
+    const qualifiedTotals: number[] = []
+    const picked: Array<{ k: number; score: number; age: number | null; categories: CandidateCategory[]; total: number; inTab: boolean }> = []
     for (let k = 0; k < world.count; k++) {
       const name = world.names[k]
       if (!name || world.uids[k] === 0) continue
       const team = world.teamIds[k]
       const club = world.club[k]
-      // 내 구단 선수(2군·유스 포함)는 후보가 아니다
+      // 내 구단 선수(2군·유스 포함)와 여자 선수는 후보가 아니다
       if (team === world.teamId || (club >= 0 && club === myClub)) continue
-      if (this.onWomenTeam(world, k)) continue
+      if (female[k]) continue
       if (team !== NO_TEAM && club < 0 && !this.names.hasTeam(team) && !query.includeUnknownClub) continue
       if (expiresBy > 0 && (world.contractEnd[k] === 0 || world.contractEnd[k] > expiresBy)) continue
       if (query.onlyEligible && !eligible(k)) continue
       const age = ageAt(world, k)
       if (query.maxAge !== null && (age === null || age > query.maxAge)) continue
-      if (search && !name.toLowerCase().includes(search)) continue
 
       const score = scoreOf(k)
-      const categories = categoriesOf({ score, age, ca: world.ca[k], pa: world.pa[k], hasClub: team !== NO_TEAM }, bench)
-      counts.all++
-      for (const category of categories) counts[category]++
-      if (query.category !== 'all' && !categories.includes(query.category)) continue
+      const categories = categoriesOf({ score, age, ca: world.ca[k], pa: world.pa[k], hasClub: team !== NO_TEAM }, bench, norm, goalkeeper)
+      const qualified = categories.length > 0
+      const inTab = query.category === 'all' ? qualified : categories.includes(query.category)
+      const nameHit = !search || name.toLowerCase().includes(search)
+      if (nameHit) {
+        if (qualified) counts.all++
+        for (const category of categories) counts[category]++
+      }
+      // 이름을 찾는 중이면 유형 자격이 없어도 이름이 맞는 선수를 보여 준다
+      const shown = nameHit && (inTab || search !== '')
+      if (!inTab && !shown) continue
       // 줄 세우는 데는 설명 글이 필요 없어 점수만 구한다(풀이는 보여 줄 줄에만 붙인다)
-      picked.push({ k, score, age, categories, total: recommend(inputOf(k, score, age), context, false).total })
+      const total = recommend(inputOf(k, score, age), context, false).total
+      if (inTab) qualifiedTotals.push(total)
+      if (shown) picked.push({ k, score, age, categories, total, inTab })
     }
     // 추천 점수 순. 같으면 적합도, 현재 능력 순
     picked.sort((a, b) => b.total - a.total || b.score - a.score || world.ca[b.k] - world.ca[a.k])
+    const tierOf = tierRanker(qualifiedTotals)
 
-    const rows: CandidateRow[] = picked.slice(0, MAX_ROWS).map(({ k, score, age, categories }) => ({
+    const rows: CandidateRow[] = picked.slice(0, MAX_ROWS).map(({ k, score, age, categories, total, inTab }) => ({
       uid: world.uids[k],
       name: world.names[k],
       age,
@@ -478,9 +545,10 @@ export class WorldService {
       gap: bench.starter ? Math.round((score - bench.starter.score) * 10) / 10 : null,
       categories,
       recommend: recommend(inputOf(k, score, age), context),
+      tier: (inTab ? tierOf(total) : 'outside') as RecommendTierId,
       attributes: [...world.attributes.subarray(k * ATTRIBUTE_COUNT, (k + 1) * ATTRIBUTE_COUNT)].map(shownValue)
     }))
-    return { ok: true, saveName, bench, counts, rows, matched: picked.length, need, baseline: money }
+    return { ok: true, saveName, bench, counts, rows, matched: picked.length, ranked: qualifiedTotals.length, norm, need, baseline: money }
   }
 
   /**
@@ -551,6 +619,7 @@ export class WorldService {
     if (values.pa !== undefined) world.pa[k] = values.pa
     if (values.positions) world.positions.set(values.positions, k * POSITION_COUNT)
     if (values.attributes) world.attributes.set(values.attributes, k * ATTRIBUTE_COUNT)
+    this.revision++
   }
 
   /**
