@@ -633,6 +633,52 @@ internal static unsafe class Il2
         return result;
     }
 
+    /// <summary>목록의 항목 수. 목록이 아니면 -1.</summary>
+    public static int Count(IntPtr list)
+    {
+        if (list == IntPtr.Zero) return -1;
+        var counter = FindMethod(ClassOf(list), "get_Count", 0);
+        if (counter == IntPtr.Zero) return -1;
+        var boxed = Invoke(counter, list, Array.Empty<string>(), out var error);
+        return error != null || boxed == IntPtr.Zero ? -1 : *(int*)IL2CPP.il2cpp_object_unbox(boxed);
+    }
+
+    /// <summary>객체 배열의 index번째 항목. 범위를 벗어나면 0.</summary>
+    public static IntPtr ArrayItem(IntPtr array, int index)
+    {
+        if (array == IntPtr.Zero || index < 0 || index >= (int)IL2CPP.il2cpp_array_length(array)) return IntPtr.Zero;
+        var data = (byte*)array + IntPtr.Size * 4;
+        return *(IntPtr*)(data + (long)index * IntPtr.Size);
+    }
+
+    /// <summary>
+    /// 상자에 담긴 값이 수면 그 수를 글로 준다. 수가 아니면 null.
+    /// 게임은 작은 수를 문자 형식(System.Char)에 담아 두기도 해서, 문자도 수로 읽는다.
+    /// </summary>
+    public static string NumberText(IntPtr boxed)
+    {
+        if (boxed == IntPtr.Zero) return null;
+        var klass = ClassOf(boxed);
+        if (!IL2CPP.il2cpp_class_is_valuetype(klass) || IL2CPP.il2cpp_class_is_enum(klass)) return null;
+        var data = (byte*)IL2CPP.il2cpp_object_unbox(boxed);
+        var invariant = CultureInfo.InvariantCulture;
+        return ClassName(klass) switch
+        {
+            "System.Char" => ((int)*(ushort*)data).ToString(invariant),
+            "System.Byte" => (*data).ToString(invariant),
+            "System.SByte" => (*(sbyte*)data).ToString(invariant),
+            "System.Int16" => (*(short*)data).ToString(invariant),
+            "System.UInt16" => (*(ushort*)data).ToString(invariant),
+            "System.Int32" => (*(int*)data).ToString(invariant),
+            "System.UInt32" => (*(uint*)data).ToString(invariant),
+            "System.Int64" => (*(long*)data).ToString(invariant),
+            "System.UInt64" => (*(ulong*)data).ToString(invariant),
+            "System.Single" => (*(float*)data).ToString("0.##", invariant),
+            "System.Double" => (*(double*)data).ToString("0.##", invariant),
+            _ => null
+        };
+    }
+
     /// <summary>상자에 담긴 참·거짓을 꺼낸다.</summary>
     public static bool Bool(IntPtr boxed) => boxed != IntPtr.Zero && *(byte*)IL2CPP.il2cpp_object_unbox(boxed) != 0;
 

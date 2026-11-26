@@ -187,6 +187,9 @@ internal static class Server
                 return MainThread.Run(() => DataProbe.Alias(Need("name"), Need("from"), Number("index", -1)));
             case "/probe/clear":
                 return MainThread.Run(DataProbe.Clear);
+            // 카드가 게임에서 받아 둔 값들
+            case "/gamedata":
+                return MainThread.Run(GameData.Dump);
 
             // 견본 카드 띄우기(개발용): kind = goal, multi, hat, best
             case "/card/test":
