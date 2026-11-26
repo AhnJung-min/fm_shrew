@@ -103,6 +103,9 @@ internal static class MatchCards
     private static readonly Stopwatch Clock = Stopwatch.StartNew();
     private static readonly Regex ClockText = new(@"^(\d{1,3}):(\d{2})$", RegexOptions.CultureInvariant);
     private static readonly Regex Digits = new(@"^\d{1,3}$", RegexOptions.CultureInvariant);
+    private static readonly Regex AddedText = new(@"^\(\+\d+\)$", RegexOptions.CultureInvariant);
+    /// <summary>전반, 후반, 연장 전반, 연장 후반이 끝나는 분(늦은 것부터)</summary>
+    private static readonly int[] PeriodEnds = { 120, 105, 90, 45 };
 
     private static readonly Color Back = new(0.07f, 0.08f, 0.12f, 0.97f);
     private static readonly Color Gold = new(0.98f, 0.78f, 0.25f, 1f);
@@ -313,10 +316,13 @@ internal static class MatchCards
     /// <summary>0: 아직 청하지 않음, 1: 대회를 기다림, 2: 순위 목록을 기다림, 3: 준비됨</summary>
     private static int dataStage;
     private static long dataSince;
+    /// <summary>이 경기에서 처음 본, 선수("팀|이름")의 시즌 도움 수</summary>
+    private static readonly Dictionary<string, int> AssistsBefore = new();
 
     private static void ResetData()
     {
         dataStage = 0;
+        AssistsBefore.Clear();
         if (!GameData.Available) return;
         GameData.Drop(GameData.OurRoot);
         GameData.Drop(MatchRoot);
@@ -438,7 +444,16 @@ internal static class MatchCards
         var helper = PopupPlayer(goal.Assist);
         if (helper > 0)
         {
-            goal.AssistSeason = GameData.Number($"{MatchRoot}MatchLowerThirdPlayer{helper}.AssistsInThisCompThisSeason");
+            // 득점·출전 수는 방금 것까지 센 값으로 오지만, 도움 수는 이 경기 것을 세지 않은 값으로 온다
+            // (확인: 시즌 도움이 없던 선수가 막 도움을 올린 뒤에도 0으로 왔다). 이 경기에서 본 도움을 더한다.
+            var counted = GameData.Number($"{MatchRoot}MatchLowerThirdPlayer{helper}.AssistsInThisCompThisSeason");
+            if (counted != null)
+            {
+                var who = goal.Team + "|" + goal.Assist;
+                if (!AssistsBefore.TryGetValue(who, out var before)) AssistsBefore[who] = before = counted.Value;
+                var today = Goals.Count(g => g.Team == goal.Team && g.Assist == goal.Assist);
+                goal.AssistSeason = Math.Max(counted.Value, before + today);
+            }
             any |= goal.AssistSeason != null;
         }
 
@@ -528,7 +543,28 @@ internal static class MatchCards
     private static string Minute(string clock)
     {
         var m = ClockText.Match(clock);
-        return m.Success ? int.Parse(m.Groups[1].Value) + 1 + "'" : clock;
+        if (!m.Success) return clock;
+        var minute = int.Parse(m.Groups[1].Value);
+        // 추가 시간에는 게임처럼 "90+5'"로 적는다(시계는 94:50처럼 계속 올라간다)
+        if (InAddedTime())
+            foreach (var end in PeriodEnds)
+                if (minute >= end && minute < end + 20)
+                    return $"{end}+{minute - end + 1}'";
+        return minute + 1 + "'";
+    }
+
+    /// <summary>추가 시간 동안에는 점수판 옆에 "(+4)"가 떠 있다.</summary>
+    private static bool InAddedTime()
+    {
+        if (header == null) return false;
+        var found = false;
+        Ui.Walk(header, element =>
+        {
+            if (!AddedText.IsMatch(Read(element))) return false;
+            found = true;
+            return true;
+        });
+        return found;
     }
 
     /// <summary>지금 떠 있는 골 알림. 없으면 null</summary>
@@ -572,6 +608,8 @@ internal static class MatchCards
                 case "GoalIcon": isGoal = true; break;
                 case "InfoBlock": inInfo = true; break;
                 case "SIVisible_HasAssist": inAssist = true; break;
+                // 도움이 없는 골은 이 자리에 "도움 없음"이 뜬다. 자책골 칸과 같은 틀 안에 있어 따로 걸러 낸다
+                case "SIVisible_NoAssist": return;
                 case "BindableSwitchElement_owngoal": inOwn = true; break;
             }
             var text = Read(element);
@@ -733,7 +771,7 @@ internal static class MatchCards
         {
             var parts = new List<string>();
             if (goal.CareerLeagueGoals != null) parts.Add($"통산 리그 {goal.CareerLeagueGoals}골");
-            if (goal.CareerGoals != null) parts.Add($"통산 {goal.CareerGoals}골");
+            if (goal.CareerGoals != null && goal.CareerGoals != goal.CareerLeagueGoals) parts.Add($"통산 {goal.CareerGoals}골");
             var career = Ui.Text(string.Join("   ", parts), 12, Soft);
             Ui.Try(() => career.style.marginTop = new StyleLength(2f));
             built.Add(career);
@@ -759,8 +797,8 @@ internal static class MatchCards
         built.Add(score);
 
         var league = goal.Competition.Length > 0 ? goal.Competition + " " : "";
-        Table(built, league + "득점 순위", goal.TopGoals, goal.Own ? "" : goal.Scorer);
-        Table(built, league + "도움 순위", goal.TopAssists, goal.Assist);
+        Table(built, league + "득점 순위", goal.TopGoals, goal.Own ? "" : goal.Scorer, goal.SeasonGoals);
+        Table(built, league + "도움 순위", goal.TopAssists, goal.Assist, goal.AssistSeason);
 
         Present(built, root, fontSample, goal.TopGoals.Count + goal.TopAssists.Count > 0 ? TableCardMs : GoalCardMs);
         if (refresh)
@@ -772,7 +810,7 @@ internal static class MatchCards
     }
 
     /// <summary>순위표 하나: 제목 아래에 "순위  이름  팀  값" 줄들. who와 이름이 같은 줄은 강조한다.</summary>
-    private static void Table(VisualElement built, string title, List<Ranked> rows, string who)
+    private static void Table(VisualElement built, string title, List<Ranked> rows, string who, int? now)
     {
         if (rows.Count == 0) return;
         var block = new VisualElement();
@@ -801,7 +839,11 @@ internal static class MatchCards
             var team = Ui.Text(ranked.Team, 11, Soft, TextAnchor.UpperRight);
             Ui.Try(() => team.style.width = new StyleLength(40f));
             row.Add(team);
-            var value = Ui.Text(ranked.Value, 12, color, TextAnchor.UpperRight);
+            // 순위 목록은 경기가 끝나야 바뀐다. 이 선수의 지금 값이 더 크면 그 값을 적는다
+            var shown = mine && now != null && int.TryParse(ranked.Value, out var listed) && now > listed
+                ? now.Value.ToString()
+                : ranked.Value;
+            var value = Ui.Text(shown, 12, color, TextAnchor.UpperRight);
             Ui.Try(() => value.style.width = new StyleLength(26f));
             row.Add(value);
             block.Add(row);
