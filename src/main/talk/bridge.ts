@@ -159,6 +159,33 @@ export async function gamePeople(uids: number[]): Promise<GamePerson[] | null> {
   }
 }
 
+/** 게임이 알려 준 팀이나 나라 하나 */
+export interface GameName {
+  /** 세이브에 적힌 그 번호 */
+  id: number
+  name?: string
+  /** 팀일 때: 속한 구단의 이름 */
+  club?: string
+  /** 팀일 때: 게임의 성별 값("True"면 여자 팀) */
+  gender?: string
+}
+
+/** 한 번에 물을 수 있는 이름 수(플러그인의 PersonInfo.MaxNames와 맞춘다) */
+export const NAMES_PER_REQUEST = 60
+
+/** 팀이나 나라의 이름을 켜져 있는 게임에 묻는다. 게임이 꺼져 있거나 답하지 못하면 null */
+export async function gameNames(kind: 'team' | 'nation', ids: number[]): Promise<GameName[] | null> {
+  if (ids.length === 0) return []
+  const text = await ask(`/names?kind=${kind}&ids=${ids.slice(0, NAMES_PER_REQUEST).join(',')}`, 30_000)
+  if (text === null) return null
+  try {
+    const raw = JSON.parse(text) as GameName[]
+    return Array.isArray(raw) ? raw.filter((each) => typeof each?.id === 'number') : null
+  } catch {
+    return null
+  }
+}
+
 /** 게임 메모리에서 읽은 선수 한 명의 지금 값 */
 export interface LivePlayer {
   /** 게임 메모리에서 찾은 이 선수의 기록 수. 1이어야 값을 믿을 수 있다 */

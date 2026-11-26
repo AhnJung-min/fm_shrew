@@ -110,6 +110,10 @@ export function mockCandidates(query: CandidateQuery, empty: boolean): Candidate
     rows: picked.map(({ player, score, categories }) => ({
       uid: player.uid,
       value: Math.round(player.ca ** 3 * 2.2),
+      wage: player.club === '자유 계약' ? null : player.ca * 900,
+      contractEnd: player.club === '자유 계약' ? null : { year: 2026 + (player.uid % 4), month: 6, day: 30 },
+      squadStatus: player.club === '자유 계약' ? '' : ['핵심 선수', '중요 선수', '주전', '로테이션'][player.uid % 4],
+      nation: ['대한민국', '브라질', '프랑스', '잉글랜드'][player.uid % 4],
       name: player.name,
       age: player.age,
       position: player.position,

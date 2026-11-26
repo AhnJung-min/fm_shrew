@@ -93,6 +93,39 @@ function databaseEntry(container: SaveContainer): TocEntry {
   return entry
 }
 
+/** 꾸러미 안의 작은 파일 하나를 풀어 돌려준다. 없거나 풀지 못하면 null */
+export function extractFile(container: SaveContainer, name: string): Buffer | null {
+  const entry = container.entries.find((each) => each.name === name)
+  if (!entry || HEAD_SIZE + entry.offset + entry.compressedSize > container.tocHead) return null
+  const start = HEAD_SIZE + entry.offset
+  try {
+    return zstdDecompressSync(container.data.subarray(start, start + entry.compressedSize), { maxOutputLength: 64 * 1024 * 1024 })
+  } catch {
+    return null
+  }
+}
+
+/**
+ * 게임의 오늘 날짜. 꾸러미의 game_info 파일에 있다(26.3.2 세이브 셋을 견주어 확인):
+ *   [8바이트][판 이름 길이 u32][판 이름] … 판 이름 뒤 165바이트째에 [파일 이름 수 u32][길이 u32 + 이름]… [3바이트][날짜]
+ * 날짜는 [연중 일수 u16(아래 9비트)][연도 u16]. 읽지 못하면 null.
+ */
+export function gameDateOf(info: Buffer): { year: number; day: number } | null {
+  try {
+    let at = 12 + info.readUInt32LE(8) + 165
+    const count = info.readUInt32LE(at)
+    if (count > 64) return null
+    at += 4
+    for (let i = 0; i < count; i++) at += 4 + info.readUInt32LE(at)
+    at += 3
+    const day = info.readUInt16LE(at) & 0x1ff
+    const year = info.readUInt16LE(at + 2)
+    return year >= 2020 && year <= 2200 && day >= 1 && day <= 366 ? { year, day } : null
+  } catch {
+    return null
+  }
+}
+
 /** 데이터베이스(game_db)를 풀어 돌려준다. */
 export function extractDatabase(container: SaveContainer): Buffer {
   const entry = databaseEntry(container)

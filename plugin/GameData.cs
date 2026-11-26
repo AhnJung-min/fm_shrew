@@ -234,58 +234,85 @@ internal static unsafe class GameData
         return text.ToString();
     }
 
+    /// <summary>번호로 가리킬 수 있는 대상의 종류</summary>
+    public enum RecordKind
+    {
+        Person,
+        Team,
+        Nation
+    }
+
+    private static SI.Interop.InteropReference ByIndex(RecordKind kind, int index) => kind switch
+    {
+        RecordKind.Team => new FM.UI.TeamReference(index),
+        RecordKind.Nation => new FM.UI.NationReference(index),
+        _ => new FM.UI.PersonReference(index)
+    };
+
+    private static SI.Interop.InteropReference ByIds(RecordKind kind, Il2CppSystem.Collections.Generic.List<SI.Interop.InteropReference.Pair> ids) => kind switch
+    {
+        RecordKind.Team => new FM.UI.TeamReference(ids),
+        RecordKind.Nation => new FM.UI.NationReference(ids),
+        _ => new FM.UI.PersonReference(ids)
+    };
+
     /// <summary>
-    /// 색인이 index인 사람을 가리키는 참조. 못 만들면 null.
-    /// 참조에는 색인 말고도 식별 쌍이 더 들어 있다(게임을 켤 때마다 다른 값). 색인만으로 만든 것이 온전한지는
-    /// 감독 자신의 색인으로 만들어 나무에 있는 감독의 참조와 같은지로 한 번 확인하고, 다르면 감독의 참조를 베껴 색인만 바꾼다.
+    /// 순번이 index인 사람·팀·나라를 가리키는 참조. 못 만들면 null.
+    /// 참조에는 순번 말고도 식별 쌍이 더 들어 있다(게임을 켤 때마다 다른 값). 순번만으로 만든 것이 온전한지는
+    /// 감독 자신의 순번으로 만들어 나무에 있는 감독의 참조와 같은지로 한 번 확인하고, 다르면 감독의 참조에서
+    /// 나머지 쌍을 베끼고 "어느 기록인지"만 바꿔 넣는다.
     /// </summary>
-    private static FM.UI.PersonReference MakePerson(int index)
+    private static SI.Interop.InteropReference MakeRecord(RecordKind kind, int index)
     {
         if (personMode < 0) return null;
         var value = Tree().Get(Span("Human"));
         var human = value == null || value.IsNull ? null : value.Get()?.TryCast<SI.Interop.InteropReference>();
         if (human == null) return null;
-        var mask = FM.UI.DatabaseRecordReference.IndexMask;
-        if (mask <= 0) mask = 0x00FFFFFF;
-        int own;
-        if (!human.TryGetValue(RecordPairId, out own))
-        {
-            personMode = -1;
-            Plugin.Logger.LogWarning($"game data: person reference has no record id [{Pairs(human)}]");
-            return null;
-        }
         if (personMode == 0)
         {
+            var mask = FM.UI.DatabaseRecordReference.IndexMask;
+            if (mask <= 0) mask = 0x00FFFFFF;
+            int own;
+            if (!human.TryGetValue(RecordPairId, out own))
+            {
+                personMode = -1;
+                Plugin.Logger.LogWarning($"game data: person reference has no record id [{Pairs(human)}]");
+                return null;
+            }
             var probe = new FM.UI.PersonReference(own & mask);
             personMode = probe.Equals(human) ? 1 : 2;
-            Plugin.Logger.LogInfo($"game data: person reference mode {personMode}, mask {mask:X}; human [{Pairs(human)}], made [{Pairs(probe)}]");
+            Plugin.Logger.LogInfo($"game data: record reference mode {personMode}, mask {mask:X}; human [{Pairs(human)}], made [{Pairs(probe)}]");
         }
-        if (personMode == 1) return new FM.UI.PersonReference(index);
+        var made = ByIndex(kind, index);
+        if (personMode == 1) return made;
 
+        // 순번만으로 만든 참조에서 "어느 기록인지"(종류와 순번이 함께 든 값)만 꺼내 쓴다
+        int record;
+        if (!made.TryGetValue(RecordPairId, out record)) return null;
         var ids = new Il2CppSystem.Collections.Generic.List<SI.Interop.InteropReference.Pair>();
         var from = human.m_id;
         for (var i = 0; i < from.Count; i++)
         {
             var pair = from[i];
-            if (pair.m_id == RecordPairId) pair.m_value = (pair.m_value & ~mask) | index;
+            if (pair.m_id == RecordPairId) pair.m_value = record;
             ids.Add(pair);
         }
-        return new FM.UI.PersonReference(ids);
+        return ByIds(kind, ids);
     }
 
     /// <summary>
-    /// 사람 색인(게임 안에서 사람마다 붙은 순번)으로 그 사람을 가리키는 마디를 우리 이름으로 올린다.
-    /// 그 뒤로 "name.Age" 같은 경로를 걸 수 있다. 여기서 난 문제는 다른 기능(경기 카드)을 끄지 않도록 따로 센다.
+    /// 순번으로 사람·팀·나라를 가리키는 마디를 우리 이름으로 올린다. 그 뒤로 "name.Age" 같은 경로를 걸 수 있다.
+    /// 여기서 난 문제는 다른 기능(경기 카드)을 끄지 않도록 따로 센다.
     /// </summary>
-    public static bool PutPerson(string name, int index)
+    public static bool PutRecord(string name, RecordKind kind, int index)
     {
         if (index <= 0 || Tree() == null) return false;
         try
         {
-            var person = MakePerson(index);
-            if (person == null) return false;
+            var record = MakeRecord(kind, index);
+            if (record == null) return false;
             var boxed = TypedValue.GetReferenceTypedValue();
-            boxed.SetValue(person.Cast<Il2CppSystem.Object>());
+            boxed.SetValue(record.Cast<Il2CppSystem.Object>());
             // Place는 사본을 나무에 올린다. 우리가 빌린 상자는 돌려준다
             var placed = Place(name, boxed);
             boxed.Dispose();
@@ -293,7 +320,7 @@ internal static unsafe class GameData
         }
         catch (Exception error)
         {
-            Plugin.Logger.LogWarning($"game data: person {index}: {error.Message}");
+            Plugin.Logger.LogWarning($"game data: {kind} {index}: {error.Message}");
             return false;
         }
     }

@@ -105,7 +105,12 @@ export interface Person {
   displayId: number
   birthDay: number
   birthYear: number
+  /** 국적의 나라 번호(게임 안의 순번). 알아보지 못하면 0 */
+  nationId: number
 }
+
+/** 나라 번호가 가질 수 있는 가장 큰 값 */
+const MAX_NATION_ID = 999
 
 export function findPerson(db: Buffer, from: number, to: number): Person | null {
   for (let q = from; q < to - 30; q++) {
@@ -120,7 +125,9 @@ export function findPerson(db: Buffer, from: number, to: number): Person | null 
     const firstId = db.readUInt32LE(q)
     const secondId = db.readUInt32LE(q + 5)
     if (firstId === 0 && secondId === 0) continue
-    return { firstId, secondId, displayId: db.readUInt32LE(q + 10), birthDay, birthYear }
+    // 생일에서 13바이트 뒤에 국적의 나라 번호가 있다(공개 해독기 fmsave의 구조 설명에서 알게 됨)
+    const nation = dateAt + 15 <= db.length ? db.readUInt16LE(dateAt + 13) : 0
+    return { firstId, secondId, displayId: db.readUInt32LE(q + 10), birthDay, birthYear, nationId: nation <= MAX_NATION_ID ? nation : 0 }
   }
   return null
 }

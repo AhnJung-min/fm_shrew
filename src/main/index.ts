@@ -244,7 +244,8 @@ app.whenReady().then(async () => {
         settings.set({ saveTeams: { ...settings.get().saveTeams, [fileName]: teamId } })
       }
     },
-    roleWeights: () => settings.get().roleWeights
+    roleWeights: () => settings.get().roleWeights,
+    namesDir: join(dataDir, 'names')
   })
   link = new GameLink(
     world,

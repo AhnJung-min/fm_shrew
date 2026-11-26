@@ -23,8 +23,8 @@ function initialRoute(): Route {
  * 화면들은 이것이 바뀔 때 자료를 다시 청한다.
  */
 function dataKeyOf(link: LinkStatus): string {
-  const { save, liveAt, hasTeam } = link.data
-  return `${save?.path ?? ''}|${save?.savedAt ?? ''}|${liveAt ?? ''}|${hasTeam}`
+  const { save, liveAt, hasTeam, namesStage } = link.data
+  return `${save?.path ?? ''}|${save?.savedAt ?? ''}|${liveAt ?? ''}|${hasTeam}|${namesStage}`
 }
 
 export function App() {

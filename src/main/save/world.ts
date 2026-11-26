@@ -1,5 +1,6 @@
 import { readFileSync } from 'node:fs'
-import { extractDatabase, openContainer } from './container'
+import { extractDatabase, extractFile, gameDateOf, openContainer } from './container'
+import { contractInEffect, dateKey, findContracts } from './contracts'
 import {
   ATTRIBUTE_COUNT,
   BLOCK_SIZE,
@@ -55,6 +56,14 @@ export interface SaveWorld {
    * 능력치 블록 바로 뒤의 u32다. 켜져 있는 게임이 알려 주는 기준 몸값과 같은 수다(공개 해독기 fmsave의 구조 설명에서 알게 됨).
    */
   value: Uint32Array
+  /** 주급(파운드). 계약을 읽지 못했거나 소속이 없으면 0 */
+  wage: Uint32Array
+  /** 계약 만료일(연도 × 1000 + 연중 일수). 모르면 0 */
+  contractEnd: Uint32Array
+  /** 계약상 입지(게임의 값 그대로, shared/world.ts의 SQUAD_STATUS_LABEL). 모르면 0 */
+  squadStatus: Uint8Array
+  /** 국적의 나라 번호(게임 안의 순번). 모르면 0 */
+  nationId: Uint16Array
   /** 생일을 모르면 0 */
   birthYear: Uint16Array
   birthDay: Uint16Array
@@ -175,7 +184,7 @@ const MAX_PERSON_INDEX = 0x000f_ffff
 const MAX_RECORD_KIND = 0x10
 
 /**
- * 선수의 고유 번호(게임이 쓰는 번호. 켜져 있는 게임에서 이 선수를 찾을 때 쓴다). 찾지 못하면 0.
+ * 선수의 고유 번호(게임이 쓰는 번호. 켜져 있는 게임에서 이 선수를 찾을 때 쓴다)와 사람 색인. 찾지 못하면 null.
  *
  * 사람마다 기록의 끝에 꼬리표 [색인 u32][고유 번호 u32][같은 번호 u32]가 붙고, 바로 뒤에 다음 기록의 종류(1바이트)가 온다.
  * 그래서 능력치 블록 "앞"에 적힌 번호는 이 선수가 아니라 앞 사람의 것이다. 이 선수의 꼬리표는 블록 "뒤"에 있다.
@@ -183,11 +192,11 @@ const MAX_RECORD_KIND = 0x10
  * 켜져 있는 게임의 메모리와 대조했을 때 선수 99,873명 모두 이 규칙으로 맞았다(26.3.2).
  * 앞 사람의 꼬리표를 읽지 못한 기록은 블록 뒤에서 처음 나오는 꼬리표를 쓴다.
  */
-export function ownerUid(db: Buffer, block: number, end: number): number {
+export function ownerTag(db: Buffer, block: number, end: number): { uid: number; index: number } | null {
   const before = db.readUInt32LE(block - 39)
   const wanted = before !== 0 && before === db.readUInt32LE(block - 35) ? db.readUInt32LE(block - 43) + 1 : -1
   const last = Math.min(end, db.length) - 13
-  let first = 0
+  let first: { uid: number; index: number } | null = null
   for (let at = block + BLOCK_SIZE; at <= last; at++) {
     const uid = db.readUInt32LE(at + 4)
     if (uid === 0 || uid === 0xffffffff || uid !== db.readUInt32LE(at + 8)) continue
@@ -197,18 +206,23 @@ export function ownerUid(db: Buffer, block: number, end: number): number {
     if (db.readUInt32LE(at - 4) > 0xff) continue
     const kind = db[at + 12]
     if (kind === 0 || kind > MAX_RECORD_KIND) continue
-    if (index === wanted) return uid
-    if (first === 0) first = uid
+    if (index === wanted) return { uid, index }
+    if (first === null) first = { uid, index }
     if (wanted < 0) break
   }
   return first
+}
+
+/** 선수의 고유 번호만. 찾지 못하면 0 */
+export function ownerUid(db: Buffer, block: number, end: number): number {
+  return ownerTag(db, block, end)?.uid ?? 0
 }
 
 /**
  * 풀어 놓은 데이터베이스에서 모든 선수와 구단을 뽑는다.
  * pickTeam은 뽑아 놓은 선수들을 보고 내 팀 번호를 정해 준다(모르면 undefined).
  */
-export function buildWorld(db: Buffer, pickTeam?: (world: SaveWorld) => number | undefined): SaveWorld {
+export function buildWorld(db: Buffer, pickTeam?: (world: SaveWorld) => number | undefined, today?: GameDate | null): SaveWorld {
   const tables = findNameTables(db)
   if (tables.length < 4) {
     throw new SaveFormatError('세이브 파일에서 이름표를 찾지 못했습니다. 게임이 업데이트되어 형식이 바뀌었을 수 있습니다.')
@@ -240,43 +254,65 @@ export function buildWorld(db: Buffer, pickTeam?: (world: SaveWorld) => number |
     ca: new Uint16Array(count),
     pa: new Uint16Array(count),
     value: new Uint32Array(count),
+    wage: new Uint32Array(count),
+    contractEnd: new Uint32Array(count),
+    squadStatus: new Uint8Array(count),
+    nationId: new Uint16Array(count),
     birthYear: new Uint16Array(count),
     birthDay: new Uint16Array(count),
     positions: new Uint8Array(count * POSITION_COUNT),
     attributes: new Uint8Array(count * ATTRIBUTE_COUNT),
     gameDate: null
   }
+  /** 선수마다 그 사람의 색인(계약 기록이 이 번호로 선수를 가리킨다) */
+  const ownerIndex = new Uint32Array(count)
   for (let k = 0; k < count; k++) {
     const block = blocks[k]
     const person = findPerson(db, block + BLOCK_SIZE, recordEnd(k))
     world.names[k] = person ? nameOf(person) : ''
     world.birthYear[k] = person?.birthYear ?? 0
     world.birthDay[k] = person?.birthDay ?? 0
+    world.nationId[k] = person?.nationId ?? 0
     world.teamIds[k] = db.readUInt32LE(block - 8)
     world.club[k] = teamClub.get(world.teamIds[k]) ?? -1
     world.ca[k] = db.readUInt16LE(block - 24)
     world.pa[k] = db.readUInt16LE(block - 22)
-    world.uids[k] = ownerUid(db, block, recordEnd(k))
+    const owner = ownerTag(db, block, recordEnd(k))
+    world.uids[k] = owner?.uid ?? 0
+    ownerIndex[k] = owner?.index ?? 0
     const value = block + BLOCK_SIZE + 4 <= db.length ? db.readUInt32LE(block + BLOCK_SIZE) : 0
     world.value[k] = value === VALUE_PLACEHOLDER ? 0 : value
     world.positions.set(db.subarray(block, block + POSITION_COUNT), k * POSITION_COUNT)
     world.attributes.set(db.subarray(block + POSITION_COUNT, block + BLOCK_SIZE), k * ATTRIBUTE_COUNT)
   }
 
-  // 기록마다 "마지막 갱신일"이 찍혀 있다. 매일 갱신되는 내 팀 선수들의 기록에서 가장 흔한 날짜가 게임의 오늘이다.
-  // (다른 팀 선수의 기록은 오래전에 갱신된 채로 남아 있어 쓸 수 없다)
+  // 게임의 오늘은 꾸러미의 game_info에서 읽어 받는다(today). 받지 못했을 때만 선수 기록에서 어림한다:
+  // 내 팀 선수들의 기록에서 가장 흔한 날짜. 이 어림은 게임 시작일로 나오기도 해서 믿기 어렵다.
+  world.gameDate = today ?? null
   world.teamId = pickTeam?.(world)
-  if (world.teamId !== undefined) {
+  if (world.teamId !== undefined && !world.gameDate) {
     const mine: Array<[number, number]> = []
     for (let k = 0; k < count; k++) if (world.teamIds[k] === world.teamId) mine.push([blocks[k], recordEnd(k)])
     world.gameDate = guessGameDate(db, mine)
+  }
+
+  // 계약: 여러 기록 가운데 지금 효력이 있는 것을 고르려면 게임의 오늘이 필요해서 마지막에 읽는다
+  for (let k = 0; k < count; k++) {
+    if (ownerIndex[k] === 0) continue
+    const contract = contractInEffect(findContracts(db, blocks[k] + BLOCK_SIZE, recordEnd(k), ownerIndex[k]), world.gameDate)
+    if (!contract) continue
+    world.wage[k] = contract.wage
+    world.contractEnd[k] = contract.end ? dateKey(contract.end) : 0
+    world.squadStatus[k] = contract.status
   }
   return world
 }
 
 /** 세이브 파일을 읽어 모든 선수와 구단을 뽑는다. 파일은 읽기만 한다. */
 export function readWorld(path: string, pickTeam?: (world: SaveWorld) => number | undefined): SaveWorld {
-  return buildWorld(extractDatabase(openContainer(readFileSync(path))), pickTeam)
+  const container = openContainer(readFileSync(path))
+  const info = extractFile(container, 'game_info')
+  return buildWorld(extractDatabase(container), pickTeam, info ? gameDateOf(info) : null)
 }
 
 /** 그 팀에 이름을 아는 선수가 있는지 */

@@ -1,7 +1,7 @@
 import { existsSync, readdirSync, statSync } from 'node:fs'
 import { basename, join } from 'node:path'
 import { MARKET_PLUGIN, NEEDED_PLUGIN, NO_GAME, versionOlder, type ApplyResult, type GameStatus, type LinkStatus, type SaveFileInfo } from '@shared/game'
-import { gameState, liveAll } from './talk/bridge'
+import { gameNames, gameState, liveAll, NAMES_PER_REQUEST } from './talk/bridge'
 import { isSaveFile } from './watcher'
 import type { WorldService } from './worldService'
 
@@ -31,6 +31,7 @@ export class GameLink {
   private busy = false
   private stopped = false
   private lastLive = 0
+  private learning = false
 
   constructor(
     private readonly world: WorldService,
@@ -93,11 +94,11 @@ export class GameLink {
     this.world.setLiveOff(!next.connected ? GAME_OFF : next.pluginOld ? oldPluginNote(next.pluginVersion) : null)
     this.world.setMarketOff(
       !next.connected
-        ? '게임이 꺼져 있어 주급·계약·국적은 볼 수 없습니다. 몸값은 세이브에 적힌 기준값(파운드)입니다.'
+        ? '게임이 꺼져 있어 몸값과 주급은 세이브에 적힌 값(파운드)으로 보여 줍니다.'
         : versionOlder(next.pluginVersion, MARKET_PLUGIN)
-          ? `주급·계약·국적과 게임이 보여 주는 몸값 범위는 FM을 완전히 껐다가 다시 켜면 보입니다(게임에 올라가 있는 플러그인 ${next.pluginVersion}, 필요한 버전 ${MARKET_PLUGIN}).`
+          ? `몸값과 주급은 세이브에 적힌 값(파운드)입니다. 게임이 보여 주는 금액과 나라·구단 이름은 FM을 완전히 껐다가 다시 켜면 채워집니다(게임에 올라가 있는 플러그인 ${next.pluginVersion}, 필요한 버전 ${MARKET_PLUGIN}).`
           : !next.loaded
-            ? '게임에서 세이브를 불러오면 주급·계약·국적이 보입니다. 몸값은 세이브에 적힌 기준값(파운드)입니다.'
+            ? '게임에서 세이브를 불러오면 게임이 보여 주는 금액과 나라·구단 이름이 채워집니다.'
             : null
     )
     const before = this.game
@@ -186,6 +187,43 @@ export class GameLink {
     const matched = this.world.useLive(packed)
     if (matched === 0) {
       this.world.setNote('게임의 메모리에서 이 세이브의 선수들을 찾지 못해 세이브에 저장된 값을 보여 줍니다.')
+      return
+    }
+    // 게임이 이 세이브를 불러와 있는 것이 확인됐다. 세이브에 번호만 있는 이름들을 뒤에서 조금씩 물어 채운다
+    void this.learnNames()
+  }
+
+  /**
+   * 나라 이름, 그리고 팀의 이름·구단·여자 팀 여부를 게임에 물어 적어 둔다(한 번 알아낸 것은 파일에 남는다).
+   * 순서: 나라 → 세이브에서 구단을 알아내지 못한 팀 → 나머지 팀. 한 단계가 끝날 때마다 화면에 알린다.
+   */
+  private async learnNames(): Promise<void> {
+    if (this.learning || versionOlder(this.game.pluginVersion, MARKET_PLUGIN)) return
+    this.learning = true
+    try {
+      const missing = this.world.missingNames()
+      const steps: Array<['team' | 'nation', number[]]> = [
+        ['nation', missing.nations],
+        ['team', missing.urgentTeams],
+        ['team', missing.otherTeams]
+      ]
+      for (const [step, [kind, ids]] of steps.entries()) {
+        for (let from = 0; from < ids.length; from += NAMES_PER_REQUEST) {
+          if (this.stopped || !this.game.loaded) return
+          const batch = ids.slice(from, from + NAMES_PER_REQUEST)
+          const answers = await gameNames(kind, batch)
+          // 게임이 바쁘거나 꺼졌다. 다음에 값을 다시 받을 때 이어서 한다
+          if (answers === null) return
+          this.world.learnNames(kind, batch, answers)
+          await wait(120)
+        }
+        this.world.namesReached(step + 1)
+        this.changed()
+      }
+    } catch (error) {
+      console.error('[game link] names', error)
+    } finally {
+      this.learning = false
     }
   }
 }

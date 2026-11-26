@@ -37,7 +37,8 @@ const VALUE = info(
   '게임이 보여 주는 몸값(스카우트하지 않은 선수는 범위가 넓다). 게임에 묻기 전이나 FM이 꺼져 있을 때는 세이브에 적힌 기준 몸값(파운드)',
   true
 )
-const WAGE = info('주급', 'wage', '지금 받는 주급', true)
+const WAGE = info('주급', 'wage', '지금 받는 주급. 게임에 묻기 전이나 FM이 꺼져 있을 때는 세이브에 적힌 값(파운드)', true)
+const STATUS = info('입지', 'squadStatus', '계약에 적힌 팀 내 입지(구단이 약속한 역할)', false)
 const CONTRACT = info('계약 만료', 'contractEnd', '계약이 끝나는 날', true)
 const NATION = info('국적', 'nation', '국적', false)
 const ABILITY = info('현재 능력', 'ability', '현재 능력 (1~200)', true)
@@ -50,10 +51,12 @@ const ATTRIBUTE_COLUMNS: Array<{ column: ColumnInfo; index: number }> = FIELDS.f
 }))
 
 const COLUMNS: ColumnInfo[] = [
-  NAME, KIND, SCORE, GAP, AGE, POSITION, CLUB, VALUE, WAGE, CONTRACT, NATION, ABILITY, POTENTIAL,
+  NAME, KIND, SCORE, GAP, AGE, POSITION, CLUB, VALUE, WAGE, CONTRACT, STATUS, NATION, ABILITY, POTENTIAL,
   ...ATTRIBUTE_COLUMNS.map((each) => each.column)
 ]
 
+/** "계약 만료 임박"으로 보는 기간 */
+const EXPIRING_MONTHS = 12
 /** 게임에 한 번에 묻는 선수 수 */
 const MARKET_BATCH = 30
 
@@ -72,7 +75,7 @@ function pounds(value: number): string {
 const sortable = (raw: string | undefined, num: number | undefined): CellValue => ({ raw: raw ?? '', num: raw && num !== undefined ? num : null })
 
 function toRow(row: CandidateRow, idx: number, market: PlayerMarket | undefined): PlayerRow {
-  const end = market?.contractEnd
+  const end = row.contractEnd ?? market?.contractEnd
   const cells: Record<string, CellValue> = {
     [NAME.header]: text(row.name),
     [KIND.header]: text(row.categories.map((category) => CATEGORY_LABEL[category]).join(' · ')),
@@ -87,9 +90,14 @@ function toRow(row: CandidateRow, idx: number, market: PlayerMarket | undefined)
       : row.value !== null
         ? { raw: pounds(row.value), num: row.value }
         : text(''),
-    [WAGE.header]: sortable(market?.wage?.replace(/^주급\s*/, ''), market?.wageSort),
+    [WAGE.header]: market?.wage
+      ? sortable(market.wage.replace(/^주급\s*/, ''), market.wageSort ?? row.wage ?? undefined)
+      : row.wage !== null
+        ? { raw: pounds(row.wage), num: row.wage }
+        : text(''),
     [CONTRACT.header]: end ? { raw: `${end.year}.${end.month}.${end.day}`, num: end.year * 10000 + end.month * 100 + end.day } : text(''),
-    [NATION.header]: text(market?.nation ?? ''),
+    [STATUS.header]: text(row.squadStatus),
+    [NATION.header]: text(row.nation || market?.nation || ''),
     [ABILITY.header]: number(row.ca),
     [POTENTIAL.header]: number(row.pa)
   }
@@ -121,6 +129,7 @@ export function Targets(props: {
   const [maxAge, setMaxAge] = useState('')
   const [onlyEligible, setOnlyEligible] = useState(true)
   const [includeUnknownClub, setIncludeUnknownClub] = useState(false)
+  const [expiringSoon, setExpiringSoon] = useState(false)
   const [search, setSearch] = useState('')
   const [result, setResult] = useState<CandidateResult | null>(null)
   const [loading, setLoading] = useState(true)
@@ -132,8 +141,16 @@ export function Targets(props: {
   const asked = useRef(new Set<number>())
 
   const query: CandidateQuery = useMemo(
-    () => ({ roleId, category, maxAge: Number(maxAge) || null, onlyEligible, includeUnknownClub, search }),
-    [roleId, category, maxAge, onlyEligible, includeUnknownClub, search]
+    () => ({
+      roleId,
+      category,
+      maxAge: Number(maxAge) || null,
+      onlyEligible,
+      includeUnknownClub,
+      search,
+      expiringWithinMonths: expiringSoon ? EXPIRING_MONTHS : null
+    }),
+    [roleId, category, maxAge, onlyEligible, includeUnknownClub, search, expiringSoon]
   )
 
   useEffect(() => {
@@ -289,6 +306,10 @@ export function Targets(props: {
         <label className="inline-field" title="세이브에서 소속 구단을 알아내지 못한 선수들입니다. 여자 팀 선수가 섞여 있을 수 있습니다.">
           <input type="checkbox" checked={includeUnknownClub} onChange={(event) => setIncludeUnknownClub(event.target.checked)} />
           <span>구단을 알아내지 못한 선수도</span>
+        </label>
+        <label className="inline-field" title="계약이 1년 안에 끝나는 선수만 봅니다. 이적료 없이, 또는 싸게 데려올 수 있는 선수들입니다.">
+          <input type="checkbox" checked={expiringSoon} onChange={(event) => setExpiringSoon(event.target.checked)} />
+          <span>계약이 1년 안에 끝나는 선수만</span>
         </label>
         {marketNote && <span className="muted">{marketNote}</span>}
         <div className="spacer" />

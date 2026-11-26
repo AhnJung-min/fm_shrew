@@ -96,6 +96,8 @@ export interface CandidateQuery {
   includeUnknownClub: boolean
   /** 이름에 들어 있는 글자 */
   search: string
+  /** 계약이 이 개월 수 안에 끝나는 선수만. 제한이 없으면 null */
+  expiringWithinMonths: number | null
 }
 
 export interface CandidateRow {
@@ -110,6 +112,14 @@ export interface CandidateRow {
   pa: number
   /** 세이브에 적힌 기준 몸값(파운드). 모르면 null */
   value: number | null
+  /** 세이브에 적힌 주급(파운드). 모르면 null */
+  wage: number | null
+  /** 세이브에 적힌 계약 만료일. 모르면 null */
+  contractEnd: { year: number; month: number; day: number } | null
+  /** 계약상 입지("핵심 선수"). 모르면 빈 글자 */
+  squadStatus: string
+  /** 국적. 나라 이름을 아직 모르면 빈 글자 */
+  nation: string
   /** 고른 역할의 점수(0~100) */
   score: number
   /** 내 주전과의 점수 차이. 주전이 없으면 null */
@@ -132,6 +142,30 @@ export interface CandidateResult {
   rows: CandidateRow[]
   /** 고른 유형에 드는 선수 수(rows보다 많을 수 있다) */
   matched: number
+}
+
+/**
+ * 계약상 입지(세이브에 적힌 값 → 이름). 구단이 그 선수에게 약속한 역할이지 실제 출전 시간이 아니다.
+ * 값의 뜻은 공개 해독기 fmsave가 게임 화면과 맞춰 확인해 둔 것을 따랐다.
+ */
+export const SQUAD_STATUS_LABEL: Record<number, string> = {
+  1: '핵심 선수',
+  2: '중요 선수',
+  3: '주전',
+  4: '로테이션',
+  5: '교체 카드',
+  7: '비주전',
+  9: '비상 백업',
+  10: '1군 진입 유망주',
+  11: '미래 유망주',
+  13: '유소년',
+  14: 'B팀 주전',
+  15: '주전 골키퍼',
+  16: '컵 대회 골키퍼',
+  17: '국내 컵 골키퍼',
+  18: '대륙 컵 골키퍼',
+  20: '백업 골키퍼',
+  21: '비상 백업 골키퍼'
 }
 
 /**

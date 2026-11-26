@@ -64,6 +64,11 @@ export interface DataStatus {
   liveMatched: number
   /** 게임의 값을 쓰지 못할 때 그 이유 */
   note: string
+  /**
+   * 세이브에 번호만 있는 이름(나라, 구단을 알아내지 못한 팀)을 게임에 물어 어디까지 알아냈는지.
+   * 0 아직, 1 나라 이름, 2 구단을 못 찾던 팀, 3 모든 팀. 단계가 오르면 화면이 자료를 다시 읽는다.
+   */
+  namesStage: number
 }
 
 export interface LinkStatus {
@@ -88,5 +93,6 @@ export const NO_DATA: DataStatus = {
   source: 'save',
   liveAt: null,
   liveMatched: 0,
-  note: ''
+  note: '',
+  namesStage: 0
 }

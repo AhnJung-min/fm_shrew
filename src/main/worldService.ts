@@ -19,12 +19,15 @@ import {
   type EditorPlayer,
   type MarketResult,
   type PlayerMarket,
-  parseGameDate
+  parseGameDate,
+  SQUAD_STATUS_LABEL
 } from '@shared/world'
 import { ATTRIBUTE_COUNT, POSITION_COUNT } from './save/reader'
 import { ageAt, findTeamByNames, NO_TEAM, readWorld, teamHasPlayers, type SaveWorld } from './save/world'
+import { NameBook } from './names'
+import { calendar } from './save/contracts'
 import { squadTable, type SquadTable } from './squad'
-import { gamePeople, livePlayer, liveSet, PEOPLE_PER_REQUEST } from './talk/bridge'
+import { gamePeople, livePlayer, liveSet, PEOPLE_PER_REQUEST, type GameName } from './talk/bridge'
 
 /** 게임에서 받은 시장 정보를 다시 묻지 않고 쓰는 시간 */
 const MARKET_KEEP_MS = 10 * 60_000
@@ -59,6 +62,8 @@ export interface WorldDeps {
   /** 찾아낸 내 팀 번호를 기억해 둔다 */
   rememberTeam(fileName: string, teamId: number): void
   roleWeights(): Record<string, Record<string, number>>
+  /** 게임에 물어 알게 된 이름(나라, 팀)을 적어 두는 폴더 */
+  namesDir: string
 }
 
 /**
@@ -77,7 +82,15 @@ export class WorldService {
   private marketOff: string | null = null
   private readonly marketCache = new Map<number, { at: number; info: PlayerMarket }>()
 
-  constructor(private readonly deps: WorldDeps) {}
+  /** 세이브에 번호만 있는 이름들(나라, 구단을 알아내지 못한 팀). 게임에 물어 채운다 */
+  private readonly names: NameBook
+  /** 이번에 물어봤지만 게임이 답하지 않은 번호(다시 묻지 않는다) */
+  private readonly unanswered = { team: new Set<number>(), nation: new Set<number>() }
+  private namesStage = 0
+
+  constructor(private readonly deps: WorldDeps) {
+    this.names = new NameBook(deps.namesDir)
+  }
 
   /** 시장 정보(몸값·주급·계약)를 게임에 물을 수 있는지를 알려 둔다. 못 하면 그 이유. */
   setMarketOff(reason: string | null): void {
@@ -106,6 +119,9 @@ export class WorldService {
       return current.world
     }
     const fileName = basename(path)
+    this.names.open(fileName)
+    this.unanswered.team.clear()
+    this.namesStage = 0
     const world = readWorld(path, (fresh) => this.pickTeam(fresh, fileName))
     if (world.teamId !== undefined) this.deps.rememberTeam(fileName, world.teamId)
     const byUid = new Map<number, number>()
@@ -200,7 +216,8 @@ export class WorldService {
       source: loaded.live ? 'game' : 'save',
       liveAt: loaded.live ? new Date(loaded.live.at).toISOString() : null,
       liveMatched: loaded.live?.matched ?? 0,
-      note: loaded.note
+      note: loaded.note,
+      namesStage: this.namesStage
     }
   }
 
@@ -239,7 +256,58 @@ export class WorldService {
   private clubName(world: SaveWorld, k: number): string {
     if (world.teamIds[k] === NO_TEAM) return '자유 계약'
     const club = world.club[k]
-    return club >= 0 ? world.clubs[club].name : ''
+    if (club >= 0) return world.clubs[club].name
+    // 세이브에서 구단을 알아내지 못한 팀은 게임이 알려 준 이름을 쓴다
+    const team = this.names.team(world.teamIds[k])
+    return team ? team.club || team.name : ''
+  }
+
+  /** 여자 팀 선수인지. 게임이 알려 준 것이 있으면 그것을, 없으면 세이브에서 어림한 것을 쓴다 */
+  private onWomenTeam(world: SaveWorld, k: number): boolean {
+    const team = this.names.team(world.teamIds[k])
+    if (team) return team.female
+    const club = world.club[k]
+    return club >= 0 && world.clubs[club].women
+  }
+
+  /**
+   * 게임에 물어볼 이름들: 아직 이름을 모르는 나라, 그리고 팀(구단을 알아내지 못한 팀이 먼저).
+   * 팀은 여자 팀인지도 게임이 알려 주므로 구단을 아는 팀도 묻는다.
+   */
+  missingNames(): { nations: number[]; urgentTeams: number[]; otherTeams: number[] } {
+    const world = this.loaded?.world
+    const nations = new Set<number>()
+    const urgent = new Set<number>()
+    const others = new Set<number>()
+    if (world) {
+      for (let k = 0; k < world.count; k++) {
+        const nation = world.nationId[k]
+        if (nation > 0 && !this.names.hasNation(nation) && !this.unanswered.nation.has(nation)) nations.add(nation)
+        const team = world.teamIds[k]
+        if (team === NO_TEAM || this.names.hasTeam(team) || this.unanswered.team.has(team)) continue
+        if (world.club[k] < 0) urgent.add(team)
+        else others.add(team)
+      }
+    }
+    return { nations: [...nations], urgentTeams: [...urgent], otherTeams: [...others].filter((team) => !urgent.has(team)) }
+  }
+
+  /** 게임이 알려 준 이름을 적어 둔다. asked 가운데 답이 없는 번호는 이번에는 다시 묻지 않는다. */
+  learnNames(kind: 'team' | 'nation', asked: number[], answers: GameName[]): void {
+    const answered = new Set<number>()
+    for (const answer of answers) {
+      if (!answer.name) continue
+      answered.add(answer.id)
+      if (kind === 'nation') this.names.setNation(answer.id, answer.name)
+      else this.names.setTeam(answer.id, { name: answer.name, club: answer.club ?? '', female: answer.gender === 'True' })
+    }
+    for (const id of asked) if (!answered.has(id)) this.unanswered[kind].add(id)
+  }
+
+  /** 이름을 어디까지 알아냈는지 적고(화면이 자료를 다시 읽는다) 파일에 남긴다. */
+  namesReached(stage: number): void {
+    this.namesStage = Math.max(this.namesStage, stage)
+    this.names.flush()
   }
 
   private listItem(world: SaveWorld, k: number): EditorListItem {
@@ -302,6 +370,12 @@ export class WorldService {
     }
 
     const search = query.search.trim().toLowerCase()
+    // 계약 만료 조건: 오늘에서 그 개월 수 뒤의 날짜(연도 × 1000 + 연중 일수)까지 끝나는 선수만
+    let expiresBy = 0
+    if (query.expiringWithinMonths && world.gameDate) {
+      const days = world.gameDate.day + Math.round(query.expiringWithinMonths * 30.44)
+      expiresBy = (world.gameDate.year + Math.floor((days - 1) / 365)) * 1000 + ((days - 1) % 365) + 1
+    }
     const counts = { ...empty }
     const picked: Array<{ k: number; score: number; age: number | null; categories: CandidateCategory[] }> = []
     for (let k = 0; k < world.count; k++) {
@@ -311,8 +385,9 @@ export class WorldService {
       const club = world.club[k]
       // 내 구단 선수(2군·유스 포함)는 후보가 아니다
       if (team === world.teamId || (club >= 0 && club === myClub)) continue
-      if (club >= 0 && world.clubs[club].women) continue
-      if (team !== NO_TEAM && club < 0 && !query.includeUnknownClub) continue
+      if (this.onWomenTeam(world, k)) continue
+      if (team !== NO_TEAM && club < 0 && !this.names.hasTeam(team) && !query.includeUnknownClub) continue
+      if (expiresBy > 0 && (world.contractEnd[k] === 0 || world.contractEnd[k] > expiresBy)) continue
       if (query.onlyEligible && !eligible(k)) continue
       const age = ageAt(world, k)
       if (query.maxAge !== null && (age === null || age > query.maxAge)) continue
@@ -338,6 +413,10 @@ export class WorldService {
       ca: world.ca[k],
       pa: world.pa[k],
       value: world.value[k] || null,
+      wage: world.wage[k] || null,
+      contractEnd: world.contractEnd[k] ? calendar({ year: Math.floor(world.contractEnd[k] / 1000), day: world.contractEnd[k] % 1000 }) : null,
+      squadStatus: SQUAD_STATUS_LABEL[world.squadStatus[k]] ?? '',
+      nation: this.names.nation(world.nationId[k]),
       score,
       gap: bench.starter ? Math.round((score - bench.starter.score) * 10) / 10 : null,
       categories,
