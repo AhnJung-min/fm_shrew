@@ -1,4 +1,5 @@
 import type { ColumnInfo, PlayerRow } from './types'
+import { SAVE_ATTRIBUTE_ORDER, shownValue } from './world'
 
 /** 포지션 한 자리. 세이브의 숙련도 순서(positions.ts)와 같은 이름을 쓴다. */
 export type PositionKey =
@@ -130,5 +131,45 @@ export function scoreRole(attrs: Record<string, AttributeValue>, weights: Record
     if (attr.ranged) uncertain = true
   }
   if (total === 0 || covered / total < 0.6) return null
-  return { score: Math.round((sum / covered / 20) * 1000) / 10, uncertain }
+  return { score: toRoleScore(sum, covered), uncertain }
+}
+
+/**
+ * 역할 적합도(0~100)를 만드는 식 하나. 능력치(1~20)에 가중치를 곱해 더한 값을 가중치 합으로 나눠 20으로 나누고
+ * 100을 곱해 소수 첫째 자리까지. 스쿼드의 적합도, 뎁스 차트, 전술판, 영입 후보가 모두 이 식을 쓴다.
+ */
+export function toRoleScore(weightedSum: number, weightTotal: number): number {
+  return Math.round((weightedSum / weightTotal / 20) * 1000) / 10
+}
+
+/** 세이브의 능력치 순서(SAVE_ATTRIBUTE_ORDER)로 바꿔 둔 역할 가중치. 선수 수만 번 계산할 때 쓴다 */
+export interface PreparedRole {
+  /** [능력치 순번, 가중치] */
+  pairs: Array<[number, number]>
+  total: number
+}
+
+const ATTRIBUTE_AT = new Map<string, number>(SAVE_ATTRIBUTE_ORDER.map((id, i) => [id, i]))
+
+export function prepareRole(roleId: string, overrides: Record<string, Record<string, number>>): PreparedRole {
+  const pairs: Array<[number, number]> = []
+  let total = 0
+  for (const [id, weight] of Object.entries(effectiveWeights(roleId, overrides))) {
+    const at = ATTRIBUTE_AT.get(id)
+    if (at === undefined || weight <= 0) continue
+    pairs.push([at, weight])
+    total += weight
+  }
+  return { pairs, total }
+}
+
+/**
+ * 세이브에 저장된 능력치(1~100, 선수마다 능력치 수만큼 이어짐)로 역할 적합도를 구한다.
+ * 저장값을 게임 표시값(1~20)으로 바꿔 계산하므로 표(squadTable)의 값으로 scoreRole을 부른 것과 같은 수가 나온다.
+ */
+export function savedRoleScore(attributes: ArrayLike<number>, offset: number, role: PreparedRole): number {
+  if (role.total === 0) return 0
+  let sum = 0
+  for (const [at, weight] of role.pairs) sum += shownValue(attributes[offset + at]) * weight
+  return toRoleScore(sum, role.total)
 }

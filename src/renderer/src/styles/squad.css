@@ -1,0 +1,749 @@
+/*
+  스쿼드 화면: 전술판과 선수단 진단.
+  색은 app.css의 토큰만 쓴다. 상태는 색만으로 알리지 않고 글자(약한 자리, 후보 없음 등)와 숫자를 함께 둔다.
+*/
+
+/* ---------- 전술판 ---------- */
+
+.tactics {
+  flex: 1;
+  min-width: 0;
+  overflow: auto;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 20px;
+  align-content: start;
+  padding: 14px 24px 28px;
+}
+@media (min-width: 1180px) {
+  .tactics {
+    grid-template-columns: minmax(0, 1fr) 340px;
+    align-items: start;
+  }
+}
+
+.tactics-main {
+  min-width: 0;
+}
+
+.tp-bar {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+  margin-bottom: 12px;
+}
+.tp-formation {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.tp-summary {
+  margin: 0;
+  font-size: 14px;
+}
+.tp-help {
+  margin: 10px 2px 0;
+  font-size: 13px;
+}
+
+/* 경기장: 위가 상대 골문. 줄무늬와 선은 방향을 알려 주는 배경이다. */
+.tp-pitch {
+  --pitch-a: #163025;
+  --pitch-b: #193629;
+  --pitch-line: rgba(243, 246, 242, 0.3);
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 18px 12px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-m);
+  background: repeating-linear-gradient(180deg, var(--pitch-a) 0 64px, var(--pitch-b) 64px 128px);
+  overflow: hidden;
+}
+.tp-lines i {
+  position: absolute;
+  pointer-events: none;
+  border: 1.5px solid var(--pitch-line);
+}
+.tp-half {
+  left: 0;
+  right: 0;
+  top: 50%;
+  border-width: 1.5px 0 0 !important;
+}
+.tp-circle {
+  left: 50%;
+  top: 50%;
+  width: 120px;
+  height: 120px;
+  margin: -60px 0 0 -60px;
+  border-radius: 50%;
+}
+.tp-box {
+  left: 26%;
+  right: 26%;
+  height: 12%;
+}
+.tp-box.top {
+  top: 0;
+  border-top: 0;
+}
+.tp-box.bottom {
+  bottom: 0;
+  border-bottom: 0;
+}
+
+.tp-row {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  justify-content: center;
+  gap: 10px;
+}
+
+.tp-slot {
+  flex: 1 1 0;
+  min-width: 0;
+  max-width: 200px;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  padding: 8px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-m);
+  background: var(--bg);
+}
+.tp-slot.weak {
+  border-color: var(--bad);
+}
+.tp-slot.selected {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent);
+}
+.tp-pos {
+  color: var(--text-2);
+  font-size: 12px;
+  line-height: 1.3;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.tp-card {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 5px;
+  width: 100%;
+  min-width: 0;
+  padding: 6px 8px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-s);
+  background: var(--raised);
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+}
+button.tp-card:hover {
+  background: var(--hover);
+}
+.tp-card.empty {
+  color: var(--bad);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: default;
+}
+.tp-name {
+  display: block;
+  width: 100%;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-size: 15px;
+  font-weight: 650;
+}
+.tp-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 8px;
+  max-width: 100%;
+}
+.tp-fit {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 22px;
+  padding: 0 7px;
+  border-radius: 6px;
+  font-size: 12px;
+  white-space: nowrap;
+}
+.tp-fit b {
+  font-size: 14px;
+  font-weight: 800;
+}
+.tp-fit.a1 {
+  background: var(--a1-bg);
+  color: var(--a1-ink);
+}
+.tp-fit.a2 {
+  background: var(--a2-bg);
+  color: var(--a2-ink);
+}
+.tp-fit.a3 {
+  background: var(--a3-bg);
+  color: var(--a3-ink);
+}
+.tp-fit.a4 {
+  background: var(--a4-bg);
+  color: var(--a4-ink);
+}
+.tp-ca {
+  color: var(--text-2);
+  font-size: 12px;
+  white-space: nowrap;
+}
+.tp-ca b {
+  color: var(--text);
+  font-size: 14px;
+}
+
+.tp-role {
+  width: 100%;
+  height: 28px;
+  font-size: 13px;
+  text-overflow: ellipsis;
+}
+.tp-role-fixed {
+  height: 28px;
+  padding: 0 2px;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-size: 13px;
+  line-height: 28px;
+}
+
+.tp-flags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px 8px;
+  font-size: 12px;
+  font-weight: 600;
+}
+.tp-flags .bad {
+  color: var(--bad);
+}
+.tp-flags .warn {
+  color: var(--warn);
+}
+
+.tp-backups {
+  margin: 0;
+  padding: 4px 0 0;
+  border-top: 1px solid var(--line);
+  list-style: none;
+}
+.tp-backups button {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  height: 26px;
+  padding: 0 4px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--text-2);
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+}
+.tp-backups button:hover {
+  background: var(--hover);
+  color: var(--text);
+}
+.tp-brank {
+  flex: none;
+  color: var(--text-3);
+  font-size: 11px;
+}
+.tp-bname {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.tp-bscore {
+  flex: none;
+}
+
+/* 폭이 좁으면 카드가 줄어들고 부가 글자를 줄인다 */
+@media (max-width: 860px) {
+  .tactics {
+    padding: 12px 12px 24px;
+  }
+  .tp-pitch {
+    padding: 14px 6px;
+  }
+  .tp-row {
+    gap: 6px;
+  }
+  .tp-slot {
+    padding: 6px;
+  }
+  .tp-brank {
+    display: none;
+  }
+}
+
+/* ---------- 선수단 진단 ---------- */
+
+.tactics-side {
+  min-width: 0;
+}
+.tactics-side-title {
+  margin: 0 0 10px;
+  font-size: 16px;
+  font-weight: 700;
+}
+
+.insights-strip {
+  max-height: 300px;
+  overflow: auto;
+  padding: 12px 28px;
+  border-bottom: 1px solid var(--line);
+}
+
+.insights {
+  display: grid;
+  gap: 12px;
+}
+.insights.strip {
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+}
+.insights.side {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.insight {
+  min-width: 0;
+  padding: 12px 14px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-m);
+  background: var(--surface);
+}
+.insight.attention {
+  border-left: 4px solid var(--warn);
+}
+.insight.missing {
+  border-style: dashed;
+}
+.insight header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+.insight h3 {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 700;
+}
+.insight-tone {
+  flex: none;
+  color: var(--warn);
+  font-size: 12px;
+  font-weight: 600;
+}
+.insight.missing .insight-tone {
+  color: var(--text-3);
+}
+.insight-finding {
+  margin: 0 0 8px;
+  color: var(--text);
+  font-size: 14px;
+  line-height: 1.5;
+}
+.insight.missing .insight-finding {
+  color: var(--text-2);
+}
+
+.insight-bars {
+  display: grid;
+  gap: 5px;
+  margin: 0 0 8px;
+  padding: 0;
+  list-style: none;
+  font-size: 13px;
+}
+.insight-bars li {
+  display: grid;
+  grid-template-columns: 72px minmax(0, 1fr) 40px;
+  align-items: center;
+  gap: 8px;
+}
+.insight-bar-label {
+  color: var(--text-2);
+}
+.insight-bar-track {
+  height: 10px;
+  border-radius: 5px;
+  background: var(--raised);
+  overflow: hidden;
+}
+.insight-bar-track span {
+  display: block;
+  height: 100%;
+  border-radius: 5px;
+  background: var(--accent);
+}
+.insight-bar-count {
+  text-align: right;
+}
+
+.insight-lines-title {
+  margin: 0 0 2px;
+  color: var(--text-3);
+  font-size: 12px;
+}
+.insight-lines {
+  display: grid;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.insight-line {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0;
+  width: 100%;
+  min-width: 0;
+  padding: 4px 8px;
+  border: 0;
+  border-radius: var(--radius-s);
+  background: transparent;
+  color: var(--text);
+  text-align: left;
+}
+button.insight-line {
+  cursor: pointer;
+}
+button.insight-line:hover {
+  background: var(--hover);
+}
+.insight-name {
+  max-width: 100%;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-size: 14px;
+  font-weight: 650;
+}
+.insight-detail {
+  max-width: 100%;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  color: var(--text-2);
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
+.insight-more,
+.insight-note {
+  margin: 6px 0 0;
+  padding: 0 8px;
+  color: var(--text-3);
+  font-size: 12px;
+}
+
+/* ---------- 전술 분석: 보강 필요도 ---------- */
+
+/* 등급은 색과 글자(시급, 보강 권장, 보통, 충분)와 숫자를 함께 쓴다 */
+.tp-need {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 2px 6px;
+  width: 100%;
+  padding: 3px 6px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-s);
+  background: transparent;
+  color: var(--text-2);
+  font-size: 12px;
+  line-height: 1.3;
+  text-align: left;
+  cursor: pointer;
+}
+.tp-need b {
+  color: var(--text);
+  font-size: 14px;
+}
+.tp-need em {
+  font-style: normal;
+  font-weight: 600;
+}
+.tp-need:hover {
+  background: var(--hover);
+}
+.tp-need[aria-pressed='true'] {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+.tp-need.urgent em,
+.need-badge.urgent em {
+  color: var(--bad);
+}
+.tp-need.recommended em,
+.need-badge.recommended em {
+  color: var(--warn);
+}
+.tp-need.normal em,
+.need-badge.normal em {
+  color: var(--text-2);
+}
+.tp-need.fine em,
+.need-badge.fine em {
+  color: var(--good);
+}
+.tp-slot.focused {
+  box-shadow: 0 0 0 2px var(--accent);
+}
+
+.need-badge {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 4px;
+  padding: 1px 8px;
+  border: 1px solid var(--line-strong);
+  border-radius: 12px;
+  color: var(--text-2);
+  font-size: 12px;
+  white-space: nowrap;
+}
+.need-badge b {
+  color: var(--text);
+  font-size: 13px;
+}
+.need-badge em {
+  font-style: normal;
+  font-weight: 600;
+}
+
+.tactic-panel {
+  margin-bottom: 20px;
+}
+.tactic-summary {
+  margin-bottom: 14px;
+  padding: 12px 14px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-m);
+  background: var(--surface);
+  font-size: 14px;
+}
+.tactic-summary p {
+  margin: 0 0 6px;
+}
+.tactic-summary p:last-child {
+  margin-bottom: 0;
+}
+.line-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));
+  gap: 6px;
+  margin: 8px 0;
+  padding: 0;
+  list-style: none;
+}
+.line-list li {
+  display: flex;
+  flex-direction: column;
+  padding: 6px 8px;
+  border-radius: var(--radius-s);
+  background: var(--raised);
+  font-size: 13px;
+}
+.line-list b {
+  font-size: 18px;
+}
+.need-title {
+  margin: 0 0 4px;
+  font-size: 15px;
+  font-weight: 700;
+}
+.need-help {
+  margin: 0 0 8px;
+  font-size: 12.5px;
+}
+.need-list {
+  display: grid;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.need-row {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  width: 100%;
+  padding: 7px 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-s);
+  background: var(--surface);
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+}
+.need-row:hover {
+  background: var(--hover);
+}
+.need-row.focused {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+.need-row-top {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 8px;
+  width: 100%;
+}
+.need-row-name {
+  font-weight: 650;
+  font-size: 14px;
+}
+.need-row-role {
+  flex: 1;
+  min-width: 0;
+  font-size: 12px;
+}
+.need-row-reason {
+  color: var(--text-2);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.slot-detail {
+  margin-bottom: 16px;
+  padding: 12px 14px;
+  border: 1px solid var(--accent);
+  border-radius: var(--radius-m);
+  background: var(--surface);
+}
+.slot-detail header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px 10px;
+}
+.slot-detail h3 {
+  margin: 0;
+  font-size: 16px;
+}
+.slot-detail h4 {
+  margin: 14px 0 6px;
+  font-size: 13px;
+  color: var(--text-2);
+}
+.slot-reason {
+  margin: 6px 0 2px;
+  font-size: 14px;
+}
+.slot-facts {
+  margin: 0;
+  font-size: 12.5px;
+}
+.factor-list,
+.option-list {
+  display: grid;
+  gap: 8px;
+  margin: 0 0 10px;
+  padding: 0;
+  list-style: none;
+}
+.factor-head {
+  display: grid;
+  grid-template-columns: 82px minmax(0, 1fr) 64px;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+}
+.factor-track {
+  height: 8px;
+  border-radius: 4px;
+  background: var(--raised);
+  overflow: hidden;
+}
+.factor-track span {
+  display: block;
+  height: 100%;
+  background: var(--accent);
+}
+.factor-points {
+  text-align: right;
+  color: var(--text-2);
+}
+.factor-list p {
+  margin: 2px 0 0;
+  color: var(--text-2);
+  font-size: 12.5px;
+  line-height: 1.45;
+}
+.factor-list .skipped {
+  opacity: 0.8;
+}
+.option {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  width: 100%;
+  padding: 6px 8px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-s);
+  background: transparent;
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+}
+.option:hover {
+  background: var(--hover);
+}
+.option-top {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+}
+.option-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-weight: 650;
+}
+.option-role {
+  flex: none;
+  color: var(--text-3);
+  font-size: 12px;
+}
+.option-score {
+  flex: none;
+  font-size: 13px;
+}
+.option-note {
+  color: var(--text-2);
+  font-size: 12.5px;
+  line-height: 1.45;
+}

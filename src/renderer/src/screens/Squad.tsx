@@ -1,16 +1,23 @@
 import { Search } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
-import { bestRoleOf } from '@shared/depth'
+import { bestRoleOf, FORMATION_BY_ID, FORMATIONS } from '@shared/depth'
 import { GROUP_LABEL, GROUP_ORDER } from '@shared/fields'
 import type { LinkStatus } from '@shared/game'
+import { buildInsights } from '@shared/insights'
+import { analyseTactic } from '@shared/tactic'
 import type { ColumnGroup, ColumnInfo, PlayerRow, Settings, SquadResult } from '@shared/types'
 import { api } from '@/api'
+import { ClubLogo } from '@/components/ClubLogo'
 import { DepthChart } from '@/components/DepthChart'
 import { PlayerDrawer } from '@/components/PlayerDrawer'
 import { PlayerTable, sortRows, type SortState } from '@/components/PlayerTable'
+import { SquadInsights } from '@/components/SquadInsights'
+import { TacticPanel } from '@/components/TacticPanel'
+import { TacticsPitch } from '@/components/TacticsPitch'
+import '@/styles/squad.css'
 import { MAX_COMPARE } from './Compare'
 
-type View = 'table' | 'depth'
+type View = 'table' | 'tactics' | 'depth'
 
 const FIT_ROLE: ColumnInfo = {
   header: '최적 역할', field: 'fitRole', group: 'info', short: '최적 역할', label: '점수가 가장 높은 역할', isAttr: false, numeric: false
@@ -53,16 +60,21 @@ export function Squad(props: {
   compare: number[]
   onToggleCompare: (uid: number) => void
   onOpenCompare: () => void
+  /** 전술판에서 고른 자리의 영입 후보 보기(영입 후보 화면으로 간다) */
+  onFindTargets?: (slot: { formation: string; index: number }) => void
 }) {
   const { dataKey, link, settings, onSettings, onGoHome } = props
-  const { compare, onToggleCompare, onOpenCompare } = props
+  const { compare, onToggleCompare, onOpenCompare, onFindTargets } = props
   const [snapshot, setSnapshot] = useState<SquadResult | null>(null)
   const [view, setView] = useState<View>('table')
   const [query, setQuery] = useState('')
-  // 열이 많아 골키퍼 능력치는 처음에 접어 두고 필요할 때 켠다
-  const [hidden, setHidden] = useState<Set<ColumnGroup>>(new Set(['goalkeeping']))
+  // 열이 많아 골키퍼 능력치와 계약 열은 처음에 접어 두고 필요할 때 켠다
+  const [hidden, setHidden] = useState<Set<ColumnGroup>>(new Set(['goalkeeping', 'contract']))
+  const [showInsights, setShowInsights] = useState(false)
   const [sort, setSort] = useState<SortState | null>(null)
   const [selectedIdx, setSelectedIdx] = useState<number | null>(null)
+  /** 전술판에서 분석을 펼친 자리(포메이션과 함께 기억해, 포메이션을 바꾸면 닫힌다) */
+  const [slotPick, setSlotPick] = useState<{ formation: string; index: number } | null>(null)
 
   useEffect(() => {
     let alive = true
@@ -98,6 +110,28 @@ export function Squad(props: {
     return sortRows(filtered, sort)
   }, [fitted, query, sort])
 
+  // 전술판·진단이 같은 전술 분석(주전·후보·보강 필요도)을 쓰도록 한 번만 계산한다. 영입 후보 화면도 같은 계산을 쓴다
+  const formation = FORMATION_BY_ID[settings.formation] ?? FORMATIONS[0]
+  const analysis = useMemo(
+    () =>
+      snapshot?.ok
+        ? analyseTactic({
+            rows: snapshot.rows,
+            columns: snapshot.columns,
+            today: snapshot.today,
+            formation: formation.id,
+            slotRoles: settings.slotRoles,
+            roleWeights: settings.roleWeights
+          })
+        : null,
+    [snapshot, formation.id, settings.slotRoles, settings.roleWeights]
+  )
+  const insights = useMemo(
+    () => (snapshot?.ok ? buildInsights(snapshot, analysis, formation.label) : []),
+    [snapshot, analysis, formation.label]
+  )
+  const focusedSlot = slotPick && slotPick.formation === formation.id ? slotPick.index : null
+
   if (snapshot && !snapshot.ok) {
     return (
       <>
@@ -129,17 +163,22 @@ export function Squad(props: {
   const selected = selectedIdx === null ? null : (fitted?.rows.find((row) => row.idx === selectedIdx) ?? null)
   const inCompare = compare
   const { data } = link
+  const pick = (idx: number): void => setSelectedIdx(selectedIdx === idx ? null : idx)
 
   return (
     <>
       <header className="page-head">
         <h1>스쿼드</h1>
         <span className="page-sub">
-          {data.save ? `${data.club || data.save.name} · ${data.source === 'game' ? '게임의 지금 값' : '세이브에 저장된 값'}` : ''}
+          {data.save && <ClubLogo uid={snapshot?.ok ? snapshot.clubUid : undefined} size={18} />}
+          {data.save ? ` ${data.club || data.save.name} · ${data.source === 'game' ? '게임의 지금 값' : '세이브에 저장된 값'}` : ''}
         </span>
         <div className="segmented" role="group" aria-label="보기 방식">
           <button aria-pressed={view === 'table'} onClick={() => setView('table')}>
             표
+          </button>
+          <button aria-pressed={view === 'tactics'} onClick={() => setView('tactics')}>
+            전술판
           </button>
           <button aria-pressed={view === 'depth'} onClick={() => setView('depth')}>
             뎁스 차트
@@ -148,7 +187,7 @@ export function Squad(props: {
         <div className="spacer" />
         {fitted && (
           <span className="page-sub num">
-            {view === 'depth' || rows.length === fitted.rows.length
+            {view !== 'table' || rows.length === fitted.rows.length
               ? `선수 ${fitted.rows.length}명`
               : `${fitted.rows.length}명 중 ${rows.length}명`}
           </span>
@@ -175,6 +214,15 @@ export function Squad(props: {
               </button>
             ))}
           </div>
+          <button
+            className="chip"
+            aria-pressed={showInsights}
+            aria-expanded={showInsights}
+            aria-controls="squad-insights"
+            onClick={() => setShowInsights(!showInsights)}
+          >
+            선수단 진단
+          </button>
           <div className="spacer" />
           {fitted && (
             <div className="legend" aria-label="능력치 표시 기준">
@@ -206,6 +254,12 @@ export function Squad(props: {
         </div>
       )}
 
+      {view === 'table' && showInsights && insights.length > 0 && (
+        <div id="squad-insights" className="insights-strip">
+          <SquadInsights cards={insights} layout="strip" onPick={pick} />
+        </div>
+      )}
+
       <div className="table-wrap">
         {view === 'table' && fitted && rows.length > 0 && (
           <PlayerTable
@@ -224,13 +278,49 @@ export function Squad(props: {
             다른 이름이나 포지션으로 찾아보세요.
           </div>
         )}
+        {view === 'tactics' && snapshot?.ok && (
+          <div className="tactics">
+            {analysis ? (
+              <TacticsPitch
+                columns={snapshot.columns}
+                rows={snapshot.rows}
+                analysis={analysis}
+                settings={settings}
+                onChange={onSettings}
+                selectedIdx={selectedIdx}
+                onPick={pick}
+                focusedSlot={focusedSlot}
+                onFocusSlot={(index) => setSlotPick(focusedSlot === index ? null : { formation: formation.id, index })}
+              />
+            ) : (
+              <div className="empty tactics-main">
+                <strong>이 기록으로는 전술판을 만들 수 없습니다</strong>
+                포지션과 능력치 열이 있어야 합니다. 세이브에서 읽은 기록을 골라 보세요.
+              </div>
+            )}
+            <aside className="tactics-side" id="squad-insights">
+              {analysis && (
+                <TacticPanel
+                  analysis={analysis}
+                  focusedSlot={focusedSlot}
+                  onFocusSlot={(index) => setSlotPick(index === null ? null : { formation: formation.id, index })}
+                  onPick={pick}
+                  onFindTargets={onFindTargets ? (index) => onFindTargets({ formation: formation.id, index }) : undefined}
+                />
+              )}
+              <h2 className="tactics-side-title">선수단 진단</h2>
+              {/* 포지션 뎁스는 위의 전술 분석이 대신한다(같은 계산이라 두 곳이 어긋나지 않는다) */}
+              <SquadInsights cards={insights.filter((card) => card.id !== 'depth')} layout="side" onPick={pick} />
+            </aside>
+          </div>
+        )}
         {view === 'depth' && snapshot?.ok && (
           <DepthChart
             columns={snapshot.columns}
             rows={snapshot.rows}
             settings={settings}
             onChange={onSettings}
-            onPick={(idx) => setSelectedIdx(selectedIdx === idx ? null : idx)}
+            onPick={pick}
           />
         )}
         {fitted && snapshot && selected && (

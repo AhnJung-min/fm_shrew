@@ -1,5 +1,5 @@
 import { ArrowDown, ArrowUp } from 'lucide-react'
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { GROUP_LABEL } from '@shared/fields'
 import type { ColumnInfo, Density, PlayerRow } from '@shared/types'
 import { attrBand, attrText, attrTitle, plainText } from '@/lib/format'
@@ -13,6 +13,7 @@ const ROW_HEIGHT: Record<Density, number> = { compact: 36, comfortable: 44 }
 const OVERSCAN = 10
 
 function columnWidth(col: ColumnInfo, rows: PlayerRow[]): number {
+  if (col.width) return col.width
   if (col.field === 'name') return 200
   if (col.isAttr) return 48
   // 글자 수로 어림한다. 한글은 영문보다 넓다.
@@ -51,8 +52,10 @@ export function PlayerTable(props: {
   onSort: (sort: SortState | null) => void
   selectedIdx: number | null
   onSelect: (row: PlayerRow) => void
+  /** 칸을 직접 그리고 싶을 때(막대, 엠블럼 등). null이나 undefined를 돌려주면 기본 모양으로 그린다 */
+  renderCell?: (col: ColumnInfo, row: PlayerRow) => ReactNode | null | undefined
 }) {
-  const { columns, rows, density, sort, onSort, selectedIdx, onSelect } = props
+  const { columns, rows, density, sort, onSort, selectedIdx, onSelect, renderCell } = props
   const scroller = useRef<HTMLDivElement>(null)
   const [scrollTop, setScrollTop] = useState(0)
   const [viewHeight, setViewHeight] = useState(600)
@@ -202,13 +205,14 @@ export function PlayerTable(props: {
                     </td>
                   )
                 }
+                const custom = renderCell?.(col, row)
                 return (
                   <td
                     key={col.header}
                     className={`${col.numeric ? 'right' : 'text'} ${start}`}
-                    title={cell?.raw}
+                    title={custom ? undefined : cell?.raw}
                   >
-                    {plainText(cell)}
+                    {custom ?? plainText(cell)}
                   </td>
                 )
               })}

@@ -1,13 +1,8 @@
 import { useMemo } from 'react'
 import { buildDepth, FORMATION_BY_ID, FORMATIONS, type DepthPlayer, type DepthSlot } from '@shared/depth'
+import { POSITION_LABEL } from '@shared/insights'
 import { ROLE_BY_ID, rolesFor } from '@shared/roles'
 import type { ColumnInfo, PlayerRow, Settings } from '@shared/types'
-
-const POSITION_LABEL: Record<string, string> = {
-  GK: '골키퍼', DL: '왼쪽 수비', DC: '중앙 수비', DR: '오른쪽 수비', WBL: '왼쪽 윙백', WBR: '오른쪽 윙백',
-  DM: '수비형 미드', ML: '왼쪽 미드', MC: '중앙 미드', MR: '오른쪽 미드',
-  AML: '왼쪽 공격', AMC: '공격형 미드', AMR: '오른쪽 공격', ST: '최전방'
-}
 
 function PlayerLine(props: { rank: number; player: DepthPlayer; onPick: (idx: number) => void }) {
   const { rank, player, onPick } = props

@@ -1,8 +1,9 @@
 import type { ApplyResult, LinkStatus, SaveFileInfo } from './game'
+import type { SeasonResult } from './season'
 import type { TalkEffort, TalkStats, TalkStatus } from './talk'
-import type { CandidateQuery, CandidateResult, EditorApplyResult, EditorEdit, EditorListItem, EditorPlayer, MarketResult } from './world'
+import type { CandidateQuery, CandidateResult, EditorApplyResult, EditorEdit, EditorListItem, EditorPlayer, MarketResult, PlayerProfile } from './world'
 
-export type ColumnGroup = 'info' | 'technical' | 'mental' | 'physical' | 'goalkeeping' | 'other'
+export type ColumnGroup = 'info' | 'contract' | 'technical' | 'mental' | 'physical' | 'goalkeeping' | 'other'
 
 /** 한 칸의 값. 원문과 함께, 숫자로 읽을 수 있으면 숫자도 담는다. */
 export interface CellValue {
@@ -27,6 +28,8 @@ export interface ColumnInfo {
   isAttr: boolean
   /** 값이 대부분 숫자인지(오른쪽 정렬과 숫자 정렬에 사용) */
   numeric: boolean
+  /** 열 너비(px)를 직접 정할 때. 없으면 값의 길이로 어림한다 */
+  width?: number
 }
 
 export interface PlayerRow {
@@ -44,6 +47,10 @@ export interface SquadResult {
   columns: ColumnInfo[]
   /** 줄의 idx는 선수 고유 번호다 */
   rows: PlayerRow[]
+  /** 세이브가 알려 주는 게임 속 오늘(계약이 얼마나 남았는지 셀 때 쓴다). 모르면 없다 */
+  today?: { year: number; month: number; day: number }
+  /** 내 구단의 고유 번호(엠블럼용). 모르면 없다 */
+  clubUid?: number
 }
 
 export type Density = 'compact' | 'comfortable'
@@ -129,12 +136,20 @@ export interface Api {
   onLinkChanged(cb: (status: LinkStatus) => void): () => void
   /** 내 팀 선수 표 */
   worldSquad(): Promise<SquadResult>
+  /** 적용한 세이브에서 읽은 내 팀의 지난 경기·앞으로 할 경기와 리그 순위표 */
+  worldSeason(): Promise<SeasonResult>
 
   // 세이브 전체(모든 구단의 선수)
   /** 고른 역할로 영입 후보를 유형별로 고른다 */
   worldCandidates(query: CandidateQuery): Promise<CandidateResult>
   /** 선수들의 몸값·주급·계약 만료·국적을 켜져 있는 게임에 물어 받는다 */
   worldMarket(uids: number[]): Promise<MarketResult>
+  /** 선수 한 명의 정보 화면에 필요한 값 전부. 선수를 찾지 못하면 null */
+  worldProfile(uid: number): Promise<PlayerProfile | null>
+  /** 선수 얼굴 사진의 주소. 사진을 줄 수 없는 환경(브라우저 미리보기)이면 null. 파일이 없으면 주소를 열 때 404가 난다 */
+  faceUrl(uid: number): string | null
+  /** 구단 엠블럼의 주소(구단 고유 번호). 브라우저 미리보기에서는 null. 파일이 없으면 404 */
+  clubLogoUrl(uid: number): string | null
   /** 에디터의 선수 목록. 찾는 글자가 없으면 내 팀 선수들 */
   editorList(search: string): Promise<{ ok: boolean; message?: string; saveName?: string; items: EditorListItem[] }>
   /** 선수의 값. 게임이 켜져 있으면 게임의 지금 값을, 아니면 세이브의 값을 준다 */

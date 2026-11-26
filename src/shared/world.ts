@@ -1,3 +1,5 @@
+import type { Recommendation, SquadMoney } from './recommend'
+
 /** 세이브 전체(모든 구단의 선수)를 놓고 하는 일: 영입 후보 찾기와 능력치 수정 */
 
 /** 세이브에 능력치 54개가 저장된 순서 */
@@ -32,16 +34,16 @@ export type CandidateCategory = 'all' | 'starter' | 'rotation' | 'prospect' | 'f
 
 export const CATEGORY_LABEL: Record<CandidateCategory, string> = {
   all: '전체',
-  starter: '즉시 전력감',
-  rotation: '교체 자원',
+  starter: '즉시 전력',
+  rotation: '로테이션 자원',
   prospect: '유망주',
   free: '자유 계약'
 }
 
 export const CATEGORY_HELP: Record<CandidateCategory, string> = {
   all: '조건에 맞는 모든 선수',
-  starter: '고른 역할의 점수가 내 팀 주전 이상인 선수',
-  rotation: '점수가 내 팀 주전보다는 낮고 두 번째 선수 이상인 선수',
+  starter: '이 자리(역할)의 적합도가 내 팀 주전 이상인 선수',
+  rotation: '적합도가 내 팀 주전보다는 낮고 두 번째 선수 이상인 선수',
   prospect: '21세 이하이고, 잠재 능력이 내 주전의 현재 능력 이상이며 아직 10 넘게 더 클 수 있는 선수',
   free: '소속 구단이 없는 선수'
 }
@@ -98,6 +100,12 @@ export interface CandidateQuery {
   search: string
   /** 계약이 이 개월 수 안에 끝나는 선수만. 제한이 없으면 null */
   expiringWithinMonths: number | null
+  /**
+   * 전술의 한 자리를 기준으로 찾을 때: 그 자리의 포메이션·자리별 역할과 자리 순번.
+   * 주전·두 번째 선수와 보강 필요도를 모두 이 자리에서 구하고, 역할(roleId)은 자리의 역할로 본다.
+   * 없으면 고른 역할(roleId)만으로 찾는다.
+   */
+  slot?: { formation: string; slotRoles: Record<string, string>; index: number } | null
 }
 
 export interface CandidateRow {
@@ -120,11 +128,15 @@ export interface CandidateRow {
   squadStatus: string
   /** 국적. 나라 이름을 아직 모르면 빈 글자 */
   nation: string
-  /** 고른 역할의 점수(0~100) */
+  /** 소속 구단의 고유 번호(엠블럼용). 구단을 알아내지 못했거나 자유 계약이면 null */
+  clubUid: number | null
+  /** 고른 역할의 적합도(0~100) */
   score: number
   /** 내 주전과의 점수 차이. 주전이 없으면 null */
   gap: number | null
   categories: CandidateCategory[]
+  /** 추천 점수(0~100)와 항목별 풀이 */
+  recommend: Recommendation
   /** 능력치 54개(게임 표시값 1~20), SAVE_ATTRIBUTE_ORDER 순서 */
   attributes: number[]
 }
@@ -142,6 +154,10 @@ export interface CandidateResult {
   rows: CandidateRow[]
   /** 고른 유형에 드는 선수 수(rows보다 많을 수 있다) */
   matched: number
+  /** 자리를 기준으로 찾았을 때 그 자리의 보강 필요도(0~100). 아니면 없다 */
+  need?: number | null
+  /** 비용 부담을 견준 내 팀의 주급·몸값 수준. 알 수 없으면 null */
+  baseline?: SquadMoney | null
 }
 
 /**
@@ -217,6 +233,8 @@ export interface EditorListItem {
   age: number | null
   position: string
   club: string
+  /** 소속 구단의 고유 번호(엠블럼). 모르면 없다 */
+  clubUid?: number | null
   ca: number
   pa: number
 }
@@ -260,4 +278,50 @@ export function checkEdit(edit: EditorEdit): string | null {
   }
   if (edit.ca !== undefined && edit.pa !== undefined && edit.ca > edit.pa) return '현재 능력이 잠재 능력보다 클 수 없습니다.'
   return null
+}
+
+/** 선수 정보 화면의 능력치 한 칸(게임 표시값 1~20) */
+export interface ProfileAttribute {
+  id: string
+  label: string
+  group: 'technical' | 'mental' | 'physical' | 'goalkeeping'
+  value: number
+}
+
+/** 선수 한 명의 정보 화면에 필요한 모든 것 */
+export interface PlayerProfile {
+  uid: number
+  name: string
+  age: number | null
+  /** 생년월일. 모르면 null */
+  birth: { year: number; month: number; day: number } | null
+  /** 게임 표기("D (RC), WB (R)") */
+  position: string
+  /** 포지션 숙련도 15개(1~20), POSITION_KEYS 순서 */
+  positions: number[]
+  goalkeeper: boolean
+  ca: number
+  pa: number
+  /** 구단 이름. 소속이 없으면 "자유 계약", 모르면 빈 글자 */
+  club: string
+  /** 소속 구단의 고유 번호(엠블럼). 모르면 null */
+  clubUid: number | null
+  nation: string
+  /** 몸값. 모르면 빈 글자 */
+  value: string
+  /** 주급. 모르면 빈 글자 */
+  wage: string
+  /** 몸값·주급의 출처: 켜져 있는 게임이 알려 준 금액(원)인지, 세이브에 적힌 기준 금액(파운드)인지 */
+  moneyFrom: 'game' | 'save'
+  contractEnd: { year: number; month: number; day: number } | null
+  squadStatus: string
+  /** 왼발·오른발 능력(1~20) */
+  foot: { left: number; right: number }
+  /** 보이는 능력치. 기술(골키퍼는 골키퍼) → 정신 → 신체 순 */
+  attributes: ProfileAttribute[]
+  /** 게임 화면에는 안 보이는 능력치 */
+  hidden: Array<{ id: string; label: string; value: number }>
+  /** 능력치와 능력을 어디서 읽었는지: 켜져 있는 게임의 지금 값인지, 세이브에 적힌 값인지 */
+  source: 'game' | 'save'
+  sourceNote?: string
 }

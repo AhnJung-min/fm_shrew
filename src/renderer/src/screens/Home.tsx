@@ -1,10 +1,13 @@
 import { CircleAlert, FolderOpen, RefreshCw } from 'lucide-react'
 import { useCallback, useEffect, useState } from 'react'
 import { NEEDED_PLUGIN, type LinkStatus, type SaveFileInfo } from '@shared/game'
+import type { SeasonResult } from '@shared/season'
 import type { AppStatus } from '@shared/types'
 import { api } from '@/api'
+import { SeasonCenter } from '@/components/SeasonCenter'
 import type { Route } from '@/components/Sidebar'
 import { formatBytes, formatTime } from '@/lib/format'
+import '@/styles/season.css'
 
 /**
  * 시작 화면. 순서대로: 게임이 켜져 있는지 보고, 쓸 세이브를 골라 적용하고, 그 자료로 다른 화면을 쓴다.
@@ -15,6 +18,8 @@ export function Home(props: { status: AppStatus | null; link: LinkStatus; onNavi
   const [saves, setSaves] = useState<SaveFileInfo[] | null>(null)
   const [picked, setPicked] = useState<string | null>(null)
   const [notice, setNotice] = useState<{ text: string; error?: boolean } | null>(null)
+  const [season, setSeason] = useState<SeasonResult | null>(null)
+  const [seasonLoading, setSeasonLoading] = useState(false)
 
   const loadSaves = useCallback(async (): Promise<void> => setSaves(await api.listSaves()), [])
 
@@ -24,6 +29,25 @@ export function Home(props: { status: AppStatus | null; link: LinkStatus; onNavi
   }, [loadSaves, data.save?.savedAt])
 
   const applied = data.save?.path ?? null
+
+  // 세이브를 (다시) 읽어 적용했거나 게임이 다시 저장했을 때 경기 기록을 새로 받는다
+  useEffect(() => {
+    if (!data.save) {
+      setSeason(null)
+      return
+    }
+    if (busy) return
+    let current = true
+    setSeasonLoading(true)
+    api
+      .worldSeason()
+      .then((result) => current && setSeason(result))
+      .catch(() => current && setSeason({ ok: false, message: '경기 기록을 읽지 못했습니다.', recent: [], upcoming: [] }))
+      .finally(() => current && setSeasonLoading(false))
+    return () => {
+      current = false
+    }
+  }, [data.save?.path, data.save?.savedAt, data.hasTeam, busy])
   const chosen = picked ?? applied ?? saves?.[0]?.path ?? null
 
   const apply = async (): Promise<void> => {
@@ -187,6 +211,8 @@ export function Home(props: { status: AppStatus | null; link: LinkStatus; onNavi
             </div>
           </section>
         </div>
+
+        <SeasonCenter season={season} applied={data.save !== null} loading={seasonLoading || busy} />
       </div>
     </>
   )

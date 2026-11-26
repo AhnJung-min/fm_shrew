@@ -1,6 +1,6 @@
 import type { LinkStatus, SaveFileInfo } from '@shared/game'
 import type { Api, BackupEntry, Settings } from '@shared/types'
-import { mockCandidates, mockEditorList, mockEditorPlayer, mockSquad } from './lib/mockWorld'
+import { mockCandidates, mockEditorList, mockEditorPlayer, mockProfile, mockSeason, mockSquad } from './lib/mockWorld'
 
 declare global {
   interface Window {
@@ -63,6 +63,7 @@ function createMockApi(): Api {
       players: applied ? 99_892 : 0,
       hasTeam: applied !== null,
       club: applied ? '리버풀' : '',
+      clubUid: null,
       source: live() ? 'game' : 'save',
       liveAt: live() ? new Date(Date.now() - 40_000).toISOString() : null,
       liveMatched: live() ? 99_888 : 0,
@@ -102,6 +103,7 @@ function createMockApi(): Api {
       return () => listeners.delete(cb)
     },
     worldSquad: async () => mockSquad(applied === null),
+    worldSeason: async () => mockSeason(applied === null),
 
     // 세이브 전체: 미리보기에서는 지어낸 선수들로 화면만 보여 준다
     worldCandidates: async (query) => mockCandidates(query, applied === null),
@@ -127,6 +129,9 @@ function createMockApi(): Api {
         })
       }
     },
+    worldProfile: async (uid) => mockProfile(uid, !gameOff && !oldPlugin),
+    faceUrl: () => null,
+    clubLogoUrl: () => null,
     editorList: async (search) => mockEditorList(search, applied === null),
     editorPlayer: async (uid) => mockEditorPlayer(uid, !gameOff && !oldPlugin),
     editorApply: async (edits) => {

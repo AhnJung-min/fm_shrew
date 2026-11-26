@@ -51,9 +51,10 @@ export const FIELDS: FieldDef[] = [
   info('position', '포지션', ['position', 'pos', '위치', '주 포지션', 'positions']),
   info('nationality', '국적', ['nationality', 'nation', 'nat', '국가']),
   info('club', '소속 구단', ['club', '클럽', '구단', '소속', '소속팀', 'team']),
-  info('value', '가치', ['value', 'transfer value', '이적 가치', '시장 가치', '예상 가치', '몸값']),
-  info('wage', '주급', ['wage', 'salary', '급료', '급여', '임금', '연봉']),
-  info('contractEnd', '계약 만료', ['expires', 'contract expiry', '만료', '계약 만료일', '계약 종료', '계약']),
+  info('value', '몸값', ['value', 'transfer value', '이적 가치', '시장 가치', '예상 가치', '가치'], 'contract'),
+  info('wage', '주급', ['wage', 'salary', '급료', '급여', '임금', '연봉'], 'contract'),
+  info('contractEnd', '계약 만료', ['expires', 'contract expiry', '만료', '계약 만료일', '계약 종료', '계약'], 'contract'),
+  info('squadStatus', '계약상 입지', ['squad status', 'status in squad', '입지', '팀 내 입지', '역할 약속'], 'contract'),
   info('height', '키', ['height', '신장']),
   info('weight', '몸무게', ['weight', '체중']),
   info('foot', '주발', ['preferred foot', 'foot', '주로 쓰는 발', '선호하는 발']),
@@ -166,6 +167,7 @@ export function matchField(header: string, valuesAreNumeric: boolean): FieldDef 
 
 export const GROUP_LABEL: Record<ColumnGroup, string> = {
   info: '정보',
+  contract: '계약',
   technical: '기술',
   mental: '정신',
   physical: '신체',
@@ -173,4 +175,4 @@ export const GROUP_LABEL: Record<ColumnGroup, string> = {
   other: '기타'
 }
 
-export const GROUP_ORDER: ColumnGroup[] = ['info', 'technical', 'mental', 'physical', 'goalkeeping', 'other']
+export const GROUP_ORDER: ColumnGroup[] = ['info', 'contract', 'technical', 'mental', 'physical', 'goalkeeping', 'other']

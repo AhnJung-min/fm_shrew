@@ -2,7 +2,10 @@ import { existsSync, statSync } from 'node:fs'
 import { basename } from 'node:path'
 import { NO_DATA, type DataStatus, type SaveFileInfo } from '@shared/game'
 import { POSITION_KEYS, PLAYABLE_RATING, positionOrder, positionsLabel } from '@shared/positions'
-import { effectiveWeights, ROLE_BY_ID } from '@shared/roles'
+import { footValues, formatPounds, hiddenAttributes, isGoalkeeper, visibleAttributes } from '@shared/playerView'
+import { prepareRole, ROLE_BY_ID, savedRoleScore } from '@shared/roles'
+import { recommend, squadMoney, TRAIT_WEIGHTS, type RecommendContext, type RecommendInput, type TraitId, type Traits } from '@shared/recommend'
+import { analyseTactic, slotBench } from '@shared/tactic'
 import {
   categoriesOf,
   checkEdit,
@@ -19,6 +22,7 @@ import {
   type EditorPlayer,
   type MarketResult,
   type PlayerMarket,
+  type PlayerProfile,
   parseGameDate,
   SQUAD_STATUS_LABEL
 } from '@shared/world'
@@ -105,6 +109,11 @@ export class WorldService {
   /** 적용해 둔 세이브의 경로 */
   get path(): string | null {
     return this.loaded?.path ?? null
+  }
+
+  /** 지금 적용해 둔 세이브의 자료. 다시 읽지 않는다(다시 읽기는 GameLink가 맡는다) */
+  get world(): SaveWorld | null {
+    return this.loaded?.world ?? null
   }
 
   /**
@@ -213,12 +222,21 @@ export class WorldService {
       players: world.count,
       hasTeam: world.teamId !== undefined,
       club: this.myClubName(world),
+      clubUid: this.myClubUid(world),
       source: loaded.live ? 'game' : 'save',
       liveAt: loaded.live ? new Date(loaded.live.at).toISOString() : null,
       liveMatched: loaded.live?.matched ?? 0,
       note: loaded.note,
       namesStage: this.namesStage
     }
+  }
+
+  private myClubUid(world: SaveWorld): number | null {
+    if (world.teamId === undefined) return null
+    for (let k = 0; k < world.count; k++) {
+      if (world.teamIds[k] === world.teamId && world.club[k] >= 0) return world.clubs[world.club[k]].uid
+    }
+    return null
   }
 
   private myClubName(world: SaveWorld): string {
@@ -317,6 +335,7 @@ export class WorldService {
       age: ageAt(world, k),
       position: positionsLabel([...world.positions.subarray(k * POSITION_COUNT, (k + 1) * POSITION_COUNT)]),
       club: this.clubName(world, k),
+      clubUid: world.club[k] >= 0 ? world.clubs[world.club[k]].uid : null,
       ca: world.ca[k],
       pa: world.pa[k]
     }
@@ -334,39 +353,76 @@ export class WorldService {
     if (world.teamId === undefined) {
       return fail('이 세이브에서 내 팀을 아직 찾지 못했습니다. 게임을 켜고 이 세이브를 불러오면 내 팀을 찾습니다.', saveName)
     }
-    const role = ROLE_BY_ID[query.roleId]
+    const roleWeights = this.deps.roleWeights()
+    // 전술의 한 자리를 기준으로 찾으면 그 자리의 역할·주전·두 번째 선수·보강 필요도를 쓴다(스쿼드 전술판과 같은 계산)
+    const table = squadTable(world)
+    const analysis = query.slot
+      ? analyseTactic({ rows: table.rows, columns: table.columns, today: table.today, formation: query.slot.formation, slotRoles: query.slot.slotRoles, roleWeights })
+      : null
+    const slotFound = analysis?.slots[query.slot?.index ?? -1] ?? null
+    const roleId = slotFound ? slotFound.slot.roleId : query.roleId
+    const role = ROLE_BY_ID[roleId]
     if (!role) return fail('알 수 없는 역할입니다.', saveName)
 
-    const weights: Array<[number, number]> = []
-    let weightSum = 0
-    for (const [id, weight] of Object.entries(effectiveWeights(query.roleId, this.deps.roleWeights()))) {
-      const index = ATTRIBUTE_INDEX.get(id)
-      if (index === undefined || weight <= 0) continue
-      weights.push([index, weight])
-      weightSum += weight
+    // 스쿼드 화면과 같은 값이 나오도록 게임 표시값(1~20)으로 계산한다(roles.ts의 savedRoleScore 하나)
+    const prepared = prepareRole(roleId, roleWeights)
+    const slots = (slotFound ? [slotFound.slot.position] : role.positions).map((key) => POSITION_INDEX.get(key)!).filter((index) => index !== undefined)
+    const ratingOf = (k: number): number => {
+      let best = 0
+      for (const slot of slots) best = Math.max(best, world.positions[k * POSITION_COUNT + slot])
+      return best
     }
-    const slots = role.positions.map((key) => POSITION_INDEX.get(key)!).filter((index) => index !== undefined)
-    const eligible = (k: number): boolean => slots.some((slot) => world.positions[k * POSITION_COUNT + slot] >= PLAYABLE_RATING)
-    // 스쿼드 화면과 같은 값이 나오도록 게임 표시값(1~20)으로 계산한다
-    const scoreOf = (k: number): number => {
-      if (weightSum === 0) return 0
-      let sum = 0
-      for (const [index, weight] of weights) sum += shownValue(world.attributes[k * ATTRIBUTE_COUNT + index]) * weight
-      return Math.round((sum / weightSum / 20) * 1000) / 10
-    }
+    const eligible = (k: number): boolean => ratingOf(k) >= PLAYABLE_RATING
+    const scoreOf = (k: number): number => savedRoleScore(world.attributes, k * ATTRIBUTE_COUNT, prepared)
 
-    // 내 팀에서 이 역할을 뛸 수 있는 선수들
+    // 내 팀(1군)의 주급·몸값 수준과, 이 역할을 뛸 수 있는 선수들
     const mine: Array<{ k: number; score: number }> = []
+    const myWages: number[] = []
+    const myValues: number[] = []
     let myClub = -1
     for (let k = 0; k < world.count; k++) {
       if (world.teamIds[k] !== world.teamId || !world.names[k]) continue
       if (world.club[k] >= 0) myClub = world.club[k]
+      myWages.push(world.wage[k])
+      myValues.push(world.value[k])
       if (eligible(k)) mine.push({ k, score: scoreOf(k) })
     }
     mine.sort((a, b) => b.score - a.score)
-    const bench: CandidateBench = {
-      starter: mine[0] ? { name: world.names[mine[0].k], score: mine[0].score, ca: world.ca[mine[0].k] } : null,
-      backup: mine[1] ? { name: world.names[mine[1].k], score: mine[1].score } : null
+    const bench: CandidateBench =
+      (analysis && slotFound ? slotBench(analysis, slotFound.slot.index) : null) ?? {
+        starter: mine[0] ? { name: world.names[mine[0].k], score: mine[0].score, ca: world.ca[mine[0].k] } : null,
+        backup: mine[1] ? { name: world.names[mine[1].k], score: mine[1].score } : null
+      }
+    const money = squadMoney(myWages, myValues)
+    const need = slotFound ? slotFound.need : null
+    const context: RecommendContext = {
+      starter: bench.starter ? { score: bench.starter.score, ca: bench.starter.ca } : null,
+      backup: bench.backup ? { score: bench.backup.score } : null,
+      today: world.gameDate ? { year: world.gameDate.year, day: world.gameDate.day } : null,
+      money,
+      need
+    }
+    const goalkeeper = role.positions.includes('GK')
+    const traitAt = (id: TraitId): number => ATTRIBUTE_INDEX.get(id)!
+    const traitIds = Object.keys(TRAIT_WEIGHTS) as TraitId[]
+    const inputOf = (k: number, score: number, age: number | null): RecommendInput => {
+      const traits = {} as Traits
+      for (const id of traitIds) traits[id] = shownValue(world.attributes[k * ATTRIBUTE_COUNT + traitAt(id)])
+      return {
+        category: query.category,
+        goalkeeper,
+        roleScore: score,
+        roleRating: ratingOf(k),
+        age,
+        ca: world.ca[k],
+        pa: world.pa[k],
+        value: world.value[k] || null,
+        wage: world.wage[k] || null,
+        contractEnd: world.contractEnd[k] || null,
+        squadStatus: world.squadStatus[k],
+        hasClub: world.teamIds[k] !== NO_TEAM,
+        traits
+      }
     }
 
     const search = query.search.trim().toLowerCase()
@@ -377,7 +433,7 @@ export class WorldService {
       expiresBy = (world.gameDate.year + Math.floor((days - 1) / 365)) * 1000 + ((days - 1) % 365) + 1
     }
     const counts = { ...empty }
-    const picked: Array<{ k: number; score: number; age: number | null; categories: CandidateCategory[] }> = []
+    const picked: Array<{ k: number; score: number; age: number | null; categories: CandidateCategory[]; total: number }> = []
     for (let k = 0; k < world.count; k++) {
       const name = world.names[k]
       if (!name || world.uids[k] === 0) continue
@@ -398,11 +454,11 @@ export class WorldService {
       counts.all++
       for (const category of categories) counts[category]++
       if (query.category !== 'all' && !categories.includes(query.category)) continue
-      picked.push({ k, score, age, categories })
+      // 줄 세우는 데는 설명 글이 필요 없어 점수만 구한다(풀이는 보여 줄 줄에만 붙인다)
+      picked.push({ k, score, age, categories, total: recommend(inputOf(k, score, age), context, false).total })
     }
-    // 유망주는 잠재 능력 순, 나머지는 역할 점수 순
-    if (query.category === 'prospect') picked.sort((a, b) => world.pa[b.k] - world.pa[a.k] || b.score - a.score)
-    else picked.sort((a, b) => b.score - a.score || world.ca[b.k] - world.ca[a.k])
+    // 추천 점수 순. 같으면 적합도, 현재 능력 순
+    picked.sort((a, b) => b.total - a.total || b.score - a.score || world.ca[b.k] - world.ca[a.k])
 
     const rows: CandidateRow[] = picked.slice(0, MAX_ROWS).map(({ k, score, age, categories }) => ({
       uid: world.uids[k],
@@ -410,6 +466,7 @@ export class WorldService {
       age,
       position: positionsLabel([...world.positions.subarray(k * POSITION_COUNT, (k + 1) * POSITION_COUNT)]),
       club: this.clubName(world, k),
+      clubUid: world.club[k] >= 0 ? world.clubs[world.club[k]].uid : null,
       ca: world.ca[k],
       pa: world.pa[k],
       value: world.value[k] || null,
@@ -420,9 +477,10 @@ export class WorldService {
       score,
       gap: bench.starter ? Math.round((score - bench.starter.score) * 10) / 10 : null,
       categories,
+      recommend: recommend(inputOf(k, score, age), context),
       attributes: [...world.attributes.subarray(k * ATTRIBUTE_COUNT, (k + 1) * ATTRIBUTE_COUNT)].map(shownValue)
     }))
-    return { ok: true, saveName, bench, counts, rows, matched: picked.length }
+    return { ok: true, saveName, bench, counts, rows, matched: picked.length, need, baseline: money }
   }
 
   /**
@@ -522,6 +580,48 @@ export class WorldService {
         live.found === 0
           ? '켜져 있는 게임에서 이 선수를 찾지 못해 세이브의 값을 보여 줍니다. 게임에서 이 세이브를 불러왔는지 확인해 주세요.'
           : '켜져 있는 게임에서 이 선수의 기록이 여러 개 나와 어느 것이 맞는지 알 수 없습니다. 세이브의 값을 보여 줍니다.'
+    }
+  }
+
+  /**
+   * 선수 정보 화면에 필요한 값 전부. 이름·나이·구단·계약은 세이브에서, 능력치는 에디터와 같은 규칙으로
+   * (게임이 켜져 있으면 게임의 지금 값, 아니면 세이브의 값) 읽는다. 몸값·주급은 게임이 보여 주는 금액을 먼저 쓴다.
+   */
+  async playerProfile(uid: number): Promise<PlayerProfile | null> {
+    const base = await this.editorPlayer(uid)
+    const world = this.loaded?.world
+    const k = this.indexOf(uid)
+    if (!base || !world || k < 0) return null
+    const shown = base.attributes.map(shownValue)
+    const market = (await this.market([uid])).players.find((player) => player.uid === uid)
+
+    const gameMoney = Boolean(market?.value || market?.wage)
+    const savedEnd = world.contractEnd[k] ? calendar({ year: Math.floor(world.contractEnd[k] / 1000), day: world.contractEnd[k] % 1000 }) : null
+    const born = world.birthYear[k] ? calendar({ year: world.birthYear[k], day: world.birthDay[k] || 1 }) : null
+    const goalkeeper = isGoalkeeper(base.positions)
+    return {
+      uid,
+      name: base.name,
+      age: base.age,
+      birth: born,
+      position: base.position,
+      positions: base.positions,
+      goalkeeper,
+      ca: base.ca,
+      pa: base.pa,
+      club: base.club || market?.club || '',
+      clubUid: world.club[k] >= 0 ? world.clubs[world.club[k]].uid : null,
+      nation: this.names.nation(world.nationId[k]) || market?.nation || '',
+      value: gameMoney ? (market?.value ?? '') : formatPounds(world.value[k]),
+      wage: gameMoney ? (market?.wage ?? '').replace(/^주급\s*/, '') : formatPounds(world.wage[k]),
+      moneyFrom: gameMoney ? 'game' : 'save',
+      contractEnd: market?.contractEnd ?? savedEnd,
+      squadStatus: SQUAD_STATUS_LABEL[world.squadStatus[k]] ?? '',
+      foot: footValues(shown),
+      attributes: visibleAttributes(shown, goalkeeper),
+      hidden: hiddenAttributes(shown),
+      source: base.source,
+      sourceNote: base.sourceNote
     }
   }
 

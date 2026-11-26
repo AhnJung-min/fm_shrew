@@ -1,9 +1,12 @@
 import { PencilRuler, Search } from 'lucide-react'
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { FIELDS } from '@shared/fields'
-import { ROLES } from '@shared/roles'
+import { formatPounds as pounds } from '@shared/playerView'
+import { recommendTier, TERM_HELP } from '@shared/recommend'
+import { ROLE_BY_ID, ROLES } from '@shared/roles'
+import { analyseTactic } from '@shared/tactic'
 import type { LinkStatus } from '@shared/game'
-import type { CellValue, ColumnInfo, PlayerRow, Settings } from '@shared/types'
+import type { CellValue, ColumnInfo, PlayerRow, Settings, SquadResult } from '@shared/types'
 import {
   CATEGORY_HELP,
   CATEGORY_LABEL,
@@ -15,8 +18,11 @@ import {
   type PlayerMarket
 } from '@shared/world'
 import { api } from '@/api'
+import { ClubLogo } from '@/components/ClubLogo'
 import { PlayerDrawer } from '@/components/PlayerDrawer'
 import { PlayerTable, sortRows, type SortState } from '@/components/PlayerTable'
+import { RecommendPanel } from '@/components/RecommendPanel'
+import '@/styles/targets.css'
 
 const CATEGORIES: CandidateCategory[] = ['all', 'starter', 'rotation', 'prospect', 'free']
 
@@ -26,11 +32,12 @@ const info = (header: string, field: string, label: string, numeric: boolean): C
 
 const NAME = info('이름', 'name', '이름', false)
 const KIND = info('유형', 'candidateKind', '이 선수가 드는 유형', false)
-const SCORE = info('역할 점수', 'roleScore', '고른 역할의 적합도 (0~100)', true)
-const GAP = info('주전 대비', 'starterGap', '내 팀에서 이 역할 점수가 가장 높은 선수와의 차이', true)
+const RECO: ColumnInfo = { ...info('추천 점수', 'recommend', TERM_HELP.recommend, true), width: 118 }
+const SCORE = info('적합도', 'roleScore', TERM_HELP.fit, true)
+const GAP = info('주전 대비', 'starterGap', '이 자리(역할) 내 주전과의 적합도 차이', true)
 const AGE = info('나이', 'age', '나이', true)
 const POSITION = info('포지션', 'position', '포지션', false)
-const CLUB = info('소속 구단', 'club', '소속 구단', false)
+const CLUB: ColumnInfo = { ...info('소속 구단', 'club', '소속 구단', false), width: 196 }
 const VALUE = info(
   '몸값',
   'value',
@@ -51,7 +58,7 @@ const ATTRIBUTE_COLUMNS: Array<{ column: ColumnInfo; index: number }> = FIELDS.f
 }))
 
 const COLUMNS: ColumnInfo[] = [
-  NAME, KIND, SCORE, GAP, AGE, POSITION, CLUB, VALUE, WAGE, CONTRACT, STATUS, NATION, ABILITY, POTENTIAL,
+  NAME, RECO, KIND, SCORE, GAP, AGE, POSITION, CLUB, VALUE, WAGE, CONTRACT, STATUS, NATION, ABILITY, POTENTIAL,
   ...ATTRIBUTE_COLUMNS.map((each) => each.column)
 ]
 
@@ -63,14 +70,6 @@ const MARKET_BATCH = 30
 const text = (raw: string): CellValue => ({ raw, num: null })
 const number = (value: number | null, raw?: string): CellValue => (value === null ? { raw: '', num: null } : { raw: raw ?? String(value), num: value })
 
-/** 파운드 금액을 짧게: £9.0M, £152K */
-function pounds(value: number): string {
-  if (value >= 10_000_000) return `£${Math.round(value / 1_000_000)}M`
-  if (value >= 1_000_000) return `£${(value / 1_000_000).toFixed(1)}M`
-  if (value >= 1_000) return `£${Math.round(value / 1_000)}K`
-  return `£${value}`
-}
-
 /** 정렬할 수가 있는 글자 칸. 수를 모르면 글자만 */
 const sortable = (raw: string | undefined, num: number | undefined): CellValue => ({ raw: raw ?? '', num: raw && num !== undefined ? num : null })
 
@@ -78,6 +77,7 @@ function toRow(row: CandidateRow, idx: number, market: PlayerMarket | undefined)
   const end = row.contractEnd ?? market?.contractEnd
   const cells: Record<string, CellValue> = {
     [NAME.header]: text(row.name),
+    [RECO.header]: number(row.recommend.total, String(Math.round(row.recommend.total))),
     [KIND.header]: text(row.categories.map((category) => CATEGORY_LABEL[category]).join(' · ')),
     [SCORE.header]: number(row.score, String(Math.round(row.score))),
     [GAP.header]: number(row.gap, row.gap === null ? '' : `${row.gap > 0 ? '+' : ''}${row.gap.toFixed(1)}`),
@@ -107,7 +107,7 @@ function toRow(row: CandidateRow, idx: number, market: PlayerMarket | undefined)
 
 function benchLine(result: CandidateResult): string {
   const { starter, backup } = result.bench
-  if (!starter) return '내 팀에 이 역할을 뛸 선수가 없어 비교 기준이 없습니다'
+  if (!starter) return '내 팀에 이 자리를 뛸 선수가 없어 비교 기준이 없습니다'
   const second = backup ? `, 두 번째 ${backup.name} ${Math.round(backup.score)}점` : ''
   return `내 팀 주전 ${starter.name} ${Math.round(starter.score)}점${second}`
 }
@@ -123,9 +123,16 @@ export function Targets(props: {
   settings: Settings
   onEdit: (uid: number) => void
   onGoHome: () => void
+  /** 스쿼드 전술판에서 고른 자리(있으면 그 자리로 연다) */
+  slotRequest?: { formation: string; index: number; at: number } | null
 }) {
-  const { dataKey, link, settings, onEdit, onGoHome } = props
+  const { dataKey, link, settings, onEdit, onGoHome, slotRequest } = props
   const [roleId, setRoleId] = useState('cb')
+  /** 보강할 자리: 번호, 직접 고르기(manual), 가장 급한 자리(auto) */
+  const [slotChoice, setSlotChoice] = useState<number | 'manual' | 'auto'>('auto')
+  /** 전술 분석에 쓰는 내 선수 표 */
+  const [squadSnap, setSquadSnap] = useState<SquadResult | null>(null)
+  const [squadLoaded, setSquadLoaded] = useState(false)
   const [category, setCategory] = useState<CandidateCategory>('starter')
   const [maxAge, setMaxAge] = useState('')
   const [onlyEligible, setOnlyEligible] = useState(true)
@@ -141,20 +148,68 @@ export function Targets(props: {
   const [marketNote, setMarketNote] = useState('')
   const asked = useRef(new Set<number>())
 
+  // 내 선수 표를 받아 전술 분석을 만든다(스쿼드 전술판과 같은 계산)
+  useEffect(() => {
+    let alive = true
+    void api.worldSquad().then((loaded) => {
+      if (!alive) return
+      setSquadSnap(loaded)
+      setSquadLoaded(true)
+    })
+    return () => {
+      alive = false
+    }
+  }, [dataKey])
+
+  const analysis = useMemo(
+    () =>
+      squadSnap?.ok
+        ? analyseTactic({
+            rows: squadSnap.rows,
+            columns: squadSnap.columns,
+            today: squadSnap.today,
+            formation: settings.formation,
+            slotRoles: settings.slotRoles,
+            roleWeights: settings.roleWeights
+          })
+        : null,
+    [squadSnap, settings.formation, settings.slotRoles, settings.roleWeights]
+  )
+
+  // 전술판에서 "이 자리 영입 후보 보기"로 왔으면 그 자리를 연다
+  useEffect(() => {
+    if (slotRequest && slotRequest.formation === settings.formation) setSlotChoice(slotRequest.index)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [slotRequest?.at])
+
+  // 처음에는 보강이 가장 급한 자리로 연다
+  const activeSlot = analysis
+    ? slotChoice === 'manual'
+      ? null
+      : slotChoice === 'auto'
+        ? analysis.byNeed[0]
+        : (analysis.slots[slotChoice] ?? analysis.byNeed[0])
+    : null
+  const queryRole = activeSlot ? activeSlot.slot.roleId : roleId
+  const slotIndex = activeSlot ? activeSlot.slot.index : -1
+
   const query: CandidateQuery = useMemo(
     () => ({
-      roleId,
+      roleId: queryRole,
       category,
       maxAge: Number(maxAge) || null,
       onlyEligible,
       includeUnknownClub,
       search,
-      expiringWithinMonths: expiringSoon ? EXPIRING_MONTHS : null
+      expiringWithinMonths: expiringSoon ? EXPIRING_MONTHS : null,
+      slot: slotIndex >= 0 ? { formation: settings.formation, slotRoles: settings.slotRoles, index: slotIndex } : null
     }),
-    [roleId, category, maxAge, onlyEligible, includeUnknownClub, search, expiringSoon]
+    [queryRole, category, maxAge, onlyEligible, includeUnknownClub, search, expiringSoon, slotIndex, settings.formation, settings.slotRoles]
   )
 
   useEffect(() => {
+    // 전술 분석을 받기 전에는 묻지 않는다(자리가 정해지기 전의 결과가 잠깐 비치는 것을 막는다)
+    if (!squadLoaded) return
     let alive = true
     setLoading(true)
     // 글자를 치는 동안에는 기다렸다가 한 번만 묻는다
@@ -171,7 +226,7 @@ export function Targets(props: {
       window.clearTimeout(timer)
     }
     // 역할 가중치를 고치면 점수가 달라지므로 다시 묻는다
-  }, [query, settings.roleWeights, dataKey])
+  }, [query, settings.roleWeights, dataKey, squadLoaded])
 
   // 게임이 바뀌면(다시 켬, 다른 세이브) 받아 둔 것을 버린다
   const marketKey = `${link.game.connected}|${link.game.pluginVersion}|${link.game.loaded}|${link.game.team}|${link.data.save?.path ?? ''}`
@@ -219,6 +274,34 @@ export function Targets(props: {
   const sorted = useMemo(() => sortRows(rows, sort), [rows, sort])
   const selected = selectedIdx === null ? null : (rows.find((row) => row.idx === selectedIdx) ?? null)
   const selectedUid = selectedIdx === null ? null : (result?.rows[selectedIdx]?.uid ?? null)
+  const selectedCandidate = selectedIdx === null ? null : (result?.rows[selectedIdx] ?? null)
+
+  /** 추천 점수 칸(숫자와 막대)과 구단 엠블럼 칸을 직접 그린다 */
+  const renderCell = (col: ColumnInfo, row: PlayerRow): ReactNode | null => {
+    const candidate = result?.rows[row.idx]
+    if (!candidate) return null
+    if (col.field === 'recommend') {
+      const tier = recommendTier(candidate.recommend.total)
+      return (
+        <span className="reco-cell" title={`${tier.label}(${candidate.recommend.total}점). ${TERM_HELP.recommend}`}>
+          <span className="reco-num num">{Math.round(candidate.recommend.total)}</span>
+          <span className={`reco-bar ${tier.id}`} aria-hidden="true">
+            <i style={{ width: `${candidate.recommend.total}%` }} />
+          </span>
+        </span>
+      )
+    }
+    if (col.field === 'club' && candidate.clubUid) {
+      const name = row.cells[col.header]?.raw ?? candidate.club
+      return (
+        <span className="club-cell" title={name}>
+          <ClubLogo uid={candidate.clubUid} size={18} />
+          <span>{name}</span>
+        </span>
+      )
+    }
+    return null
+  }
 
   if (result && !result.ok) {
     return (
@@ -254,17 +337,59 @@ export function Targets(props: {
         {result?.ok && <span className="page-sub num">{benchLine(result)}</span>}
       </header>
 
-      <div className="toolbar">
-        <label className="inline-field">
-          <span className="muted">역할</span>
-          <select className="field" value={roleId} onChange={(event) => setRoleId(event.target.value)}>
-            {ROLES.map((role) => (
-              <option key={role.id} value={role.id}>
-                {role.label}
-              </option>
+      {analysis && (
+        <div className="slot-bar">
+          <div className="slot-bar-head">
+            <strong>보강할 자리</strong>
+            <span className="muted">
+              {analysis.formation.label} 전술에서 보강 필요도가 높은 자리부터 늘어놓았습니다. 자리를 고르면 그 자리의 주전과 두 번째 선수를 기준으로 후보를 찾습니다.
+            </span>
+          </div>
+          <div className="slot-picker" role="group" aria-label="보강할 자리">
+            {analysis.byNeed.map((each) => (
+              <button
+                key={each.slot.index}
+                className={`slot-chip ${each.level}`}
+                aria-pressed={activeSlot?.slot.index === each.slot.index}
+                title={`${each.label}(${each.roleLabel}). ${TERM_HELP.need} ${each.reason}`}
+                onClick={() => setSlotChoice(each.slot.index)}
+              >
+                <span className="slot-chip-name">{each.label}</span>
+                <span className="slot-chip-need">
+                  보강 필요도 <b className="num">{Math.round(each.need)}</b> <em>{each.levelLabel}</em>
+                </span>
+              </button>
             ))}
-          </select>
-        </label>
+            <button
+              className="slot-chip manual"
+              aria-pressed={activeSlot === null}
+              title="전술과 상관없이 아무 역할이나 골라 찾습니다."
+              onClick={() => setSlotChoice('manual')}
+            >
+              직접 고르기
+            </button>
+          </div>
+          {activeSlot && (
+            <p className="slot-line">
+              {activeSlot.label}({activeSlot.roleLabel}): {activeSlot.reason} 역할은 스쿼드 전술판에서 바꿀 수 있습니다.
+            </p>
+          )}
+        </div>
+      )}
+      <div className="toolbar">
+        {activeSlot === null && (
+          <label className="inline-field">
+            <span className="muted">역할</span>
+            <select className="field" value={roleId} onChange={(event) => setRoleId(event.target.value)}>
+              {ROLES.map((role) => (
+                <option key={role.id} value={role.id}>
+                  {role.label}
+                </option>
+              ))}
+            </select>
+          </label>
+        )}
+        {activeSlot && <span className="page-sub">역할: {ROLE_BY_ID[activeSlot.slot.roleId]?.label}</span>}
         <div className="chips" role="group" aria-label="유형">
           {CATEGORIES.map((each) => (
             <button
@@ -307,7 +432,7 @@ export function Targets(props: {
       <div className="toolbar">
         <label className="inline-field">
           <input type="checkbox" checked={onlyEligible} onChange={(event) => setOnlyEligible(event.target.checked)} />
-          <span>이 역할의 자리에서 뛸 수 있는 선수만</span>
+          <span>{activeSlot ? '이 자리(포지션)를 뛸 수 있는 선수만' : '이 역할의 자리에서 뛸 수 있는 선수만'}</span>
         </label>
         <label className="inline-field" title="세이브에서 소속 구단을 알아내지 못한 선수들입니다. 여자 팀 선수가 섞여 있을 수 있습니다.">
           <input type="checkbox" checked={includeUnknownClub} onChange={(event) => setIncludeUnknownClub(event.target.checked)} />
@@ -326,6 +451,10 @@ export function Targets(props: {
               : `${CATEGORY_HELP[category]}: ${result.matched.toLocaleString()}명`)}
         </span>
       </div>
+
+      {result?.ok && (
+        <RecommendPanel row={selectedCandidate} category={category} baseline={result.baseline ?? null} need={result.need ?? null} />
+      )}
 
       <div className="table-wrap">
         {result === null || (loading && rows.length === 0) ? (
@@ -346,12 +475,14 @@ export function Targets(props: {
             onSort={setSort}
             selectedIdx={selectedIdx}
             onSelect={(row) => setSelectedIdx(selectedIdx === row.idx ? null : row.idx)}
+            renderCell={renderCell}
           />
         )}
         {selected && (
           <PlayerDrawer
             columns={COLUMNS}
             row={selected}
+            uid={selectedUid}
             onClose={() => setSelectedIdx(null)}
             action={
               selectedUid !== null && (

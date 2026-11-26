@@ -1,0 +1,671 @@
+/*
+  선수 정보 패널(PlayerDrawer)과 에디터의 선수 카드가 함께 쓰는 모양.
+  색은 app.css의 토큰만 쓰고, 능력치 칩의 네 단계(.attr-chip.a1~a4)도 그대로 가져다 쓴다.
+*/
+
+.player-drawer,
+.ed-card {
+  --pl-technical: #63d69d;
+  --pl-goalkeeping: #63d69d;
+  --pl-mental: #7fb8f5;
+  --pl-physical: #f2b15a;
+  container-type: inline-size;
+}
+
+/* ---------- 오른쪽 패널 ---------- */
+
+.drawer.player-drawer {
+  width: 460px;
+}
+.player-drawer .drawer-head h2 {
+  font-size: 22px;
+}
+.pl-body {
+  display: grid;
+  gap: 22px;
+  align-content: start;
+  padding-bottom: 28px;
+}
+.pl-wait {
+  font-size: 14px;
+}
+.pl-source {
+  padding: 8px 12px;
+  border-left: 3px solid var(--warn);
+  border-radius: var(--radius-s);
+  background: var(--raised);
+  color: var(--text-2);
+  font-size: 13.5px;
+}
+.pl-foot {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 12px 18px;
+  border-top: 1px solid var(--line);
+  background: var(--surface);
+}
+.pl-h {
+  margin: 0 0 10px;
+  color: var(--text);
+  font-size: 15px;
+  font-weight: 700;
+}
+.pl-note {
+  margin-top: 8px;
+  color: var(--text-3);
+  font-size: 12.5px;
+  line-height: 1.5;
+}
+.pl-note.first {
+  margin: -4px 0 10px;
+}
+.pl-orig {
+  display: block;
+  color: var(--accent);
+  font-size: 11.5px;
+  font-weight: 600;
+  line-height: 1.2;
+}
+
+/* ---------- 현재 능력 / 잠재 능력 ---------- */
+
+.pl-ability,
+.ed-ability {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+.pl-score {
+  display: grid;
+  gap: 4px;
+  padding: 12px 14px 14px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-m);
+  background: var(--raised);
+  align-content: start;
+}
+.pl-score-label {
+  color: var(--text-2);
+  font-size: 13.5px;
+  font-weight: 600;
+}
+.pl-score-num {
+  font-size: 46px;
+  font-weight: 800;
+  line-height: 1.05;
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
+}
+.pl-score.pot .pl-score-num {
+  color: var(--accent);
+}
+.pl-bar {
+  display: block;
+  height: 6px;
+  margin-top: 6px;
+  border-radius: 3px;
+  background: var(--bg);
+  overflow: hidden;
+}
+.pl-bar i {
+  display: block;
+  height: 100%;
+  border-radius: 3px;
+  background: var(--text-2);
+}
+.pl-score.pot .pl-bar i {
+  background: var(--accent);
+}
+.pl-scale {
+  grid-column: 1 / -1;
+  color: var(--text-3);
+  font-size: 12.5px;
+}
+.pl-room {
+  grid-column: 1 / -1;
+  justify-self: start;
+  padding: 3px 12px;
+  border: 1.5px solid var(--good);
+  border-radius: 999px;
+  color: var(--good);
+  font-size: 14px;
+  font-weight: 700;
+}
+.ed-ability + .pl-room {
+  margin-top: 10px;
+}
+
+/* ---------- 기본 정보 ---------- */
+
+.pl-info {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1px;
+  margin: 0;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-m);
+  background: var(--line);
+  overflow: hidden;
+}
+.pl-info > div {
+  display: grid;
+  gap: 1px;
+  padding: 8px 12px;
+  background: var(--surface);
+  min-width: 0;
+}
+.pl-info dt {
+  color: var(--text-3);
+  font-size: 12.5px;
+}
+.pl-info dd {
+  margin: 0;
+  color: var(--text);
+  font-size: 15px;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+/* ---------- 능력치 세 줄 ---------- */
+
+.pl-cols {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
+}
+.pl-col {
+  min-width: 0;
+  padding: 10px 10px 8px;
+  border: 1px solid var(--line);
+  border-top: 3px solid var(--pl-technical);
+  border-radius: var(--radius-s);
+  background: var(--raised);
+}
+.pl-col.goalkeeping {
+  border-top-color: var(--pl-goalkeeping);
+}
+.pl-col.mental {
+  border-top-color: var(--pl-mental);
+}
+.pl-col.physical {
+  border-top-color: var(--pl-physical);
+}
+.pl-col h4 {
+  margin: 0 0 6px;
+  color: var(--text);
+  font-size: 14px;
+  font-weight: 700;
+}
+.pl-col ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.pl-col li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  min-height: 32px;
+  color: var(--text-2);
+  font-size: 13.5px;
+  line-height: 1.25;
+}
+.pl-col li > label {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  width: 100%;
+}
+.pl-col li.changed {
+  color: var(--text);
+}
+.pl-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 16px;
+  margin-top: 10px;
+  color: var(--text-3);
+  font-size: 12.5px;
+}
+.pl-legend .attr-chip {
+  height: 22px;
+  min-width: 0;
+  margin-right: 2px;
+  font-size: 12px;
+}
+
+/* ---------- 숨은 능력치 ---------- */
+
+.pl-hidden {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.pl-hidden li,
+.pl-hidden li > label {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.pl-hidden li {
+  padding: 8px 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-s);
+  background: var(--raised);
+}
+.pl-hidden li > label {
+  width: 100%;
+}
+.pl-hidden li div {
+  display: grid;
+  gap: 1px;
+  min-width: 0;
+}
+.pl-hidden li b {
+  font-size: 14px;
+}
+.pl-hidden li .faint {
+  font-size: 12.5px;
+}
+.pl-hidden-val {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex: none;
+}
+.pl-hidden-word {
+  min-width: 3.4em;
+  color: var(--text-2);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+/* ---------- 포지션 그림 ---------- */
+
+.posmap {
+  display: grid;
+  grid-template-columns: minmax(150px, 200px) minmax(0, 1fr);
+  gap: 16px;
+  align-items: start;
+}
+.posmap-pitch {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+.pm-grass {
+  fill: #12261d;
+  stroke: var(--line-strong);
+  stroke-width: 1.5;
+}
+.pm-line {
+  stroke: var(--line-strong);
+  stroke-width: 1.2;
+  fill: none;
+}
+.pm-spot circle {
+  stroke-width: 2;
+}
+.pm-spot text {
+  text-anchor: middle;
+  pointer-events: none;
+  font-family: var(--font);
+}
+.pm-code {
+  font-size: 9.5px;
+  font-weight: 700;
+}
+.pm-rate {
+  font-size: 12px;
+  font-weight: 800;
+}
+.pm-spot.main circle {
+  fill: var(--accent);
+  stroke: #fff;
+  stroke-width: 3;
+}
+.pm-spot.main text {
+  fill: var(--accent-ink);
+}
+.pm-spot.good circle {
+  fill: var(--good);
+  stroke: var(--good);
+}
+.pm-spot.good text {
+  fill: #07271a;
+}
+.pm-spot.fair circle {
+  fill: #1f4a39;
+  stroke: var(--good);
+}
+.pm-spot.fair text {
+  fill: #d8f5e6;
+}
+.pm-spot.poor circle {
+  fill: var(--bg);
+  stroke: var(--line-strong);
+  stroke-dasharray: 3 3;
+}
+.pm-spot.poor text {
+  fill: var(--text-3);
+}
+.pm-spot.changed circle {
+  stroke: var(--accent);
+  stroke-width: 3.5;
+  stroke-dasharray: none;
+}
+.pm-spot {
+  cursor: default;
+}
+.posmap-side h4 {
+  margin: 12px 0 6px;
+  color: var(--text-2);
+  font-size: 13px;
+  font-weight: 700;
+}
+.pm-legend {
+  display: grid;
+  gap: 5px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: 13px;
+}
+.pm-legend li {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+}
+.pm-swatch {
+  flex: none;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  border: 2px solid var(--line-strong);
+}
+.pm-swatch.main {
+  background: var(--accent);
+  border-color: #fff;
+}
+.pm-swatch.good {
+  background: var(--good);
+  border-color: var(--good);
+}
+.pm-swatch.fair {
+  background: #1f4a39;
+  border-color: var(--good);
+}
+.pm-swatch.poor {
+  background: var(--bg);
+  border-style: dashed;
+}
+.pm-list {
+  display: grid;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: 14px;
+}
+.pm-list li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.pm-tag {
+  flex: none;
+  padding: 1px 8px;
+  border-radius: 999px;
+  font-size: 12.5px;
+  font-weight: 700;
+}
+.pm-tag.main {
+  background: var(--accent);
+  color: var(--accent-ink);
+}
+.pm-tag.good {
+  background: rgba(99, 214, 157, 0.2);
+  color: var(--good);
+}
+.pm-tag.fair {
+  background: var(--a2-bg);
+  color: var(--text);
+}
+.pm-list.editing {
+  gap: 2px;
+}
+.pm-list.editing li {
+  min-height: 34px;
+  color: var(--text-2);
+}
+.pm-list.editing li.changed {
+  color: var(--text);
+}
+
+/* ---------- 에디터의 숫자 칸 ---------- */
+
+.pl-input {
+  width: 56px;
+  height: 30px;
+  padding: 0 6px;
+  border: 1px solid var(--line-strong);
+  border-radius: 6px;
+  background: var(--bg);
+  color: var(--text);
+  text-align: center;
+  font-size: 15px;
+  font-variant-numeric: tabular-nums;
+  -moz-appearance: textfield;
+  appearance: textfield;
+}
+.pl-input::-webkit-inner-spin-button,
+.pl-input::-webkit-outer-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+.pl-input.a1 {
+  background: var(--a1-bg);
+  color: var(--a1-ink);
+  font-weight: 500;
+}
+.pl-input.a2 {
+  background: var(--a2-bg);
+  color: var(--a2-ink);
+  font-weight: 500;
+}
+.pl-input.a3 {
+  background: var(--a3-bg);
+  color: var(--a3-ink);
+  font-weight: 650;
+}
+.pl-input.a4 {
+  background: var(--a4-bg);
+  color: var(--a4-ink);
+  font-weight: 800;
+}
+.pl-input.changed {
+  border: 2px solid var(--accent);
+  font-weight: 800;
+}
+.pl-input.big {
+  width: 100%;
+  height: 58px;
+  border-radius: var(--radius-s);
+  font-size: 34px;
+  font-weight: 800;
+  text-align: left;
+  padding: 0 10px;
+}
+.pl-input:disabled {
+  opacity: 0.7;
+  cursor: not-allowed;
+}
+
+/* ---------- 에디터 카드 ---------- */
+
+.ed-card {
+  display: grid;
+  gap: 18px;
+  max-width: 1040px;
+  margin: 0 auto;
+}
+.ed-hero {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+.ed-portrait {
+  border-width: 3px;
+  background: radial-gradient(circle at 50% 30%, var(--hover), var(--raised));
+}
+.ed-name {
+  flex: 1;
+  min-width: 0;
+}
+.ed-name h2 {
+  font-size: 30px;
+  font-weight: 800;
+  letter-spacing: -0.01em;
+}
+.ed-top,
+.ed-bottom {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 18px;
+  align-items: start;
+}
+.ed-panel {
+  min-width: 0;
+  padding: 16px 18px 18px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-m);
+  background: var(--surface);
+}
+.ed-more {
+  margin-top: 12px;
+  color: var(--text-2);
+  font-size: 13.5px;
+}
+.ed-more summary {
+  cursor: pointer;
+  margin-bottom: 10px;
+}
+.ed-feet {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 28px;
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px solid var(--line);
+}
+.ed-feet h4 {
+  margin: 0;
+  font-size: 14px;
+}
+.ed-feet label {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--text-2);
+  font-size: 13.5px;
+}
+.ed-feet label.changed {
+  color: var(--text);
+}
+.ed-feet label > span {
+  display: grid;
+}
+.ed-card .radar {
+  margin-top: 4px;
+}
+
+/* 패널이 좁으면 능력치 세 줄을 위아래로 쌓는다 */
+@container (max-width: 420px) {
+  .pl-cols {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .posmap {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .posmap-pitch {
+    max-width: 240px;
+    margin: 0 auto;
+  }
+  .pl-ability,
+  .ed-ability {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+@container (max-width: 760px) {
+  .ed-top,
+  .ed-bottom {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+@container (max-width: 540px) {
+  .pl-cols.editing {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+@media (max-width: 860px) {
+  .drawer.player-drawer {
+    width: auto;
+  }
+}
+
+/* ---------- 선수 얼굴(사진이 없으면 머리글자) ---------- */
+
+.face {
+  flex: none;
+  display: inline-grid;
+  place-items: center;
+  width: var(--face, 48px);
+  height: var(--face, 48px);
+  border: 2px solid var(--line-strong);
+  border-radius: 50%;
+  background: var(--raised);
+  color: var(--accent);
+  overflow: hidden;
+}
+.face b {
+  font-size: calc(var(--face, 48px) * 0.42);
+  font-weight: 800;
+  line-height: 1;
+}
+.face img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: center top;
+}
+.face.small {
+  border-width: 1px;
+}
+.drawer-head .face {
+  margin-top: 2px;
+}
+.editor-player-face {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+/* 구단 엠블럼을 이름 앞에 붙일 때 */
+.with-logo {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}

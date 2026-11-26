@@ -18,6 +18,7 @@ const api: Api = {
     return () => ipcRenderer.removeListener('link:changed', listener)
   },
   worldSquad: () => ipcRenderer.invoke('world:squad'),
+  worldSeason: () => ipcRenderer.invoke('world:season'),
 
   talkStatus: () => ipcRenderer.invoke('talk:status'),
   talkSetKey: (key) => ipcRenderer.invoke('talk:setKey', key),
@@ -25,6 +26,9 @@ const api: Api = {
 
   worldCandidates: (query) => ipcRenderer.invoke('world:candidates', query),
   worldMarket: (uids) => ipcRenderer.invoke('world:market', uids),
+  worldProfile: (uid) => ipcRenderer.invoke('world:profile', uid),
+  faceUrl: (uid) => `fmface://face/${Math.trunc(Number(uid))}`,
+  clubLogoUrl: (uid) => `fmface://club/${Math.trunc(Number(uid))}`,
   editorList: (search) => ipcRenderer.invoke('editor:list', search),
   editorPlayer: (uid) => ipcRenderer.invoke('editor:player', uid),
   editorApply: (edits) => ipcRenderer.invoke('editor:apply', edits),

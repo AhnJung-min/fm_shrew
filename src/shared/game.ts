@@ -54,6 +54,8 @@ export interface DataStatus {
   hasTeam: boolean
   /** 내 구단 이름(찾았을 때) */
   club: string
+  /** 내 구단의 고유 번호(엠블럼). 모르면 null */
+  clubUid: number | null
   /**
    * 능력치 값의 출처.
    * game: 켜져 있는 게임의 지금 값, save: 세이브에 저장된 값
@@ -90,6 +92,7 @@ export const NO_DATA: DataStatus = {
   players: 0,
   hasTeam: false,
   club: '',
+  clubUid: null,
   source: 'save',
   liveAt: null,
   liveMatched: 0,

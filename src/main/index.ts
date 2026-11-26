@@ -1,10 +1,13 @@
 import { existsSync, mkdirSync, writeFileSync } from 'node:fs'
 import { basename, join } from 'node:path'
-import { app, BrowserWindow, ipcMain, Menu, nativeImage, shell, Tray } from 'electron'
+import { pathToFileURL } from 'node:url'
+import { app, BrowserWindow, ipcMain, Menu, nativeImage, net, protocol, shell, Tray } from 'electron'
 import type { AppStatus, Settings } from '@shared/types'
 import type { CandidateQuery, EditorEdit } from '@shared/world'
 import { BackupManager } from './backup'
 import { GameLink } from './gameLink'
+import { FaceFinder, imageRequestFrom, LogoFinder } from './graphics'
+import { SeasonService } from './seasonService'
 import { SettingsStore } from './settings'
 import { TalkController } from './talk/controller'
 import { KeyStore } from './talk/keyStore'
@@ -28,6 +31,9 @@ try {
   // 파일이 없으면 앱 설정에 저장한 키를 쓴다
 }
 
+// 선수 얼굴 사진을 화면에 주는 주소(fmface://face/<선수 번호>). 앱이 준비되기 전에 등록해야 한다
+protocol.registerSchemesAsPrivileged([{ scheme: 'fmface', privileges: { standard: true, secure: true, supportFetchAPI: true } }])
+
 let mainWindow: BrowserWindow | null = null
 let settings: SettingsStore
 let saveWatcher: SaveWatcher
@@ -35,6 +41,7 @@ let talk: TalkController
 let keys: KeyStore
 let backups: BackupManager
 let world: WorldService
+let season: SeasonService
 let link: GameLink
 let tray: Tray | null = null
 /** 정말 끄는 중인지(트레이 메뉴의 종료, 시스템 종료). 아니면 창을 닫아도 앱은 남는다 */
@@ -163,6 +170,7 @@ function registerIpc(): void {
   })
   ipcMain.handle('link:refresh', (_event, rescan: boolean) => link.refresh(rescan === true))
   ipcMain.handle('world:squad', () => world.squad())
+  ipcMain.handle('world:season', () => season.season())
 
   ipcMain.handle('backup:list', () => backups.list())
   ipcMain.handle('backup:now', async () => {
@@ -188,6 +196,7 @@ function registerIpc(): void {
 
   ipcMain.handle('world:candidates', (_event, query: CandidateQuery) => world.candidates(query))
   ipcMain.handle('world:market', (_event, uids: number[]) => world.market(Array.isArray(uids) ? uids.map(Number) : []))
+  ipcMain.handle('world:profile', (_event, uid: number) => world.playerProfile(Number(uid)))
   ipcMain.handle('editor:list', (_event, search: string) => world.editorList(String(search ?? '')))
   ipcMain.handle('editor:player', (_event, uid: number) => world.editorPlayer(Number(uid)))
   ipcMain.handle('editor:apply', (_event, edits: EditorEdit[]) => world.applyEdits(edits))
@@ -230,6 +239,18 @@ if (!SMOKE_OUT && !app.requestSingleInstanceLock()) {
 }
 
 app.whenReady().then(async () => {
+  // 사용자가 설치해 둔 얼굴 사진(페이스팩)과 구단 엠블럼. 파일을 읽기만 하고, 번호가 숫자일 때만 찾는다
+  const graphicsDir = join(app.getPath('documents'), 'Sports Interactive', 'Football Manager 26', 'graphics')
+  const finders = { face: new FaceFinder(graphicsDir), club: new LogoFinder(graphicsDir) }
+  protocol.handle('fmface', (request) => {
+    const wanted = imageRequestFrom(request.url)
+    const file = wanted === null ? null : finders[wanted.kind].find(wanted.uid)
+    return file ? net.fetch(pathToFileURL(file).toString()) : new Response(null, { status: 404 })
+  })
+  setTimeout(() => {
+    finders.face.folders()
+    finders.club.folders()
+  }, 1500)
   const dataDir = app.getPath('userData')
   mkdirSync(dataDir, { recursive: true })
   settings = new SettingsStore(join(dataDir, 'settings.json'), app.getPath('documents'), SAVE_DIR_OVERRIDE)
@@ -247,6 +268,11 @@ app.whenReady().then(async () => {
       }
     },
     roleWeights: () => settings.get().roleWeights,
+    namesDir: join(dataDir, 'names')
+  })
+  season = new SeasonService({
+    // 적용해 둔 세이브의 자료를 그대로 쓴다. 파일이 바뀌면 GameLink가 다시 읽고, 그때 자료 객체가 바뀌어 순위·일정도 다시 읽힌다
+    current: () => (world.path && world.world ? { path: world.path, world: world.world } : null),
     namesDir: join(dataDir, 'names')
   })
   link = new GameLink(

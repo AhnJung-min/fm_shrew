@@ -1,0 +1,245 @@
+/* 홈 화면의 경기 센터와 리그 순위 */
+
+.season-panel {
+  max-width: 860px;
+  margin-top: 16px;
+}
+.season-panel .panel-body {
+  display: grid;
+  gap: 18px;
+}
+
+/* 다음 경기 */
+.next-match {
+  display: grid;
+  gap: 6px;
+  padding: 16px 18px;
+  border: 1px solid var(--accent);
+  border-radius: var(--radius-m);
+  background: var(--accent-soft);
+}
+.next-label {
+  color: var(--accent);
+  font-size: 13px;
+  font-weight: 700;
+}
+.next-main {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+.next-opponent {
+  font-size: 22px;
+  font-weight: 800;
+  line-height: 1.25;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.next-when {
+  color: var(--text);
+  font-size: 15px;
+}
+
+/* 홈 · 원정 */
+.venue {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 22px;
+  min-width: 42px;
+  padding: 0 8px;
+  border-radius: 4px;
+  font-size: 13px;
+  font-weight: 700;
+}
+.venue.home {
+  background: var(--raised);
+  color: var(--text);
+  border: 1px solid var(--line-strong);
+}
+.venue.away {
+  background: transparent;
+  color: var(--text-2);
+  border: 1px dashed var(--line-strong);
+}
+
+/* 경기 목록 */
+.match-block h3 {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-bottom: 8px;
+  font-size: 15px;
+  font-weight: 700;
+}
+.match-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 4px;
+}
+.match-row {
+  display: grid;
+  grid-template-columns: 32px 128px 48px minmax(0, 1fr) 76px 120px;
+  align-items: center;
+  gap: 10px;
+  min-height: 40px;
+  padding: 0 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-s);
+}
+.match-row.upcoming {
+  grid-template-columns: 128px 48px 48px minmax(0, 1fr) 120px;
+}
+.match-date {
+  color: var(--text-2);
+  font-size: 14px;
+  white-space: nowrap;
+}
+.match-time {
+  color: var(--text-2);
+  font-size: 14px;
+}
+.match-opponent {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 600;
+}
+.match-score {
+  text-align: center;
+  font-size: 16px;
+}
+.match-comp {
+  color: var(--text-3);
+  font-size: 13px;
+  text-align: right;
+  white-space: nowrap;
+}
+.match-note {
+  margin-top: 8px;
+  font-size: 12.5px;
+}
+
+/* 승·무·패 배지: 색과 함께 글자(승, 무, 패)를 적는다 */
+.form-badge {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  border: 1px solid transparent;
+  font-size: 14px;
+  font-weight: 800;
+}
+.form-badge.win {
+  background: rgba(99, 214, 157, 0.18);
+  border-color: rgba(99, 214, 157, 0.5);
+  color: var(--good);
+}
+.form-badge.draw {
+  background: rgba(207, 216, 210, 0.1);
+  border-color: var(--line-strong);
+  color: var(--text-2);
+}
+.form-badge.loss {
+  background: rgba(242, 134, 122, 0.17);
+  border-color: rgba(242, 134, 122, 0.5);
+  color: var(--bad);
+}
+.form-badge.none {
+  background: transparent;
+  border-color: var(--line-strong);
+  color: var(--text-3);
+}
+.form-row {
+  display: inline-flex;
+  gap: 4px;
+}
+
+/* 리그 순위표 */
+.table-scroll {
+  overflow-x: auto;
+}
+.league-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 14px;
+}
+.league-table th,
+.league-table td {
+  height: var(--row-h);
+  padding: 0 8px;
+  border-bottom: 1px solid var(--line);
+  text-align: right;
+  white-space: nowrap;
+}
+.league-table thead th {
+  height: 34px;
+  color: var(--text-2);
+  font-size: 13px;
+  font-weight: 600;
+  border-bottom-color: var(--line-strong);
+}
+.league-table .pos {
+  width: 52px;
+  text-align: center;
+}
+.league-table th.team,
+.league-table td.team {
+  text-align: left;
+  font-weight: 600;
+  width: 100%;
+}
+.league-table tbody th.team {
+  display: table-cell;
+}
+.league-table .team .tag {
+  margin-left: 8px;
+  vertical-align: middle;
+}
+.league-table .points {
+  color: var(--text);
+  font-weight: 800;
+}
+.league-table tbody tr:nth-child(even) {
+  background: var(--zebra);
+}
+.league-table tbody tr.mine {
+  background: var(--accent-soft);
+  box-shadow: inset 3px 0 0 var(--accent);
+}
+.league-table tbody tr.mine .pos,
+.league-table tbody tr.mine .points {
+  color: var(--accent);
+}
+
+@media (max-width: 760px) {
+  .match-row,
+  .match-row.upcoming {
+    grid-template-columns: 32px minmax(0, 1fr) 48px;
+    grid-auto-rows: auto;
+    padding: 8px 12px;
+  }
+  .match-row .match-date,
+  .match-row .match-comp,
+  .match-row .match-time {
+    grid-column: 1 / -1;
+    text-align: left;
+  }
+}
+
+/* 구단 엠블럼은 이름 앞에 같은 줄로 놓는다 */
+.match-opponent .club-logo,
+.league-table .team .club-logo {
+  display: inline-block;
+  vertical-align: middle;
+  margin-right: 8px;
+}

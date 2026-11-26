@@ -1,3 +1,4 @@
+import { ClubLogo } from '@/components/ClubLogo'
 import {
   Archive,
   House,
@@ -59,6 +60,12 @@ export function Sidebar(props: { route: Route; onNavigate: (route: Route) => voi
         <BrandMark />
         <span>FM 보좌관</span>
       </div>
+      {data.club && (
+        <div className="sidebar-club" title="적용한 세이브의 내 구단">
+          <ClubLogo uid={data.clubUid} size={28} />
+          <span>{data.club}</span>
+        </div>
+      )}
 
       <nav className="nav" aria-label="화면">
         {ENTRIES.map((entry) => {

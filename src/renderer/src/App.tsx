@@ -36,6 +36,8 @@ export function App() {
   const [compare, setCompare] = useState<number[]>([])
   /** 영입 후보에서 고른 선수를 에디터로 넘길 때 */
   const [editorUid, setEditorUid] = useState<number | null>(null)
+  /** 스쿼드 전술판에서 "이 자리 영입 후보 보기"를 눌렀을 때 영입 후보가 열 자리 */
+  const [targetSlot, setTargetSlot] = useState<{ formation: string; index: number; at: number } | null>(null)
 
   useEffect(() => {
     void api.getSettings().then(setSettings)
@@ -88,6 +90,10 @@ export function App() {
             compare={compare}
             onToggleCompare={toggleCompare}
             onOpenCompare={() => setRoute('compare')}
+            onFindTargets={(slot) => {
+              setTargetSlot({ ...slot, at: Date.now() })
+              setRoute('targets')
+            }}
           />
         )}
         {route === 'targets' && (
@@ -95,6 +101,7 @@ export function App() {
             dataKey={dataKey}
             link={link}
             settings={settings}
+            slotRequest={targetSlot}
             onGoHome={() => setRoute('home')}
             onEdit={(uid) => {
               setEditorUid(uid)

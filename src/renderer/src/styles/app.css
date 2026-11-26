@@ -135,6 +135,25 @@ textarea {
   color: var(--accent);
 }
 
+.sidebar-club {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: -6px 0 14px;
+  padding: 8px 10px;
+  border-radius: 10px;
+  background: var(--raised);
+  font-weight: 600;
+  font-size: 14px;
+}
+
+.sidebar-club span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .nav {
   display: flex;
   flex-direction: column;

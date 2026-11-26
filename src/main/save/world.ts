@@ -34,6 +34,12 @@ const VALUE_PLACEHOLDER = 300_000_000
 const WOMEN_CLUB_UID = 2_000_000_000
 
 export interface ClubInfo {
+  /**
+   * 구단 고유 번호(게임 데이터베이스의 Unique ID). 그래픽 팩의 엠블럼 파일 이름(<번호>_club.png)이 이 번호를 쓴다.
+   * 사람 기록과 같이, 구단 기록 머리의 번호는 앞 구단의 것이고 자기 번호는 다음 구단 기록의 머리에 있다.
+   * 엠블럼 그림과 맞춰 확인했다. 다음 기록을 모르는 마지막 구단은 0.
+   */
+  uid: number
   name: string
   short: string
   women: boolean
@@ -77,6 +83,8 @@ export interface SaveWorld {
 }
 
 interface ClubRecord extends ClubInfo {
+  /** 기록 머리에 적힌 번호(앞 구단의 고유 번호) */
+  header: number
   at: number
   /** 이름들이 끝난 곳 */
   bodyAt: number
@@ -127,8 +135,14 @@ function findClubs(db: Buffer, limit: number): ClubRecord[] {
     if (name === null || short === null) continue
 
     const bodyAt = r + 47 + nameLength + shortLength
-    clubs.push({ at: r, bodyAt, x, name, short, women: uid >= WOMEN_CLUB_UID })
+    // 머리의 번호(uid)는 앞 구단의 것이다. 자기 번호는 아래에서 다음 기록의 머리 번호로 채운다
+    clubs.push({ at: r, bodyAt, x, uid: 0, header: uid, name, short, women: false })
     r = bodyAt
+  }
+  for (let i = 0; i < clubs.length; i++) {
+    const own = clubs[i + 1]?.header ?? 0
+    clubs[i].uid = own
+    clubs[i].women = own >= WOMEN_CLUB_UID
   }
   return clubs
 }
@@ -250,7 +264,7 @@ export function buildWorld(db: Buffer, pickTeam?: (world: SaveWorld) => number |
     uids: new Uint32Array(count),
     teamIds: new Uint32Array(count),
     club: new Int32Array(count),
-    clubs: clubs.map(({ name, short, women }) => ({ name, short, women })),
+    clubs: clubs.map(({ uid, name, short, women }) => ({ uid, name, short, women })),
     ca: new Uint16Array(count),
     pa: new Uint16Array(count),
     value: new Uint32Array(count),
