@@ -73,6 +73,13 @@ function toEdit(player: EditorPlayer, draft: Draft): EditorEdit {
 
 const clamp = (value: number, min: number, max: number): number => Math.min(max, Math.max(min, Math.round(value)))
 
+/**
+ * 고친 값을 내보낼 길이 있는지.
+ * 수정본 세이브를 새로 쓰는 방식은 게임(26.3.2)이 "저장된 게임을 열 수 없습니다"라며 불러오지 않아 막아 두었다.
+ * 켜져 있는 게임에 바로 반영하는 방식으로 바꾸는 중이다.
+ */
+const CAN_APPLY = false
+
 /** 숫자 한 칸. 바뀐 값은 눈에 띄게 하고, 원래 값을 풍선 도움말로 알려 준다 */
 function NumberCell(props: { label: string; value: number; original: number; min: number; max: number; onChange: (value: number) => void }) {
   const { label, value, original, min, max, onChange } = props
@@ -190,7 +197,7 @@ export function Editor(props: { openUid: number | null; onOpened: () => void }) 
         </span>
         <div className="spacer" />
         {pending.size > 0 && <span className="page-sub num">고친 선수 {pending.size}명</span>}
-        <button className="btn primary" disabled={pending.size === 0 || busy || anyProblem} onClick={() => void save()}>
+        <button className="btn primary" disabled={!CAN_APPLY || pending.size === 0 || busy || anyProblem} onClick={() => void save()}>
           <Save size={16} />
           {busy ? '세이브를 쓰는 중…' : '수정본 세이브 만들기'}
         </button>
@@ -236,6 +243,13 @@ export function Editor(props: { openUid: number | null; onOpened: () => void }) 
         </aside>
 
         <section className="editor-form">
+          {!CAN_APPLY && (
+            <p className="chat-caution" role="status">
+              <CircleAlert size={15} />
+              지금은 고친 값을 게임에 넣을 수 없습니다. 수정본 세이브를 게임이 불러오지 못해 그 방식은 막아 두었고, 켜져 있는
+              게임에 바로 반영하는 방식으로 바꾸는 중입니다. 값을 살펴보는 것은 그대로 됩니다.
+            </p>
+          )}
           {notice && (
             <p className={notice.error ? 'chat-caution' : 'backup-notice'} role={notice.error ? 'alert' : 'status'}>
               {notice.error && <CircleAlert size={15} />}
