@@ -185,6 +185,7 @@ function registerIpc(): void {
   })
 
   ipcMain.handle('world:candidates', (_event, query: CandidateQuery) => world.candidates(query))
+  ipcMain.handle('world:market', (_event, uids: number[]) => world.market(Array.isArray(uids) ? uids.map(Number) : []))
   ipcMain.handle('editor:list', (_event, search: string) => world.editorList(String(search ?? '')))
   ipcMain.handle('editor:player', (_event, uid: number) => world.editorPlayer(Number(uid)))
   ipcMain.handle('editor:apply', (_event, edits: EditorEdit[]) => world.applyEdits(edits))

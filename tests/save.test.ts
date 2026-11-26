@@ -4,7 +4,7 @@ import { extractDatabase, openContainer } from '../src/main/save/container'
 import { SaveFormatError } from '../src/main/save/reader'
 import { ownerUid } from '../src/main/save/world'
 import { versionOlder } from '../src/shared/game'
-import { categoriesOf, checkEdit, shownValue, type CandidateBench } from '../src/shared/world'
+import { categoriesOf, checkEdit, parseGameDate, shownValue, type CandidateBench } from '../src/shared/world'
 
 const SIGNATURE = Buffer.from([0x02, 0x01, 0x66, 0x6d, 0x66, 0x2e, 0x08, 0x00, 0x00])
 const pack = (data: Buffer): Buffer => zstdCompressSync(data, { params: { [constants.ZSTD_c_checksumFlag]: 1 } })
@@ -145,5 +145,18 @@ describe('플러그인 버전', () => {
     expect(versionOlder('0.9.0', '0.9.0')).toBe(false)
     expect(versionOlder('0.10.0', '0.9.0')).toBe(false)
     expect(versionOlder('', '0.9.0')).toBe(true)
+  })
+})
+
+describe('게임이 적어 준 날짜', () => {
+  it('연·월·일을 뽑는다', () => {
+    expect(parseGameDate('2027년/6월/30일')).toEqual({ year: 2027, month: 6, day: 30 })
+    expect(parseGameDate('30/6/2027')).toEqual({ year: 2027, month: 6, day: 30 })
+    expect(parseGameDate('2027.12.31')).toEqual({ year: 2027, month: 12, day: 31 })
+  })
+  it('날짜가 아니면 모르는 것으로 둔다', () => {
+    expect(parseGameDate('-')).toBeNull()
+    expect(parseGameDate('계약 없음')).toBeNull()
+    expect(parseGameDate('13/13/2027')).toBeNull()
   })
 })

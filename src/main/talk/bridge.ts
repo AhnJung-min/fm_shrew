@@ -125,6 +125,40 @@ export async function sendReply(seq: number, reply: GameReply): Promise<void> {
   await ask(`/talk/reply?seq=${seq}`, 15_000, JSON.stringify(reply))
 }
 
+/** 게임이 알려 준 선수 한 명의 시장 정보(글자는 게임이 적어 준 그대로) */
+export interface GamePerson {
+  uid: number
+  age?: number
+  value?: string
+  valueSort?: number
+  wage?: string
+  wageSort?: number
+  contractEnd?: string
+  nation?: string
+  club?: string
+  /** 게임의 성별 값: "True"면 여자 */
+  gender?: string
+}
+
+/** 한 번에 물을 수 있는 선수 수(플러그인의 PersonInfo.MaxPerRequest와 맞춘다) */
+export const PEOPLE_PER_REQUEST = 30
+
+/**
+ * 선수들의 몸값·주급·계약·국적을 켜져 있는 게임에 묻는다. 게임에서 찾지 못한 선수는 빠진다.
+ * 게임이 꺼져 있거나 답하지 못하면 null.
+ */
+export async function gamePeople(uids: number[]): Promise<GamePerson[] | null> {
+  if (uids.length === 0) return []
+  const text = await ask(`/people?uids=${uids.slice(0, PEOPLE_PER_REQUEST).join(',')}`, 30_000)
+  if (text === null) return null
+  try {
+    const raw = JSON.parse(text) as GamePerson[]
+    return Array.isArray(raw) ? raw.filter((each) => typeof each?.uid === 'number') : null
+  } catch {
+    return null
+  }
+}
+
 /** 게임 메모리에서 읽은 선수 한 명의 지금 값 */
 export interface LivePlayer {
   /** 게임 메모리에서 찾은 이 선수의 기록 수. 1이어야 값을 믿을 수 있다 */

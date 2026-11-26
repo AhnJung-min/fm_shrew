@@ -132,6 +132,48 @@ export interface CandidateResult {
   matched: number
 }
 
+/**
+ * 게임이 알려 주는 선수의 시장 정보(영입 후보에 붙인다). 세이브에서는 읽지 못하고, 켜져 있는 게임에 물어 받는다.
+ * 게임이 감독에게 보여 주는 그대로라서, 스카우트하지 않은 선수의 몸값은 게임에서처럼 넓은 범위로 나온다.
+ */
+export interface PlayerMarket {
+  uid: number
+  /** 게임이 적어 주는 몸값("170억 원 - 185억 원") */
+  value?: string
+  /** 몸값을 견줄 때 쓰는 수(게임의 기준 통화) */
+  valueSort?: number
+  /** 게임이 적어 주는 주급("주급 6.5억 원") */
+  wage?: string
+  wageSort?: number
+  /** 계약 만료일. 연·월·일 */
+  contractEnd?: { year: number; month: number; day: number }
+  nation?: string
+  /** 게임이 알려 주는 소속 구단(세이브에서 구단을 알아내지 못한 선수에 쓴다) */
+  club?: string
+  /** 여자 선수인지 */
+  female?: boolean
+}
+
+export interface MarketResult {
+  /** 게임에 물어볼 수 있었는지 */
+  ok: boolean
+  /** 물어볼 수 없었던 이유 */
+  message?: string
+  /** 답을 받은 선수들(게임에서 찾지 못한 선수는 빠진다) */
+  players: PlayerMarket[]
+}
+
+/** 게임이 적어 준 날짜("2027년/6월/30일", "30/6/2027" 등)에서 연·월·일을 뽑는다. 알아보지 못하면 null */
+export function parseGameDate(text: string): { year: number; month: number; day: number } | null {
+  const numbers = (text.match(/\d+/g) ?? []).map(Number)
+  if (numbers.length !== 3) return null
+  const yearAt = numbers.findIndex((value) => value >= 1900)
+  if (yearAt !== 0 && yearAt !== 2) return null
+  const [month, day] = yearAt === 0 ? [numbers[1], numbers[2]] : [numbers[1], numbers[0]]
+  if (month < 1 || month > 12 || day < 1 || day > 31) return null
+  return { year: numbers[yearAt], month, day }
+}
+
 /** 에디터의 선수 목록 한 줄 */
 export interface EditorListItem {
   uid: number

@@ -206,6 +206,17 @@ internal static class Server
                 return LiveMemory.Player(Need("uid"));
             case "/live/set":
                 return LiveMemory.Set(Need("uid"), query["positions"], query["attributes"], query["ca"], query["pa"]);
+            // 선수의 몸값·주급·계약·국적: 게임에 물어 받아 온다(이 스레드에서 기다린다)
+            case "/people":
+                return PersonInfo.Get(Need("uids"));
+            // 개발용: 번호로 선수를 가리키는 마디를 올린다. 그 뒤 /bind로 항목을 청해 본다
+            case "/alias/person":
+            {
+                var name = Need("name");
+                if (!name.StartsWith(GameData.OurRoot, StringComparison.OrdinalIgnoreCase)) throw new HttpError(400, "name must start with fmb.");
+                if (!uint.TryParse(Need("uid"), out var uid) || !LiveMemory.PersonIndex(uid, out var index)) return "player not found";
+                return MainThread.Run(() => GameData.PutPerson(name, index) ? $"{name} = person {index}" : "failed");
+            }
             // 메모리 조사(개발용, 읽기만)
             case "/mem/find":
                 return LiveMemory.Find(Need("hex"), Number("max", 20));

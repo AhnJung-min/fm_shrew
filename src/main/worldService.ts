@@ -16,13 +16,18 @@ import {
   type EditorApplyResult,
   type EditorEdit,
   type EditorListItem,
-  type EditorPlayer
+  type EditorPlayer,
+  type MarketResult,
+  type PlayerMarket,
+  parseGameDate
 } from '@shared/world'
 import { ATTRIBUTE_COUNT, POSITION_COUNT } from './save/reader'
 import { ageAt, findTeamByNames, NO_TEAM, readWorld, teamHasPlayers, type SaveWorld } from './save/world'
 import { squadTable, type SquadTable } from './squad'
-import { livePlayer, liveSet } from './talk/bridge'
+import { gamePeople, livePlayer, liveSet, PEOPLE_PER_REQUEST } from './talk/bridge'
 
+/** 게임에서 받은 시장 정보를 다시 묻지 않고 쓰는 시간 */
+const MARKET_KEEP_MS = 10 * 60_000
 /** 영입 후보로 한 번에 보여 주는 줄 수 */
 const MAX_ROWS = 300
 /** 에디터에서 이름으로 찾을 때 보여 주는 줄 수 */
@@ -68,7 +73,16 @@ export class WorldService {
   /** 지금은 게임의 값을 읽거나 고칠 수 없는 이유(게임이 꺼져 있음, 플러그인이 옛 버전). 할 수 있으면 null */
   private liveOff: string | null = null
 
+  /** 지금은 선수의 시장 정보를 게임에 물을 수 없는 이유. 물을 수 있으면 null */
+  private marketOff: string | null = null
+  private readonly marketCache = new Map<number, { at: number; info: PlayerMarket }>()
+
   constructor(private readonly deps: WorldDeps) {}
+
+  /** 시장 정보(몸값·주급·계약)를 게임에 물을 수 있는지를 알려 둔다. 못 하면 그 이유. */
+  setMarketOff(reason: string | null): void {
+    this.marketOff = reason
+  }
 
   /** 게임의 값을 읽고 고칠 수 있는지를 알려 둔다. 못 하면 그 이유(화면에 그대로 보여 준다). */
   setLiveOff(reason: string | null): void {
@@ -329,6 +343,44 @@ export class WorldService {
       attributes: [...world.attributes.subarray(k * ATTRIBUTE_COUNT, (k + 1) * ATTRIBUTE_COUNT)].map(shownValue)
     }))
     return { ok: true, saveName, bench, counts, rows, matched: picked.length }
+  }
+
+  /**
+   * 선수들의 몸값·주급·계약 만료·국적. 켜져 있는 게임에 물어 받고, 받은 것은 잠시 기억해 둔다.
+   * 게임에서 찾지 못한 선수는 결과에서 빠진다.
+   */
+  async market(uids: number[]): Promise<MarketResult> {
+    if (this.marketOff) return { ok: false, message: this.marketOff, players: [] }
+    const now = Date.now()
+    const players: PlayerMarket[] = []
+    const missing: number[] = []
+    for (const uid of new Set(uids.filter((each) => Number.isInteger(each) && each > 0))) {
+      const kept = this.marketCache.get(uid)
+      if (kept && now - kept.at < MARKET_KEEP_MS) players.push(kept.info)
+      else missing.push(uid)
+    }
+    for (let from = 0; from < missing.length; from += PEOPLE_PER_REQUEST) {
+      const answers = await gamePeople(missing.slice(from, from + PEOPLE_PER_REQUEST))
+      if (answers === null) {
+        return { ok: players.length > 0, message: '게임에서 몸값·주급을 받지 못했습니다. 게임이 날짜를 넘기는 중이면 잠시 뒤에 다시 됩니다.', players }
+      }
+      for (const answer of answers) {
+        const info: PlayerMarket = {
+          uid: answer.uid,
+          value: answer.value && answer.value !== '-' ? answer.value : undefined,
+          valueSort: answer.valueSort !== undefined && answer.valueSort > 0 ? answer.valueSort : undefined,
+          wage: answer.wage && answer.wage !== '-' ? answer.wage : undefined,
+          wageSort: answer.wageSort !== undefined && answer.wageSort > 0 ? answer.wageSort : undefined,
+          contractEnd: (answer.contractEnd && parseGameDate(answer.contractEnd)) || undefined,
+          nation: answer.nation || undefined,
+          club: answer.club || undefined,
+          female: answer.gender === undefined ? undefined : answer.gender === 'True'
+        }
+        this.marketCache.set(info.uid, { at: Date.now(), info })
+        players.push(info)
+      }
+    }
+    return { ok: true, players }
   }
 
   /** 에디터의 선수 목록. 찾는 글자가 없으면 내 팀 선수들 */

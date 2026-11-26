@@ -24,6 +24,7 @@ const api: Api = {
   talkClearKey: () => ipcRenderer.invoke('talk:clearKey'),
 
   worldCandidates: (query) => ipcRenderer.invoke('world:candidates', query),
+  worldMarket: (uids) => ipcRenderer.invoke('world:market', uids),
   editorList: (search) => ipcRenderer.invoke('editor:list', search),
   editorPlayer: (uid) => ipcRenderer.invoke('editor:player', uid),
   editorApply: (edits) => ipcRenderer.invoke('editor:apply', edits),

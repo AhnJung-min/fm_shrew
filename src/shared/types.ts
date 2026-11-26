@@ -1,6 +1,6 @@
 import type { ApplyResult, LinkStatus, SaveFileInfo } from './game'
 import type { TalkEffort, TalkStats, TalkStatus } from './talk'
-import type { CandidateQuery, CandidateResult, EditorApplyResult, EditorEdit, EditorListItem, EditorPlayer } from './world'
+import type { CandidateQuery, CandidateResult, EditorApplyResult, EditorEdit, EditorListItem, EditorPlayer, MarketResult } from './world'
 
 export type ColumnGroup = 'info' | 'technical' | 'mental' | 'physical' | 'goalkeeping' | 'other'
 
@@ -133,6 +133,8 @@ export interface Api {
   // 세이브 전체(모든 구단의 선수)
   /** 고른 역할로 영입 후보를 유형별로 고른다 */
   worldCandidates(query: CandidateQuery): Promise<CandidateResult>
+  /** 선수들의 몸값·주급·계약 만료·국적을 켜져 있는 게임에 물어 받는다 */
+  worldMarket(uids: number[]): Promise<MarketResult>
   /** 에디터의 선수 목록. 찾는 글자가 없으면 내 팀 선수들 */
   editorList(search: string): Promise<{ ok: boolean; message?: string; saveName?: string; items: EditorListItem[] }>
   /** 선수의 값. 게임이 켜져 있으면 게임의 지금 값을, 아니면 세이브의 값을 준다 */

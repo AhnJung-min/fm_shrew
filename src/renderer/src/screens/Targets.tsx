@@ -1,5 +1,5 @@
 import { PencilRuler, Search } from 'lucide-react'
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { FIELDS } from '@shared/fields'
 import { ROLES } from '@shared/roles'
 import type { LinkStatus } from '@shared/game'
@@ -11,7 +11,8 @@ import {
   type CandidateCategory,
   type CandidateQuery,
   type CandidateResult,
-  type CandidateRow
+  type CandidateRow,
+  type PlayerMarket
 } from '@shared/world'
 import { api } from '@/api'
 import { PlayerDrawer } from '@/components/PlayerDrawer'
@@ -30,6 +31,10 @@ const GAP = info('주전 대비', 'starterGap', '내 팀에서 이 역할 점수
 const AGE = info('나이', 'age', '나이', true)
 const POSITION = info('포지션', 'position', '포지션', false)
 const CLUB = info('소속 구단', 'club', '소속 구단', false)
+const VALUE = info('몸값', 'value', '게임이 보여 주는 몸값(스카우트하지 않은 선수는 범위가 넓다)', true)
+const WAGE = info('주급', 'wage', '지금 받는 주급', true)
+const CONTRACT = info('계약 만료', 'contractEnd', '계약이 끝나는 날', true)
+const NATION = info('국적', 'nation', '국적', false)
 const ABILITY = info('현재 능력', 'ability', '현재 능력 (1~200)', true)
 const POTENTIAL = info('잠재 능력', 'potential', '잠재 능력 (1~200)', true)
 
@@ -39,12 +44,22 @@ const ATTRIBUTE_COLUMNS: Array<{ column: ColumnInfo; index: number }> = FIELDS.f
   index: SAVE_ATTRIBUTE_ORDER.indexOf(field.id as (typeof SAVE_ATTRIBUTE_ORDER)[number])
 }))
 
-const COLUMNS: ColumnInfo[] = [NAME, KIND, SCORE, GAP, AGE, POSITION, CLUB, ABILITY, POTENTIAL, ...ATTRIBUTE_COLUMNS.map((each) => each.column)]
+const COLUMNS: ColumnInfo[] = [
+  NAME, KIND, SCORE, GAP, AGE, POSITION, CLUB, VALUE, WAGE, CONTRACT, NATION, ABILITY, POTENTIAL,
+  ...ATTRIBUTE_COLUMNS.map((each) => each.column)
+]
+
+/** 게임에 한 번에 묻는 선수 수 */
+const MARKET_BATCH = 30
 
 const text = (raw: string): CellValue => ({ raw, num: null })
 const number = (value: number | null, raw?: string): CellValue => (value === null ? { raw: '', num: null } : { raw: raw ?? String(value), num: value })
 
-function toRow(row: CandidateRow, idx: number): PlayerRow {
+/** 정렬할 수가 있는 글자 칸. 수를 모르면 글자만 */
+const sortable = (raw: string | undefined, num: number | undefined): CellValue => ({ raw: raw ?? '', num: raw && num !== undefined ? num : null })
+
+function toRow(row: CandidateRow, idx: number, market: PlayerMarket | undefined): PlayerRow {
+  const end = market?.contractEnd
   const cells: Record<string, CellValue> = {
     [NAME.header]: text(row.name),
     [KIND.header]: text(row.categories.map((category) => CATEGORY_LABEL[category]).join(' · ')),
@@ -52,7 +67,11 @@ function toRow(row: CandidateRow, idx: number): PlayerRow {
     [GAP.header]: number(row.gap, row.gap === null ? '' : `${row.gap > 0 ? '+' : ''}${row.gap.toFixed(1)}`),
     [AGE.header]: number(row.age),
     [POSITION.header]: text(row.position),
-    [CLUB.header]: text(row.club || '알 수 없음'),
+    [CLUB.header]: text(row.club || market?.club || '알 수 없음'),
+    [VALUE.header]: sortable(market?.value, market?.valueSort),
+    [WAGE.header]: sortable(market?.wage?.replace(/^주급\s*/, ''), market?.wageSort),
+    [CONTRACT.header]: end ? { raw: `${end.year}.${end.month}.${end.day}`, num: end.year * 10000 + end.month * 100 + end.day } : text(''),
+    [NATION.header]: text(market?.nation ?? ''),
     [ABILITY.header]: number(row.ca),
     [POTENTIAL.header]: number(row.pa)
   }
@@ -89,6 +108,10 @@ export function Targets(props: {
   const [loading, setLoading] = useState(true)
   const [sort, setSort] = useState<SortState | null>(null)
   const [selectedIdx, setSelectedIdx] = useState<number | null>(null)
+  /** 게임에서 받은 몸값·주급·계약(선수 번호별). 받는 대로 채워진다 */
+  const [market, setMarket] = useState<Map<number, PlayerMarket>>(new Map())
+  const [marketNote, setMarketNote] = useState('')
+  const asked = useRef(new Set<number>())
 
   const query: CandidateQuery = useMemo(
     () => ({ roleId, category, maxAge: Number(maxAge) || null, onlyEligible, includeUnknownClub, search }),
@@ -114,7 +137,49 @@ export function Targets(props: {
     // 역할 가중치를 고치면 점수가 달라지므로 다시 묻는다
   }, [query, settings.roleWeights, dataKey])
 
-  const rows = useMemo(() => (result?.rows ?? []).map(toRow), [result])
+  // 게임이 바뀌면(다시 켬, 다른 세이브) 받아 둔 것을 버린다
+  const marketKey = `${link.game.connected}|${link.game.pluginVersion}|${link.game.loaded}|${link.game.team}|${link.data.save?.path ?? ''}`
+  useEffect(() => {
+    asked.current = new Set()
+    setMarket(new Map())
+    setMarketNote('')
+  }, [marketKey])
+
+  // 보이는 선수들의 몸값·주급·계약을 게임에 조금씩 물어 채운다
+  useEffect(() => {
+    let alive = true
+    const wanted = (result?.rows ?? []).map((row) => row.uid).filter((uid) => !asked.current.has(uid))
+    if (wanted.length === 0) return
+    void (async () => {
+      for (let from = 0; from < wanted.length && alive; from += MARKET_BATCH) {
+        const batch = wanted.slice(from, from + MARKET_BATCH)
+        const answer = await api.worldMarket(batch)
+        if (!alive) return
+        setMarketNote(answer.ok ? '' : (answer.message ?? ''))
+        if (answer.players.length > 0) {
+          setMarket((before) => {
+            const next = new Map(before)
+            for (const player of answer.players) next.set(player.uid, player)
+            return next
+          })
+        }
+        if (!answer.ok) return
+        for (const uid of batch) asked.current.add(uid)
+      }
+    })()
+    return () => {
+      alive = false
+    }
+  }, [result, marketKey])
+
+  // 게임이 여자 선수라고 알려 준 줄은 뺀다(세이브에서는 성별을 가려내지 못한다)
+  const rows = useMemo(
+    () =>
+      (result?.rows ?? [])
+        .map((row, idx) => (market.get(row.uid)?.female ? null : toRow(row, idx, market.get(row.uid))))
+        .filter((row): row is PlayerRow => row !== null),
+    [result, market]
+  )
   const sorted = useMemo(() => sortRows(rows, sort), [rows, sort])
   const selected = selectedIdx === null ? null : (rows.find((row) => row.idx === selectedIdx) ?? null)
   const selectedUid = selectedIdx === null ? null : (result?.rows[selectedIdx]?.uid ?? null)
@@ -207,6 +272,7 @@ export function Targets(props: {
           <input type="checkbox" checked={includeUnknownClub} onChange={(event) => setIncludeUnknownClub(event.target.checked)} />
           <span>구단을 알아내지 못한 선수도</span>
         </label>
+        {marketNote && <span className="muted">{marketNote}</span>}
         <div className="spacer" />
         <span className="page-sub num">
           {result?.ok &&

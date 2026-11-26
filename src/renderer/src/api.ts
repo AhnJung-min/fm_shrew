@@ -104,6 +104,28 @@ function createMockApi(): Api {
 
     // 세이브 전체: 미리보기에서는 지어낸 선수들로 화면만 보여 준다
     worldCandidates: async (query) => mockCandidates(query, applied === null),
+    worldMarket: async (uids) => {
+      if (gameOff) return { ok: false, message: '게임이 꺼져 있어 몸값·주급·계약은 볼 수 없습니다.', players: [] }
+      if (oldPlugin) return { ok: false, message: '몸값·주급·계약은 FM을 완전히 껐다가 다시 켜면 보입니다.', players: [] }
+      await new Promise((resolve) => setTimeout(resolve, 400))
+      const nations = ['대한민국', '브라질', '프랑스', '잉글랜드', '아르헨티나', '독일']
+      return {
+        ok: true,
+        players: uids.map((uid, i) => {
+          const low = 20 + ((uid * 7) % 180)
+          return {
+            uid,
+            value: `${low}억 원 - ${low + 15 + (uid % 40)}억 원`,
+            valueSort: low * 55_000,
+            wage: `주급 ${(0.3 + ((uid * 3) % 50) / 10).toFixed(1)}억 원`,
+            wageSort: 15_000 + ((uid * 3) % 50) * 5_000,
+            contractEnd: { year: 2026 + (uid % 5), month: 6, day: 30 },
+            nation: nations[(uid + i) % nations.length],
+            female: false
+          }
+        })
+      }
+    },
     editorList: async (search) => mockEditorList(search, applied === null),
     editorPlayer: async (uid) => mockEditorPlayer(uid, !gameOff && !oldPlugin),
     editorApply: async (edits) => {

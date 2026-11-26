@@ -1,6 +1,6 @@
 import { existsSync, readdirSync, statSync } from 'node:fs'
 import { basename, join } from 'node:path'
-import { NEEDED_PLUGIN, NO_GAME, versionOlder, type ApplyResult, type GameStatus, type LinkStatus, type SaveFileInfo } from '@shared/game'
+import { MARKET_PLUGIN, NEEDED_PLUGIN, NO_GAME, versionOlder, type ApplyResult, type GameStatus, type LinkStatus, type SaveFileInfo } from '@shared/game'
 import { gameState, liveAll } from './talk/bridge'
 import { isSaveFile } from './watcher'
 import type { WorldService } from './worldService'
@@ -91,6 +91,15 @@ export class GameLink {
       : NO_GAME
     this.roster = state?.players ?? []
     this.world.setLiveOff(!next.connected ? GAME_OFF : next.pluginOld ? oldPluginNote(next.pluginVersion) : null)
+    this.world.setMarketOff(
+      !next.connected
+        ? '게임이 꺼져 있어 몸값·주급·계약은 볼 수 없습니다.'
+        : versionOlder(next.pluginVersion, MARKET_PLUGIN)
+          ? `몸값·주급·계약은 FM을 완전히 껐다가 다시 켜면 보입니다(게임에 올라가 있는 플러그인 ${next.pluginVersion}, 필요한 버전 ${MARKET_PLUGIN}).`
+          : !next.loaded
+            ? '게임에서 세이브를 불러오면 몸값·주급·계약이 보입니다.'
+            : null
+    )
     const before = this.game
     this.game = next
     const entered = next.loaded && (!before.loaded || before.team !== next.team)

@@ -451,6 +451,23 @@ internal static unsafe class LiveMemory
         }
     }
 
+    /// <summary>
+    /// 이 선수의 "사람 색인"(게임 안에서 사람마다 붙은 순번. 게임에 그 선수의 정보를 물을 때 쓴다).
+    /// 인물 기록의 번호 바로 앞에 적혀 있다. 기록이 정확히 하나일 때만 준다.
+    /// </summary>
+    public static bool PersonIndex(uint uid, out int index)
+    {
+        index = -1;
+        lock (Gate)
+        {
+            if (Locate(uid, out _) != 1) return false;
+            var block = scratch + Lead;
+            var person = *(uint*)(block + PersonAt + UidInPerson) == uid ? block + PersonAt : block + PersonAtStaff;
+            index = *(int*)(person + UidInPerson - 4);
+            return index > 0;
+        }
+    }
+
     /// <summary>앱에 알려 줄 요약: 선수 기록을 몇 개 찾아 두었는지(아직 훑지 않았으면 -1)</summary>
     public static int Records
     {

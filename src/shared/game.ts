@@ -7,6 +7,9 @@
  */
 export const NEEDED_PLUGIN = '0.9.0'
 
+/** 선수의 몸값·주급·계약을 게임에 물어 받는 기능이 들어간 플러그인 버전. 이보다 낮으면 영입 후보에 그 열이 비어 있다 */
+export const MARKET_PLUGIN = '0.10.0'
+
 /** 버전 a가 b보다 낮은지("0.8.0" < "0.9.0"). 읽을 수 없는 버전은 낮은 것으로 본다 */
 export function versionOlder(a: string, b: string): boolean {
   const parts = (text: string): number[] => text.split('.').map((part) => Number.parseInt(part, 10) || 0)

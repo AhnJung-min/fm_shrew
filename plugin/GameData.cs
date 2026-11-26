@@ -24,7 +24,7 @@ namespace FmBojwagwan.Bridge;
 internal static unsafe class GameData
 {
     public const string OurRoot = "fmb.";
-    private const int MaxWatches = 600;
+    private const int MaxWatches = 900;
     private const int MaxFailures = 6;
 
     private sealed class Watch
@@ -159,6 +159,9 @@ internal static unsafe class GameData
 
     public static bool Has(string path) => Watches.TryGetValue(path, out var watch) && watch.Has;
 
+    /// <summary>게임이 이 경로에 한 번이라도 답했는지(값이 없다는 답도 답이다)</summary>
+    public static bool Arrived(string path) => Watches.TryGetValue(path, out var watch) && (watch.Has || watch.Fired > 0);
+
     /// <summary>나무에 그 이름의 마디가 있는지(값을 청하지는 않는다)</summary>
     public static bool Exists(string path)
     {
@@ -213,6 +216,84 @@ internal static unsafe class GameData
         catch (Exception error)
         {
             Failed("put " + name, error);
+            return false;
+        }
+    }
+
+    /// <summary>참조 안에서 "어느 기록인지"를 담는 쌍의 이름('dref')</summary>
+    private const uint RecordPairId = 1685218662;
+    /// <summary>선수 참조를 만드는 방법: 0 아직 모름, 1 색인만으로, 2 감독의 참조를 베껴 색인만 바꿔서, -1 못 만듦</summary>
+    private static int personMode;
+
+    private static string Pairs(SI.Interop.InteropReference reference)
+    {
+        var ids = reference.m_id;
+        if (ids == null) return "none";
+        var text = new StringBuilder();
+        for (var i = 0; i < ids.Count; i++) text.Append(i > 0 ? " " : "").Append(ids[i].m_id).Append(':').Append(ids[i].m_value);
+        return text.ToString();
+    }
+
+    /// <summary>
+    /// 색인이 index인 사람을 가리키는 참조. 못 만들면 null.
+    /// 참조에는 색인 말고도 식별 쌍이 더 들어 있다(게임을 켤 때마다 다른 값). 색인만으로 만든 것이 온전한지는
+    /// 감독 자신의 색인으로 만들어 나무에 있는 감독의 참조와 같은지로 한 번 확인하고, 다르면 감독의 참조를 베껴 색인만 바꾼다.
+    /// </summary>
+    private static FM.UI.PersonReference MakePerson(int index)
+    {
+        if (personMode < 0) return null;
+        var value = Tree().Get(Span("Human"));
+        var human = value == null || value.IsNull ? null : value.Get()?.TryCast<SI.Interop.InteropReference>();
+        if (human == null) return null;
+        var mask = FM.UI.DatabaseRecordReference.IndexMask;
+        if (mask <= 0) mask = 0x00FFFFFF;
+        int own;
+        if (!human.TryGetValue(RecordPairId, out own))
+        {
+            personMode = -1;
+            Plugin.Logger.LogWarning($"game data: person reference has no record id [{Pairs(human)}]");
+            return null;
+        }
+        if (personMode == 0)
+        {
+            var probe = new FM.UI.PersonReference(own & mask);
+            personMode = probe.Equals(human) ? 1 : 2;
+            Plugin.Logger.LogInfo($"game data: person reference mode {personMode}, mask {mask:X}; human [{Pairs(human)}], made [{Pairs(probe)}]");
+        }
+        if (personMode == 1) return new FM.UI.PersonReference(index);
+
+        var ids = new Il2CppSystem.Collections.Generic.List<SI.Interop.InteropReference.Pair>();
+        var from = human.m_id;
+        for (var i = 0; i < from.Count; i++)
+        {
+            var pair = from[i];
+            if (pair.m_id == RecordPairId) pair.m_value = (pair.m_value & ~mask) | index;
+            ids.Add(pair);
+        }
+        return new FM.UI.PersonReference(ids);
+    }
+
+    /// <summary>
+    /// 사람 색인(게임 안에서 사람마다 붙은 순번)으로 그 사람을 가리키는 마디를 우리 이름으로 올린다.
+    /// 그 뒤로 "name.Age" 같은 경로를 걸 수 있다. 여기서 난 문제는 다른 기능(경기 카드)을 끄지 않도록 따로 센다.
+    /// </summary>
+    public static bool PutPerson(string name, int index)
+    {
+        if (index <= 0 || Tree() == null) return false;
+        try
+        {
+            var person = MakePerson(index);
+            if (person == null) return false;
+            var boxed = TypedValue.GetReferenceTypedValue();
+            boxed.SetValue(person.Cast<Il2CppSystem.Object>());
+            // Place는 사본을 나무에 올린다. 우리가 빌린 상자는 돌려준다
+            var placed = Place(name, boxed);
+            boxed.Dispose();
+            return placed;
+        }
+        catch (Exception error)
+        {
+            Plugin.Logger.LogWarning($"game data: person {index}: {error.Message}");
             return false;
         }
     }

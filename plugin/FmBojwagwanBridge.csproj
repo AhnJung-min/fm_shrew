@@ -43,6 +43,8 @@
     <GameReference Include="$(GameDir)\BepInEx\interop\SI.Bindable.dll" />
     <GameReference Include="$(GameDir)\BepInEx\interop\SI.Bindable.Reference.Core.dll" />
     <GameReference Include="$(GameDir)\BepInEx\interop\SI.UI.dll" />
+    <GameReference Include="$(GameDir)\BepInEx\interop\SI.Interop.dll" />
+    <GameReference Include="$(GameDir)\BepInEx\interop\FM.UI.dll" />
     <Reference Include="@(GameReference)" Private="false" />
   </ItemGroup>
 
