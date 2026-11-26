@@ -2,13 +2,13 @@ import { Search } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 import { bestRoleOf } from '@shared/depth'
 import { GROUP_LABEL, GROUP_ORDER } from '@shared/fields'
-import type { ColumnGroup, ColumnInfo, PlayerRow, Settings, Snapshot, SnapshotKind, SnapshotMeta } from '@shared/types'
+import type { LinkStatus } from '@shared/game'
+import type { ColumnGroup, ColumnInfo, PlayerRow, Settings, SquadResult } from '@shared/types'
 import { api } from '@/api'
 import { DepthChart } from '@/components/DepthChart'
 import { PlayerDrawer } from '@/components/PlayerDrawer'
 import { PlayerTable, sortRows, type SortState } from '@/components/PlayerTable'
-import { formatTime, isFromSave, KIND_LABEL } from '@/lib/format'
-import { MAX_COMPARE, type CompareState } from './Compare'
+import { MAX_COMPARE } from './Compare'
 
 type View = 'table' | 'depth'
 
@@ -19,8 +19,8 @@ const FIT_SCORE: ColumnInfo = {
   header: '적합도', field: 'fitScore', group: 'info', short: '적합도', label: '최적 역할의 적합도 (0~100)', isAttr: false, numeric: true
 }
 
-/** 포지션과 능력치가 있는 기록이면 선수마다 최적 역할과 적합도 열을 덧붙인다. */
-function withRoleFit(snapshot: Snapshot, weights: Settings['roleWeights']): { columns: ColumnInfo[]; rows: PlayerRow[] } {
+/** 선수마다 최적 역할과 적합도 열을 덧붙인다. */
+function withRoleFit(snapshot: SquadResult, weights: Settings['roleWeights']): { columns: ColumnInfo[]; rows: PlayerRow[] } {
   const positionAt = snapshot.columns.findIndex((col) => col.field === 'position')
   if (positionAt < 0 || !snapshot.columns.some((col) => col.isAttr)) return snapshot
   const columns = [...snapshot.columns]
@@ -41,49 +41,41 @@ function withRoleFit(snapshot: Snapshot, weights: Settings['roleWeights']): { co
   return { columns, rows }
 }
 
+/** 적용한 세이브의 내 팀 선수들. 게임이 켜져 있으면 게임의 지금 값으로 보인다. */
 export function Squad(props: {
-  snapshots: SnapshotMeta[]
-  selectedId: number | null
-  onSelectSnapshot: (id: number) => void
-  onChanged: () => void
+  /** 자료가 바뀌면 달라지는 글자(다시 읽을 때를 안다) */
+  dataKey: string
+  link: LinkStatus
   settings: Settings
   onSettings: (patch: Partial<Settings>) => void
   onGoHome: () => void
-  compare: CompareState
-  onToggleCompare: (snapshotId: number, idx: number) => void
+  /** 선수 비교에 담은 선수들(고유 번호) */
+  compare: number[]
+  onToggleCompare: (uid: number) => void
   onOpenCompare: () => void
 }) {
-  const { snapshots, selectedId, onSelectSnapshot, onChanged, settings, onSettings, onGoHome } = props
+  const { dataKey, link, settings, onSettings, onGoHome } = props
   const { compare, onToggleCompare, onOpenCompare } = props
-  const [snapshot, setSnapshot] = useState<Snapshot | null>(null)
+  const [snapshot, setSnapshot] = useState<SquadResult | null>(null)
   const [view, setView] = useState<View>('table')
   const [query, setQuery] = useState('')
-  const [hidden, setHidden] = useState<Set<ColumnGroup>>(new Set())
+  // 열이 많아 골키퍼 능력치는 처음에 접어 두고 필요할 때 켠다
+  const [hidden, setHidden] = useState<Set<ColumnGroup>>(new Set(['goalkeeping']))
   const [sort, setSort] = useState<SortState | null>(null)
   const [selectedIdx, setSelectedIdx] = useState<number | null>(null)
 
   useEffect(() => {
     let alive = true
-    setSelectedIdx(null)
-    setSort(null)
-    if (selectedId === null) {
-      setSnapshot(null)
-      return
-    }
-    void api.getSnapshot(selectedId).then((loaded) => {
-      if (!alive) return
-      setSnapshot(loaded)
-      // 세이브에서 읽은 기록은 열이 많다. 골키퍼 능력치는 처음에 접어 두고 필요할 때 켠다.
-      const groups = new Set(loaded?.columns.map((col) => col.group))
-      setHidden(groups.has('technical') && groups.has('goalkeeping') ? new Set(['goalkeeping']) : new Set())
+    void api.worldSquad().then((loaded) => {
+      if (alive) setSnapshot(loaded)
     })
     return () => {
       alive = false
     }
-  }, [selectedId])
+  }, [dataKey])
 
   const fitted = useMemo(
-    () => (snapshot ? withRoleFit(snapshot, settings.roleWeights) : null),
+    () => (snapshot?.ok ? withRoleFit(snapshot, settings.roleWeights) : null),
     [snapshot, settings.roleWeights]
   )
 
@@ -106,7 +98,7 @@ export function Squad(props: {
     return sortRows(filtered, sort)
   }, [fitted, query, sort])
 
-  if (snapshots.length === 0) {
+  if (snapshot && !snapshot.ok) {
     return (
       <>
         <header className="page-head">
@@ -114,11 +106,11 @@ export function Squad(props: {
         </header>
         <div className="page-body">
           <div className="empty">
-            <strong>아직 읽어 온 선수 목록이 없습니다</strong>
-            게임에서 저장하면 내 스쿼드가 여기에 표로 나타납니다.
+            <strong>아직 보여 줄 선수가 없습니다</strong>
+            {snapshot.message}
             <div style={{ marginTop: 14 }}>
               <button className="btn primary" onClick={onGoHome}>
-                가져오는 방법 보기
+                홈에서 세이브 고르기
               </button>
             </div>
           </div>
@@ -134,35 +126,17 @@ export function Squad(props: {
     setHidden(next)
   }
 
-  const changeKind = async (kind: SnapshotKind): Promise<void> => {
-    if (!snapshot) return
-    await api.setSnapshotKind(snapshot.id, kind)
-    setSnapshot({ ...snapshot, kind })
-    onChanged()
-  }
-
-  const unknownCount = snapshot?.columns.filter((col) => col.field === null).length ?? 0
-  const hasAttrs = snapshot?.columns.some((col) => col.isAttr) ?? false
   const selected = selectedIdx === null ? null : (fitted?.rows.find((row) => row.idx === selectedIdx) ?? null)
-  const inCompare = snapshot && compare.snapshotId === snapshot.id ? compare.idxs : []
+  const inCompare = compare
+  const { data } = link
 
   return (
     <>
       <header className="page-head">
         <h1>스쿼드</h1>
-        <select
-          className="field"
-          aria-label="가져온 기록 선택"
-          value={selectedId ?? ''}
-          onChange={(event) => onSelectSnapshot(Number(event.target.value))}
-          style={{ maxWidth: 380 }}
-        >
-          {snapshots.map((s) => (
-            <option key={s.id} value={s.id}>
-              {isFromSave(s.fileName) ? '세이브' : KIND_LABEL[s.kind]} {s.rowCount}명, {formatTime(s.importedAt)}
-            </option>
-          ))}
-        </select>
+        <span className="page-sub">
+          {data.save ? `${data.club || data.save.name} · ${data.source === 'game' ? '게임의 지금 값' : '세이브에 저장된 값'}` : ''}
+        </span>
         <div className="segmented" role="group" aria-label="보기 방식">
           <button aria-pressed={view === 'table'} onClick={() => setView('table')}>
             표
@@ -172,15 +146,6 @@ export function Squad(props: {
           </button>
         </div>
         <div className="spacer" />
-        {snapshot && !isFromSave(snapshot.fileName) && (
-          <div className="segmented" role="group" aria-label="이 기록의 종류">
-            {(['squad', 'search'] as const).map((kind) => (
-              <button key={kind} aria-pressed={snapshot.kind === kind} onClick={() => void changeKind(kind)}>
-                {KIND_LABEL[kind]}
-              </button>
-            ))}
-          </div>
-        )}
         {fitted && (
           <span className="page-sub num">
             {view === 'depth' || rows.length === fitted.rows.length
@@ -211,7 +176,7 @@ export function Squad(props: {
             ))}
           </div>
           <div className="spacer" />
-          {hasAttrs && (
+          {fitted && (
             <div className="legend" aria-label="능력치 표시 기준">
               <span className="a1">
                 <b>1–7</b>
@@ -241,12 +206,6 @@ export function Squad(props: {
         </div>
       )}
 
-      {view === 'table' && snapshot && unknownCount > 0 && (
-        <p className="page-sub" style={{ padding: '8px 24px 0' }}>
-          알아보지 못한 열이 {unknownCount}개 있습니다. 표에는 그대로 보이고, 설정에서 어떤 항목인지 지정할 수 있습니다.
-        </p>
-      )}
-
       <div className="table-wrap">
         {view === 'table' && fitted && rows.length > 0 && (
           <PlayerTable
@@ -265,7 +224,7 @@ export function Squad(props: {
             다른 이름이나 포지션으로 찾아보세요.
           </div>
         )}
-        {view === 'depth' && snapshot && (
+        {view === 'depth' && snapshot?.ok && (
           <DepthChart
             columns={snapshot.columns}
             rows={snapshot.rows}
@@ -283,7 +242,7 @@ export function Squad(props: {
               included: inCompare.includes(selected.idx),
               count: inCompare.length,
               full: inCompare.length >= MAX_COMPARE,
-              onToggle: () => onToggleCompare(snapshot.id, selected.idx),
+              onToggle: () => onToggleCompare(selected.idx),
               onOpen: onOpenCompare
             }}
           />

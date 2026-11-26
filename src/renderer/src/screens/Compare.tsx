@@ -5,50 +5,42 @@ import { GROUP_LABEL } from '@shared/fields'
 import { parsePositions } from '@shared/positions'
 import { GOALKEEPER_AXES, OUTFIELD_AXES, profileOf } from '@shared/profile'
 import { attributesOf } from '@shared/roles'
-import type { ColumnGroup, Settings, Snapshot, SnapshotMeta } from '@shared/types'
+import type { ColumnGroup, Settings, SquadResult } from '@shared/types'
 import { api } from '@/api'
 import { RadarChart } from '@/components/RadarChart'
-import { attrBand, attrText, formatTime, isFromSave, KIND_LABEL } from '@/lib/format'
+import { attrBand, attrText } from '@/lib/format'
 
 /** 겹쳐 그려도 서로 구분되는 색은 셋까지다(색각 이상 포함 검증). 그래서 한 번에 세 명까지 비교한다. */
 export const MAX_COMPARE = 3
 const SERIES_COLORS = ['--series-1', '--series-2', '--series-3']
 const ATTR_GROUPS: ColumnGroup[] = ['technical', 'mental', 'physical', 'goalkeeping']
 
-export interface CompareState {
-  snapshotId: number | null
-  idxs: number[]
-}
-
+/** 내 팀 선수를 세 명까지 나란히 놓고 본다. */
 export function Compare(props: {
-  snapshots: SnapshotMeta[]
-  state: CompareState
-  onState: (state: CompareState) => void
+  /** 자료가 바뀌면 달라지는 글자(다시 읽을 때를 안다) */
+  dataKey: string
+  /** 비교에 담은 선수들(고유 번호) */
+  idxs: number[]
+  onIdxs: (idxs: number[]) => void
   settings: Settings
   onGoSquad: () => void
 }) {
-  const { snapshots, state, onState, settings, onGoSquad } = props
-  const [snapshot, setSnapshot] = useState<Snapshot | null>(null)
-  // 따로 고르지 않았으면 세이브에서 읽은 내 스쿼드를 먼저 보여 준다
-  const snapshotId = state.snapshotId ?? (snapshots.find((s) => isFromSave(s.fileName)) ?? snapshots[0])?.id ?? null
+  const { dataKey, idxs, onIdxs, settings, onGoSquad } = props
+  const [snapshot, setSnapshot] = useState<SquadResult | null>(null)
 
   useEffect(() => {
     let alive = true
-    if (snapshotId === null) {
-      setSnapshot(null)
-      return
-    }
-    void api.getSnapshot(snapshotId).then((loaded) => {
+    void api.worldSquad().then((loaded) => {
       if (alive) setSnapshot(loaded)
     })
     return () => {
       alive = false
     }
-  }, [snapshotId])
+  }, [dataKey])
 
   const players = useMemo(() => {
     if (!snapshot) return []
-    return state.idxs
+    return idxs
       .map((idx) => snapshot.rows.find((row) => row.idx === idx))
       .filter((row): row is NonNullable<typeof row> => Boolean(row))
       .map((row, i) => ({
@@ -57,9 +49,9 @@ export function Compare(props: {
         attrs: attributesOf(row, snapshot.columns),
         best: bestRoleOf(row, snapshot.columns, settings.roleWeights)
       }))
-  }, [snapshot, state.idxs, settings.roleWeights])
+  }, [snapshot, idxs, settings.roleWeights])
 
-  if (snapshots.length === 0) {
+  if (snapshot && !snapshot.ok) {
     return (
       <>
         <header className="page-head">
@@ -67,8 +59,8 @@ export function Compare(props: {
         </header>
         <div className="page-body">
           <div className="empty">
-            <strong>비교할 선수 목록이 아직 없습니다</strong>
-            게임에서 저장하면 내 스쿼드가 들어옵니다.
+            <strong>비교할 선수가 아직 없습니다</strong>
+            {snapshot.message}
           </div>
         </div>
       </>
@@ -83,8 +75,8 @@ export function Compare(props: {
   const allGoalkeepers = players.length > 0 && players.every((p) => positionsOf(p.row).includes('GK'))
   const axes = allGoalkeepers ? GOALKEEPER_AXES : OUTFIELD_AXES
   const hasAttrs = snapshot?.columns.some((col) => col.isAttr) ?? false
-  const available = snapshot?.rows.filter((row) => !state.idxs.includes(row.idx)) ?? []
-  const full = state.idxs.length >= MAX_COMPARE
+  const available = snapshot?.rows.filter((row) => !idxs.includes(row.idx)) ?? []
+  const full = idxs.length >= MAX_COMPARE
 
   return (
     <>
@@ -92,23 +84,10 @@ export function Compare(props: {
         <h1>선수 비교</h1>
         <select
           className="field"
-          aria-label="비교할 기록"
-          value={snapshotId ?? ''}
-          onChange={(event) => onState({ snapshotId: Number(event.target.value), idxs: [] })}
-          style={{ maxWidth: 360 }}
-        >
-          {snapshots.map((s) => (
-            <option key={s.id} value={s.id}>
-              {isFromSave(s.fileName) ? '세이브' : KIND_LABEL[s.kind]} {s.rowCount}명, {formatTime(s.importedAt)}
-            </option>
-          ))}
-        </select>
-        <select
-          className="field"
           aria-label="비교에 넣을 선수"
           value=""
           disabled={full || !snapshot}
-          onChange={(event) => onState({ snapshotId, idxs: [...state.idxs, Number(event.target.value)] })}
+          onChange={(event) => onIdxs([...idxs, Number(event.target.value)])}
           style={{ maxWidth: 240 }}
         >
           <option value="">{full ? `${MAX_COMPARE}명까지 비교합니다` : '선수 넣기'}</option>
@@ -161,7 +140,7 @@ export function Compare(props: {
                       className="btn ghost icon"
                       aria-label={`${p.row.name} 빼기`}
                       title="비교에서 빼기"
-                      onClick={() => onState({ snapshotId, idxs: state.idxs.filter((idx) => idx !== p.row.idx) })}
+                      onClick={() => onIdxs(idxs.filter((idx) => idx !== p.row.idx))}
                     >
                       <X size={16} />
                     </button>

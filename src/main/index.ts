@@ -1,24 +1,20 @@
-import { existsSync, mkdirSync, readdirSync, statSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, writeFileSync } from 'node:fs'
 import { basename, join } from 'node:path'
-import { app, BrowserWindow, dialog, ipcMain, Menu, nativeImage, shell, Tray } from 'electron'
-import { deriveColumns } from '@shared/parse'
-import type { AppStatus, ImportResult, Settings, SnapshotKind } from '@shared/types'
+import { app, BrowserWindow, ipcMain, Menu, nativeImage, shell, Tray } from 'electron'
+import type { AppStatus, Settings } from '@shared/types'
 import type { CandidateQuery, EditorEdit } from '@shared/world'
 import { BackupManager } from './backup'
-import { Store } from './db'
-import { importFile } from './importer'
-import { importSave } from './saveImporter'
+import { GameLink } from './gameLink'
 import { SettingsStore } from './settings'
 import { TalkController } from './talk/controller'
 import { KeyStore } from './talk/keyStore'
 import { TRAY_ICON } from './trayIcon'
-import { ExportWatcher, isSaveFile, SaveWatcher } from './watcher'
+import { SaveWatcher } from './watcher'
 import { WorldService } from './worldService'
 
-// 검증용 환경 변수: 데이터 폴더와 감시 폴더를 바꾸고, 화면을 PNG로 찍은 뒤 종료한다
+// 검증용 환경 변수: 데이터 폴더와 세이브 폴더를 바꾸고, 화면을 PNG로 찍은 뒤 종료한다
 const SMOKE_OUT = process.env.FMB_SMOKE_OUT
 const USER_DATA_OVERRIDE = process.env.FMB_USER_DATA
-const WATCH_DIR_OVERRIDE = process.env.FMB_WATCH_DIR
 const SAVE_DIR_OVERRIDE = process.env.FMB_SAVE_DIR
 
 if (USER_DATA_OVERRIDE) app.setPath('userData', USER_DATA_OVERRIDE)
@@ -31,68 +27,25 @@ try {
 }
 
 let mainWindow: BrowserWindow | null = null
-let store: Store
 let settings: SettingsStore
-let watcher: ExportWatcher
 let saveWatcher: SaveWatcher
 let talk: TalkController
 let keys: KeyStore
 let backups: BackupManager
 let world: WorldService
+let link: GameLink
 let tray: Tray | null = null
 /** 정말 끄는 중인지(트레이 메뉴의 종료, 시스템 종료). 아니면 창을 닫아도 앱은 남는다 */
 let quitting = false
 let toldAboutTray = false
-/** 내 팀을 몰라 미뤄 둔 세이브. 스쿼드 명단이 들어오면 다시 읽는다. */
-let pendingSave: string | null = null
 
 function getStatus(): AppStatus {
-  const { watchDirs, saveDir } = settings.get()
+  const { saveDir } = settings.get()
   return {
-    watchDirs: watchDirs.map((dir) => ({ dir, exists: existsSync(dir) })),
     saveDir: { dir: saveDir, exists: existsSync(saveDir) },
     dataDir: app.getPath('userData'),
     version: app.getVersion()
   }
-}
-
-async function handleExportFile(path: string): Promise<ImportResult> {
-  const result = await importFile(store, path, settings.get().columnOverrides)
-  // 이미 가져온 파일은 조용히 넘어간다
-  if (!result.skipped) mainWindow?.webContents.send('import:done', result)
-  if (result.ok && pendingSave) void handleSaveFile(pendingSave)
-  return result
-}
-
-/** 게임에서 내보낸 가장 최근 스쿼드 명단의 선수 이름. 세이브에서 내 팀을 찾는 데 쓴다. */
-function latestRosterNames(): string[] {
-  const exported = store.listSnapshots().filter((snapshot) => !isSaveFile(snapshot.fileName))
-  const roster = exported.find((snapshot) => snapshot.kind === 'squad') ?? exported[0]
-  return roster ? (store.getSnapshot(roster.id)?.rows.map((row) => row.name) ?? []) : []
-}
-
-/** 세이브에서 읽은 가장 최근 내 스쿼드의 선수 이름 */
-function latestSquadNames(): string[] {
-  const squad = store.listSnapshots().find((snapshot) => isSaveFile(snapshot.fileName))
-  return squad ? (store.getSnapshot(squad.id)?.rows.map((row) => row.name) ?? []) : []
-}
-
-async function handleSaveFile(path: string): Promise<void> {
-  const result = await importSave(store, path, (file) => world.read(file))
-  if (result.needsRoster) pendingSave = path
-  else if (pendingSave === path) pendingSave = null
-  if (!result.skipped) mainWindow?.webContents.send('import:done', result)
-}
-
-/** 세이브 폴더에서 가장 최근에 저장된 세이브. 없으면 null */
-function newestSave(): string | null {
-  const dir = settings.get().saveDir
-  if (!existsSync(dir)) return null
-  const newest = readdirSync(dir)
-    .filter(isSaveFile)
-    .map((name) => ({ path: join(dir, name), mtime: statSync(join(dir, name)).mtimeMs }))
-    .sort((a, b) => b.mtime - a.mtime)[0]
-  return newest?.path ?? null
 }
 
 /** 저장된 세이브의 사본을 남긴다(자동 백업이 켜져 있을 때). 같은 저장은 한 번만 남는다. */
@@ -105,12 +58,10 @@ async function backupSave(path: string): Promise<void> {
   }
 }
 
-/** 앱이 꺼져 있던 동안 저장된 것이 있으면 가장 최근 세이브 하나만 읽고, 사본도 남긴다. */
-function importNewestSave(): void {
-  const newest = newestSave()
-  if (!newest) return
-  void handleSaveFile(newest)
-  void backupSave(newest)
+/** 지난번에 적용했던 세이브가 그대로 있으면 다시 적용한다(앱을 켤 때마다 고르지 않아도 되게). */
+function applyLastSave(): void {
+  const last = settings.get().activeSave
+  if (last && existsSync(last)) void link.apply(last)
 }
 
 function createWindow(): void {
@@ -193,54 +144,27 @@ function registerIpc(): void {
   ipcMain.handle('settings:set', async (_event, patch: Partial<Settings>) => {
     const before = settings.get()
     const next = settings.set(patch)
-    if (next.watchDirs.join('|') !== before.watchDirs.join('|')) await watcher.start(next.watchDirs)
     if (next.saveDir !== before.saveDir) await saveWatcher.start(next.saveDir)
     return next
-  })
-  ipcMain.handle('snapshots:list', () => store.listSnapshots())
-  ipcMain.handle('snapshots:get', (_event, id: number) => {
-    const snapshot = store.getSnapshot(id)
-    if (!snapshot) return null
-    // 열 지정은 열 때마다 다시 계산해서, 설정을 바꾸면 예전 기록에도 적용되게 한다
-    const headers = snapshot.columns.map((col) => col.header)
-    snapshot.columns = deriveColumns(
-      headers,
-      (c) => snapshot.rows.map((row) => row.cells[headers[c]]),
-      settings.get().columnOverrides
-    )
-    return snapshot
-  })
-  ipcMain.handle('snapshots:setKind', (_event, id: number, kind: SnapshotKind) => store.setKind(id, kind))
-  ipcMain.handle('snapshots:delete', (_event, id: number) => store.deleteSnapshot(id))
-
-  ipcMain.handle('import:pick', async () => {
-    if (!mainWindow) return []
-    const picked = await dialog.showOpenDialog(mainWindow, {
-      title: '내보내기 파일 가져오기',
-      properties: ['openFile', 'multiSelections'],
-      filters: [{ name: '선수 목록 (CSV, HTML)', extensions: ['csv', 'html', 'htm'] }]
-    })
-    if (picked.canceled) return []
-    return Promise.all(picked.filePaths.map((path) => importFile(store, path, settings.get().columnOverrides)))
-  })
-  ipcMain.handle('import:paths', (_event, paths: string[]) =>
-    Promise.all(paths.map((path) => importFile(store, path, settings.get().columnOverrides)))
-  )
-  ipcMain.handle('dialog:pickFolder', async () => {
-    if (!mainWindow) return null
-    const picked = await dialog.showOpenDialog(mainWindow, {
-      title: '지켜볼 폴더 선택',
-      properties: ['openDirectory']
-    })
-    return picked.canceled ? null : picked.filePaths[0]
   })
   ipcMain.handle('shell:openPath', async (_event, path: string) => {
     if (existsSync(path)) await shell.openPath(path)
   })
 
+  // 게임 연결과 세이브 적용
+  ipcMain.handle('link:status', () => link.status())
+  ipcMain.handle('link:saves', () => link.saves())
+  ipcMain.handle('link:apply', async (_event, path: string) => {
+    const result = await link.apply(String(path))
+    if (result.ok) settings.set({ activeSave: String(path) })
+    return result
+  })
+  ipcMain.handle('link:refresh', (_event, rescan: boolean) => link.refresh(rescan === true))
+  ipcMain.handle('world:squad', () => world.squad())
+
   ipcMain.handle('backup:list', () => backups.list())
   ipcMain.handle('backup:now', async () => {
-    const newest = newestSave()
+    const newest = world.path ?? link.saves()[0]?.path
     if (!newest) return { ok: false, message: '세이브 폴더에 세이브가 없습니다.' }
     try {
       const made = await backups.backup(newest)
@@ -260,10 +184,8 @@ function registerIpc(): void {
     mainWindow?.webContents.send('backup:changed')
   })
 
-  // 세이브 전체를 읽어야 하는 일은 몇 초 걸린다. 화면이 "읽는 중"을 먼저 그릴 틈을 준 뒤 시작한다
-  const soon = <T>(work: () => T): Promise<T> => new Promise((resolve) => setTimeout(() => resolve(work()), 30))
-  ipcMain.handle('world:candidates', (_event, query: CandidateQuery) => soon(() => world.candidates(query)))
-  ipcMain.handle('editor:list', (_event, search: string) => soon(() => world.editorList(String(search ?? ''))))
+  ipcMain.handle('world:candidates', (_event, query: CandidateQuery) => world.candidates(query))
+  ipcMain.handle('editor:list', (_event, search: string) => world.editorList(String(search ?? '')))
   ipcMain.handle('editor:player', (_event, uid: number) => world.editorPlayer(Number(uid)))
   ipcMain.handle('editor:apply', (_event, edits: EditorEdit[]) => world.applyEdits(edits))
 
@@ -293,7 +215,6 @@ async function runSmoke(outFile: string): Promise<void> {
   await new Promise((resolve) => setTimeout(resolve, 300))
   const image = await mainWindow.webContents.capturePage()
   writeFileSync(outFile, image.toPNG())
-  console.log('[smoke] snapshots:', JSON.stringify(store.listSnapshots().map((s) => [s.fileName, s.rowCount, s.kind])))
   console.log('[smoke] saved', outFile)
   app.quit()
 }
@@ -308,23 +229,15 @@ if (!SMOKE_OUT && !app.requestSingleInstanceLock()) {
 app.whenReady().then(async () => {
   const dataDir = app.getPath('userData')
   mkdirSync(dataDir, { recursive: true })
-  store = new Store(join(dataDir, 'fm-bojwagwan.db'))
-  settings = new SettingsStore(
-    join(dataDir, 'settings.json'),
-    app.getPath('documents'),
-    WATCH_DIR_OVERRIDE,
-    SAVE_DIR_OVERRIDE
-  )
-  watcher = new ExportWatcher((path) => void handleExportFile(path))
+  settings = new SettingsStore(join(dataDir, 'settings.json'), app.getPath('documents'), SAVE_DIR_OVERRIDE)
   backups = new BackupManager(
     join(dataDir, 'backups'),
     () => settings.get().saveDir,
     () => settings.get().backupKeep
   )
   world = new WorldService({
-    newestSave,
     knownTeam: (fileName) => settings.get().saveTeams[fileName],
-    rosterNames: latestRosterNames,
+    rosterNames: () => link.rosterNames(),
     rememberTeam: (fileName, teamId) => {
       if (settings.get().saveTeams[fileName] !== teamId) {
         settings.set({ saveTeams: { ...settings.get().saveTeams, [fileName]: teamId } })
@@ -332,22 +245,29 @@ app.whenReady().then(async () => {
     },
     roleWeights: () => settings.get().roleWeights
   })
+  link = new GameLink(
+    world,
+    () => settings.get().saveDir,
+    (status) => mainWindow?.webContents.send('link:changed', status)
+  )
   saveWatcher = new SaveWatcher((path) => {
-    void handleSaveFile(path)
     void backupSave(path)
+    // 적용해 둔 세이브를 게임이 다시 저장했으면 그 내용을 다시 읽는다
+    void link.saved(path)
   })
   keys = new KeyStore(join(dataDir, 'claude-key.bin'))
-  talk = new TalkController(keys, settings, latestSquadNames)
+  talk = new TalkController(keys, settings, () => world.myNames())
 
   registerIpc()
   createWindow()
   if (!SMOKE_OUT) createTray()
   // 게임 안 "직접 답변" 칸을 맡는다(검사용 실행에서는 돌리지 않는다)
   if (!process.env.FMB_SMOKE_OUT) void talk.serveGame()
-  await watcher.start(settings.get().watchDirs)
   await saveWatcher.start(settings.get().saveDir)
+  // 게임이 켜져 있는지 계속 확인한다
+  void link.run()
   // 창이 먼저 뜬 뒤에 읽는다(세이브 하나를 읽는 데 몇 초 걸린다)
-  setTimeout(importNewestSave, 1200)
+  setTimeout(applyLastSave, 1200)
 
   if (SMOKE_OUT) void runSmoke(SMOKE_OUT)
 
@@ -363,9 +283,8 @@ app.on('before-quit', () => {
 app.on('window-all-closed', () => {
   tray?.destroy()
   tray = null
-  void watcher?.stop()
   void saveWatcher?.stop()
+  link?.stop()
   talk?.dispose()
-  store?.close()
   app.quit()
 })

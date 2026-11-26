@@ -8,7 +8,7 @@ import {
   Users,
   type LucideIcon
 } from 'lucide-react'
-import type { AppStatus } from '@shared/types'
+import type { LinkStatus } from '@shared/game'
 
 export type Route = 'home' | 'squad' | 'targets' | 'compare' | 'editor' | 'backups' | 'settings'
 
@@ -40,9 +40,10 @@ function BrandMark() {
   )
 }
 
-export function Sidebar(props: { route: Route; onNavigate: (route: Route) => void; status: AppStatus | null }) {
-  const { route, onNavigate, status } = props
-  const watching = (status?.watchDirs.filter((d) => d.exists).length ?? 0) + (status?.saveDir.exists ? 1 : 0)
+export function Sidebar(props: { route: Route; onNavigate: (route: Route) => void; link: LinkStatus }) {
+  const { route, onNavigate, link } = props
+  const { game, data } = link
+  const gameLine = !game.connected ? 'FM이 꺼져 있습니다' : game.loaded ? `FM 연결됨 · ${game.team}` : 'FM 연결됨 · 메인 메뉴'
 
   return (
     <aside className="sidebar">
@@ -81,14 +82,12 @@ export function Sidebar(props: { route: Route; onNavigate: (route: Route) => voi
         </button>
       </nav>
 
-      <div className="watch-state" title={status?.watchDirs.map((d) => d.dir).join('\n')}>
-        <span className={`dot ${watching > 0 ? 'on' : 'off'}`} />
+      <div className="watch-state" title={data.note || undefined}>
+        <span className={`dot ${game.connected ? 'on' : 'off'}`} />
         <span>
-          {status === null
-            ? '상태 확인 중'
-            : watching > 0
-              ? '세이브와 내보내기를 지켜보는 중'
-              : '지켜볼 폴더가 없습니다. 설정에서 지정하세요.'}
+          {gameLine}
+          <br />
+          {data.save ? `${data.save.name} · ${data.source === 'game' ? '게임의 지금 값' : '세이브의 값'}` : '적용한 세이브 없음'}
         </span>
       </div>
     </aside>

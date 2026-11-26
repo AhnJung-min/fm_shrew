@@ -1,4 +1,4 @@
-import type { CellValue, SnapshotKind } from '@shared/types'
+import type { CellValue } from '@shared/types'
 
 const timeFormat = new Intl.DateTimeFormat('ko-KR', {
   month: 'long',
@@ -9,16 +9,6 @@ const timeFormat = new Intl.DateTimeFormat('ko-KR', {
 
 export function formatTime(iso: string): string {
   return timeFormat.format(new Date(iso))
-}
-
-export const KIND_LABEL: Record<SnapshotKind, string> = {
-  squad: '스쿼드',
-  search: '선수 검색'
-}
-
-/** 세이브 파일에서 읽은 기록인지(게임에서 내보낸 CSV와 구분) */
-export function isFromSave(fileName: string): boolean {
-  return /\.fm$/i.test(fileName)
 }
 
 /** 능력치 값(1~20)을 네 단계로 나눈다: 1~7, 8~11, 12~15, 16~20 */

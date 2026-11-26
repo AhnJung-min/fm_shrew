@@ -1,6 +1,7 @@
 import { CircleAlert, RotateCcw, Search, Zap } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { FIELDS, GROUP_LABEL } from '@shared/fields'
+import type { LinkStatus } from '@shared/game'
 import { POSITION_KEYS } from '@shared/positions'
 import type { ColumnGroup } from '@shared/types'
 import {
@@ -99,8 +100,14 @@ function NumberCell(props: { label: string; value: number; original: number; min
  * 선수의 능력치·포지션 숙련도·현재/잠재 능력을 고쳐 켜져 있는 게임에 바로 반영한다.
  * 선수 목록은 세이브에서, 고칠 값은 게임의 지금 값에서 읽는다. 세이브 파일은 건드리지 않는다.
  */
-export function Editor(props: { openUid: number | null; onOpened: () => void }) {
-  const { openUid, onOpened } = props
+export function Editor(props: {
+  /** 자료가 바뀌면 달라지는 글자(다시 읽을 때를 안다) */
+  dataKey: string
+  link: LinkStatus
+  openUid: number | null
+  onOpened: () => void
+}) {
+  const { dataKey, link, openUid, onOpened } = props
   const [search, setSearch] = useState('')
   const [items, setItems] = useState<EditorListItem[] | null>(null)
   const [saveName, setSaveName] = useState<string | null>(null)
@@ -121,7 +128,7 @@ export function Editor(props: { openUid: number | null; onOpened: () => void }) 
   useEffect(() => {
     const timer = window.setTimeout(() => void loadList(search), search ? 220 : 0)
     return () => window.clearTimeout(timer)
-  }, [search, loadList])
+  }, [search, loadList, dataKey])
 
   const open = useCallback(async (uid: number): Promise<void> => {
     const loaded = await api.editorPlayer(uid)
@@ -185,7 +192,11 @@ export function Editor(props: { openUid: number | null; onOpened: () => void }) 
       <header className="page-head">
         <h1>에디터</h1>
         <span className="page-sub">
-          {saveName ? '고친 값을 켜져 있는 게임에 바로 반영합니다.' : problem ? '' : '세이브를 읽는 중입니다. 몇 초 걸립니다.'}
+          {!saveName
+            ? ''
+            : link.game.loaded
+              ? '고친 값을 켜져 있는 게임에 바로 반영합니다.'
+              : 'FM을 켜고 세이브를 불러와야 값을 고칠 수 있습니다. 지금은 보기만 됩니다.'}
         </span>
         <div className="spacer" />
         {pending.size > 0 && <span className="page-sub num">고친 선수 {pending.size}명</span>}

@@ -159,6 +159,24 @@ internal static unsafe class GameData
 
     public static bool Has(string path) => Watches.TryGetValue(path, out var watch) && watch.Has;
 
+    /// <summary>나무에 그 이름의 마디가 있는지(값을 청하지는 않는다)</summary>
+    public static bool Exists(string path)
+    {
+        var bindings = Tree();
+        if (bindings == null) return false;
+        try
+        {
+            var span = Span(path);
+            var key = Bindings.MakeKey(ref span);
+            return bindings.Exists(ref key);
+        }
+        catch (Exception error)
+        {
+            Failed("exists " + path, error);
+            return false;
+        }
+    }
+
     /// <summary>도착한 값을 글로. 아직 없으면 null</summary>
     public static string Text(string path) => Watches.TryGetValue(path, out var watch) && watch.Has ? watch.Text : null;
 

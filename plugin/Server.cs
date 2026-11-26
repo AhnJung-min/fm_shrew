@@ -83,6 +83,17 @@ internal static class Server
                 using var reader = new StreamReader(request.InputStream, Encoding.UTF8);
                 sent = reader.ReadToEnd();
             }
+            // 모든 선수의 지금 값은 양이 많아 글이 아니라 바이트 덩어리로 준다
+            if (request.Url?.AbsolutePath == "/live/all")
+            {
+                var packed = LiveMemory.All(request.QueryString["rescan"] is "1" or "true");
+                context.Response.StatusCode = 200;
+                context.Response.ContentType = "application/octet-stream";
+                context.Response.ContentLength64 = packed.Length;
+                context.Response.OutputStream.Write(packed, 0, packed.Length);
+                context.Response.Close();
+                return;
+            }
             body = Route(request.Url?.AbsolutePath ?? "/", request.QueryString, sent);
         }
         catch (HttpError error)
@@ -126,6 +137,9 @@ internal static class Server
         {
             case "/ping":
                 return $"fm-bojwagwan-bridge {Plugin.Version}";
+            // 앱이 게임 상태를 물을 때: 세이브를 불러왔는지, 감독과 팀, 내 팀 선수 이름
+            case "/state":
+                return LiveState.Json();
 
             // 게임 안 "직접 답변" 칸과 앱 사이의 통로. poll은 새 말이 생길 때까지 이 스레드에서 기다린다
             case "/talk/poll":

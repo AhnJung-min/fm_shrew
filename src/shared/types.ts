@@ -1,8 +1,6 @@
+import type { ApplyResult, LinkStatus, SaveFileInfo } from './game'
 import type { TalkEffort, TalkStats, TalkStatus } from './talk'
 import type { CandidateQuery, CandidateResult, EditorApplyResult, EditorEdit, EditorListItem, EditorPlayer } from './world'
-
-/** 스냅샷 종류: 내 스쿼드인지, 선수 검색(영입 후보) 결과인지 */
-export type SnapshotKind = 'squad' | 'search'
 
 export type ColumnGroup = 'info' | 'technical' | 'mental' | 'physical' | 'goalkeeping' | 'other'
 
@@ -16,9 +14,9 @@ export interface CellValue {
 }
 
 export interface ColumnInfo {
-  /** 파일에 적힌 열 이름 그대로 */
+  /** 열 이름(줄의 cells에서 값을 찾는 열쇠) */
   header: string
-  /** 앱이 알아본 항목 id. 못 알아보면 null */
+  /** 항목 id. 앱이 따로 덧붙인 열이 아니면 fields.ts의 id */
   field: string | null
   group: ColumnGroup
   /** 표 머리에 쓰는 짧은 이름 */
@@ -38,28 +36,23 @@ export interface PlayerRow {
   cells: Record<string, CellValue>
 }
 
-export interface SnapshotMeta {
-  id: number
-  kind: SnapshotKind
-  sourceFile: string
-  fileName: string
-  importedAt: string
-  rowCount: number
-  columnCount: number
-}
-
-export interface Snapshot extends SnapshotMeta {
+/** 내 팀 선수 표 */
+export interface SquadResult {
+  ok: boolean
+  /** 표를 만들지 못한 이유 */
+  message?: string
   columns: ColumnInfo[]
+  /** 줄의 idx는 선수 고유 번호다 */
   rows: PlayerRow[]
 }
 
 export type Density = 'compact' | 'comfortable'
 
 export interface Settings {
-  /** 내보내기 파일이 생기는지 지켜볼 폴더들 */
-  watchDirs: string[]
-  /** 세이브 파일(.fm)이 있는 폴더. 게임이 저장하면 내 팀 선수를 다시 읽는다 */
+  /** 세이브 파일(.fm)이 있는 폴더 */
   saveDir: string
+  /** 마지막으로 적용한 세이브의 경로. 앱을 켜면 이 세이브를 다시 적용한다 */
+  activeSave: string
   /** 세이브 파일 이름 → 내 팀 id (한 번 찾으면 기억한다) */
   saveTeams: Record<string, number>
   density: Density
@@ -75,8 +68,6 @@ export interface Settings {
   talkEffort: TalkEffort
   /** 게임 안 직접 답변의 누적 사용량 */
   talkStats: TalkStats
-  /** 열 이름 → 항목 id. 자동 인식이 틀렸거나 못 알아본 열을 직접 지정 */
-  columnOverrides: Record<string, string>
   /** 경기 화면에서 본 "홈|원정" 약칭들(최근 것만). 여러 경기에 다 나오는 약칭이 우리 팀이다 */
   matchPairs: string[]
   /** 창을 닫아도 앱을 끄지 않고 작업 표시줄 알림 영역에 남겨 둘지(게임 안 직접 답변이 계속 되도록) */
@@ -114,19 +105,9 @@ export interface WatchDirStatus {
 }
 
 export interface AppStatus {
-  watchDirs: WatchDirStatus[]
   saveDir: WatchDirStatus
   dataDir: string
   version: string
-}
-
-export interface ImportResult {
-  ok: boolean
-  file: string
-  snapshot?: SnapshotMeta
-  /** 실패했거나 건너뛴 이유 */
-  message?: string
-  skipped?: boolean
 }
 
 /** 화면(렌더러)이 쓰는 기능 목록. Electron에서는 preload가, 브라우저 미리보기에서는 mock이 구현한다. */
@@ -134,22 +115,23 @@ export interface Api {
   getStatus(): Promise<AppStatus>
   getSettings(): Promise<Settings>
   setSettings(patch: Partial<Settings>): Promise<Settings>
-  listSnapshots(): Promise<SnapshotMeta[]>
-  getSnapshot(id: number): Promise<Snapshot | null>
-  setSnapshotKind(id: number, kind: SnapshotKind): Promise<void>
-  deleteSnapshot(id: number): Promise<void>
-  /** 파일 선택 창을 열어 가져오기 */
-  pickAndImport(): Promise<ImportResult[]>
-  /** 끌어다 놓은 파일 경로로 가져오기 */
-  importPaths(paths: string[]): Promise<ImportResult[]>
-  pickFolder(): Promise<string | null>
   openPath(path: string): Promise<void>
-  /** 끌어다 놓은 File의 실제 경로 */
-  pathForFile(file: File): string
-  onImported(cb: (result: ImportResult) => void): () => void
+
+  // 게임 연결과 세이브 적용
+  linkStatus(): Promise<LinkStatus>
+  /** 세이브 폴더의 세이브 파일들, 최근에 저장한 것부터 */
+  listSaves(): Promise<SaveFileInfo[]>
+  /** 세이브를 골라 적용한다. 그 세이브의 자료로 모든 화면이 돈다. 몇 초 걸린다 */
+  applySave(path: string): Promise<ApplyResult>
+  /** 켜져 있는 게임에서 지금 값을 다시 받는다 */
+  refreshLive(rescan: boolean): Promise<void>
+  /** 게임 연결이나 자료가 바뀌었을 때 */
+  onLinkChanged(cb: (status: LinkStatus) => void): () => void
+  /** 내 팀 선수 표 */
+  worldSquad(): Promise<SquadResult>
 
   // 세이브 전체(모든 구단의 선수)
-  /** 고른 역할로 영입 후보를 유형별로 고른다. 세이브를 처음 읽을 때는 몇 초 걸린다 */
+  /** 고른 역할로 영입 후보를 유형별로 고른다 */
   worldCandidates(query: CandidateQuery): Promise<CandidateResult>
   /** 에디터의 선수 목록. 찾는 글자가 없으면 내 팀 선수들 */
   editorList(search: string): Promise<{ ok: boolean; message?: string; saveName?: string; items: EditorListItem[] }>

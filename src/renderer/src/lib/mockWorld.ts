@@ -1,5 +1,7 @@
+import { FIELDS } from '@shared/fields'
 import { POSITION_KEYS, PLAYABLE_RATING, positionsLabel } from '@shared/positions'
 import { ROLE_BY_ID } from '@shared/roles'
+import type { ColumnInfo, SquadResult } from '@shared/types'
 import {
   categoriesOf,
   SAVE_ATTRIBUTE_ORDER,
@@ -130,9 +132,45 @@ export function mockEditorList(search: string, empty: boolean): { ok: boolean; m
   return { ok: true, saveName: '리버풀 2025.fm', items: found.map(listItem) }
 }
 
-export function mockEditorPlayer(uid: number): EditorPlayer | null {
+export function mockEditorPlayer(uid: number, gameOn: boolean): EditorPlayer | null {
   const found = PLAYERS.find((player) => player.uid === uid)
   if (!found) return null
   const { mine: _mine, ...player } = found
-  return { ...player, positions: [...player.positions], attributes: [...player.attributes], source: 'game' }
+  const values = { ...player, positions: [...player.positions], attributes: [...player.attributes] }
+  return gameOn
+    ? { ...values, source: 'game' }
+    : { ...values, source: 'save', sourceNote: '게임이 꺼져 있거나 게임 안 플러그인이 대답하지 않아, 세이브의 값을 보여 줍니다.' }
+}
+
+/** 내 팀 선수 표 */
+export function mockSquad(empty: boolean): SquadResult {
+  if (empty) return { ok: false, message: '먼저 홈 화면에서 세이브를 골라 적용해 주세요.', columns: [], rows: [] }
+  const info = (header: string, field: string, numeric: boolean): ColumnInfo => ({
+    header, field, group: 'info', short: header, label: header, isAttr: false, numeric
+  })
+  const attributes = FIELDS.filter((field) => field.isAttr)
+  const columns: ColumnInfo[] = [
+    info('이름', 'name', false),
+    info('포지션', 'position', false),
+    info('나이', 'age', true),
+    info('현재 능력', 'ability', true),
+    info('잠재 능력', 'potential', true),
+    ...attributes.map((field): ColumnInfo => ({
+      header: field.label, field: field.id, group: field.group, short: field.short, label: field.label, isAttr: true, numeric: true
+    }))
+  ]
+  const num = (value: number | null): { raw: string; num: number | null } => ({ raw: value === null ? '' : String(value), num: value })
+  const rows = PLAYERS.filter((player) => player.mine).map((player) => ({
+    idx: player.uid,
+    name: player.name,
+    cells: {
+      이름: { raw: player.name, num: null },
+      포지션: { raw: player.position, num: null },
+      나이: num(player.age),
+      '현재 능력': num(player.ca),
+      '잠재 능력': num(player.pa),
+      ...Object.fromEntries(attributes.map((field) => [field.label, num(shownValue(player.attributes[ATTRIBUTE_INDEX.get(field.id)!]))]))
+    }
+  }))
+  return { ok: true, columns, rows }
 }

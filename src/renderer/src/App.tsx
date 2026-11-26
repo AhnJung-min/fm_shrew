@@ -1,24 +1,15 @@
-import { X } from 'lucide-react'
-import { useCallback, useEffect, useRef, useState } from 'react'
-import type { AppStatus, ImportResult, Settings as SettingsData, SnapshotMeta } from '@shared/types'
+import { useCallback, useEffect, useState } from 'react'
+import { NO_DATA, NO_GAME, type LinkStatus } from '@shared/game'
+import type { AppStatus, Settings as SettingsData } from '@shared/types'
 import { api } from './api'
 import { Sidebar, type Route } from './components/Sidebar'
-import { isFromSave, KIND_LABEL } from './lib/format'
 import { Backups } from './screens/Backups'
-import { Compare, MAX_COMPARE, type CompareState } from './screens/Compare'
+import { Compare, MAX_COMPARE } from './screens/Compare'
 import { Editor } from './screens/Editor'
 import { Home } from './screens/Home'
 import { Settings } from './screens/Settings'
 import { Squad } from './screens/Squad'
 import { Targets } from './screens/Targets'
-
-interface Toast {
-  id: number
-  text: string
-  error?: boolean
-  /** 누르면 열 스냅샷 */
-  snapshotId?: number
-}
 
 const ROUTES: Route[] = ['home', 'squad', 'targets', 'compare', 'editor', 'backups', 'settings']
 
@@ -27,66 +18,31 @@ function initialRoute(): Route {
   return ROUTES.includes(fromHash) ? fromHash : 'home'
 }
 
+/**
+ * 적용한 세이브나 게임에서 받은 값이 바뀌면 달라지는 글자.
+ * 화면들은 이것이 바뀔 때 자료를 다시 청한다.
+ */
+function dataKeyOf(link: LinkStatus): string {
+  const { save, liveAt, hasTeam } = link.data
+  return `${save?.path ?? ''}|${save?.savedAt ?? ''}|${liveAt ?? ''}|${hasTeam}`
+}
+
 export function App() {
   const [route, setRoute] = useState<Route>(initialRoute)
   const [status, setStatus] = useState<AppStatus | null>(null)
   const [settings, setSettings] = useState<SettingsData | null>(null)
-  const [snapshots, setSnapshots] = useState<SnapshotMeta[]>([])
-  const [selectedId, setSelectedId] = useState<number | null>(null)
-  const [toasts, setToasts] = useState<Toast[]>([])
-  const [compare, setCompare] = useState<CompareState>({ snapshotId: null, idxs: [] })
-  const nextToastId = useRef(1)
+  const [link, setLink] = useState<LinkStatus>({ game: NO_GAME, data: NO_DATA, busy: false })
+  /** 선수 비교에 담은 선수들(고유 번호) */
+  const [compare, setCompare] = useState<number[]>([])
   /** 영입 후보에서 고른 선수를 에디터로 넘길 때 */
   const [editorUid, setEditorUid] = useState<number | null>(null)
 
-  /** 스쿼드 표에서 선수를 비교에 담거나 뺀다. 다른 기록의 선수를 담으면 새로 시작한다. */
-  const toggleCompare = (snapshotId: number, idx: number): void => {
-    setCompare((current) => {
-      const idxs = current.snapshotId === snapshotId ? current.idxs : []
-      if (idxs.includes(idx)) return { snapshotId, idxs: idxs.filter((i) => i !== idx) }
-      return idxs.length >= MAX_COMPARE ? { snapshotId, idxs } : { snapshotId, idxs: [...idxs, idx] }
-    })
-  }
-
-  const refresh = useCallback(async (): Promise<SnapshotMeta[]> => {
-    const [nextStatus, list] = await Promise.all([api.getStatus(), api.listSnapshots()])
-    setStatus(nextStatus)
-    setSnapshots(list)
-    // 보고 있던 기록이 지워졌으면 가장 최근 기록으로 옮긴다
-    setSelectedId((current) => (current !== null && list.some((s) => s.id === current) ? current : (list[0]?.id ?? null)))
-    return list
-  }, [])
-
-  const pushToast = useCallback((toast: Omit<Toast, 'id'>) => {
-    const id = nextToastId.current++
-    setToasts((current) => [...current.slice(-2), { ...toast, id }])
-    window.setTimeout(() => setToasts((current) => current.filter((t) => t.id !== id)), 7000)
-  }, [])
-
-  const reportImports = useCallback(
-    (results: ImportResult[]) => {
-      for (const result of results) {
-        if (result.ok && result.snapshot) {
-          const s = result.snapshot
-          const what = isFromSave(s.fileName) ? '세이브에서 내 스쿼드' : KIND_LABEL[s.kind]
-          pushToast({ text: `${what} ${s.rowCount}명을 가져왔습니다.`, snapshotId: s.id })
-          setSelectedId(s.id)
-        } else if (result.ok && result.skipped) {
-          pushToast({ text: '이미 가져온 파일이라 건너뛰었습니다.' })
-        } else {
-          pushToast({ text: `가져오지 못했습니다. ${result.message ?? ''}`, error: true })
-        }
-      }
-      void refresh()
-    },
-    [pushToast, refresh]
-  )
-
   useEffect(() => {
     void api.getSettings().then(setSettings)
-    void refresh()
-    return api.onImported((result) => reportImports([result]))
-  }, [refresh, reportImports])
+    void api.getStatus().then(setStatus)
+    void api.linkStatus().then(setLink)
+    return api.onLinkChanged(setLink)
+  }, [])
 
   useEffect(() => {
     if (settings) document.documentElement.dataset.density = settings.density
@@ -98,37 +54,34 @@ export function App() {
     return () => window.removeEventListener('hashchange', onHash)
   }, [])
 
-  const changeSettings = async (patch: Partial<SettingsData>): Promise<void> => {
-    setSettings(await api.setSettings(patch))
-    await refresh()
+  // 다른 세이브를 적용하면 담아 둔 비교 선수는 비운다
+  const savePath = link.data.save?.path ?? ''
+  useEffect(() => setCompare([]), [savePath])
+
+  const toggleCompare = (uid: number): void => {
+    setCompare((current) => {
+      if (current.includes(uid)) return current.filter((each) => each !== uid)
+      return current.length >= MAX_COMPARE ? current : [...current, uid]
+    })
   }
 
-  const openSnapshot = (id: number): void => {
-    setSelectedId(id)
-    setRoute('squad')
-  }
+  const changeSettings = useCallback(async (patch: Partial<SettingsData>): Promise<void> => {
+    setSettings(await api.setSettings(patch))
+    setStatus(await api.getStatus())
+  }, [])
 
   if (!settings) return null
+  const dataKey = dataKeyOf(link)
 
   return (
     <div className="app">
-      <Sidebar route={route} onNavigate={setRoute} status={status} />
+      <Sidebar route={route} onNavigate={setRoute} link={link} />
       <main className="main">
-        {route === 'home' && (
-          <Home
-            status={status}
-            snapshots={snapshots}
-            onOpenSnapshot={openSnapshot}
-            onImported={reportImports}
-            onChanged={() => void refresh()}
-          />
-        )}
+        {route === 'home' && <Home status={status} link={link} onNavigate={setRoute} />}
         {route === 'squad' && (
           <Squad
-            snapshots={snapshots}
-            selectedId={selectedId}
-            onSelectSnapshot={setSelectedId}
-            onChanged={() => void refresh()}
+            dataKey={dataKey}
+            link={link}
             settings={settings}
             onSettings={(patch) => void changeSettings(patch)}
             onGoHome={() => setRoute('home')}
@@ -139,6 +92,8 @@ export function App() {
         )}
         {route === 'targets' && (
           <Targets
+            dataKey={dataKey}
+            link={link}
             settings={settings}
             onEdit={(uid) => {
               setEditorUid(uid)
@@ -147,40 +102,12 @@ export function App() {
           />
         )}
         {route === 'compare' && (
-          <Compare
-            snapshots={snapshots}
-            state={compare}
-            onState={setCompare}
-            settings={settings}
-            onGoSquad={() => setRoute('squad')}
-          />
+          <Compare dataKey={dataKey} idxs={compare} onIdxs={setCompare} settings={settings} onGoSquad={() => setRoute('squad')} />
         )}
-        {route === 'editor' && <Editor openUid={editorUid} onOpened={() => setEditorUid(null)} />}
+        {route === 'editor' && <Editor dataKey={dataKey} link={link} openUid={editorUid} onOpened={() => setEditorUid(null)} />}
         {route === 'backups' && <Backups settings={settings} onChange={changeSettings} />}
-        {route === 'settings' && (
-          <Settings status={status} settings={settings} latest={snapshots[0] ?? null} onChange={changeSettings} />
-        )}
+        {route === 'settings' && <Settings status={status} settings={settings} onChange={changeSettings} />}
       </main>
-
-      <div className="toasts" role="status" aria-live="polite">
-        {toasts.map((toast) => (
-          <div key={toast.id} className={`toast ${toast.error ? 'error' : ''}`}>
-            <p>{toast.text}</p>
-            {toast.snapshotId !== undefined && route !== 'squad' && (
-              <button className="btn" onClick={() => openSnapshot(toast.snapshotId!)}>
-                표로 보기
-              </button>
-            )}
-            <button
-              className="btn ghost icon"
-              aria-label="알림 닫기"
-              onClick={() => setToasts((current) => current.filter((t) => t.id !== toast.id))}
-            >
-              <X size={16} />
-            </button>
-          </div>
-        ))}
-      </div>
     </div>
   )
 }

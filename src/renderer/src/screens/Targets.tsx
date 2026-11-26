@@ -2,6 +2,7 @@ import { PencilRuler, Search } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 import { FIELDS } from '@shared/fields'
 import { ROLES } from '@shared/roles'
+import type { LinkStatus } from '@shared/game'
 import type { CellValue, ColumnInfo, PlayerRow, Settings } from '@shared/types'
 import {
   CATEGORY_HELP,
@@ -70,8 +71,14 @@ function benchLine(result: CandidateResult): string {
  * 세이브에 든 모든 구단의 선수를 고른 역할의 점수로 줄 세우고, 내 팀 주전과 견주어 유형별로 보여 준다.
  * 계산은 메인 프로세스가 한다(선수가 10만 명쯤이라 화면으로 다 가져오지 않는다).
  */
-export function Targets(props: { settings: Settings; onEdit: (uid: number) => void }) {
-  const { settings, onEdit } = props
+export function Targets(props: {
+  /** 자료가 바뀌면 달라지는 글자(다시 읽을 때를 안다) */
+  dataKey: string
+  link: LinkStatus
+  settings: Settings
+  onEdit: (uid: number) => void
+}) {
+  const { dataKey, link, settings, onEdit } = props
   const [roleId, setRoleId] = useState('cb')
   const [category, setCategory] = useState<CandidateCategory>('starter')
   const [maxAge, setMaxAge] = useState('')
@@ -105,7 +112,7 @@ export function Targets(props: { settings: Settings; onEdit: (uid: number) => vo
       window.clearTimeout(timer)
     }
     // 역할 가중치를 고치면 점수가 달라지므로 다시 묻는다
-  }, [query, settings.roleWeights])
+  }, [query, settings.roleWeights, dataKey])
 
   const rows = useMemo(() => (result?.rows ?? []).map(toRow), [result])
   const sorted = useMemo(() => sortRows(rows, sort), [rows, sort])
@@ -120,7 +127,7 @@ export function Targets(props: { settings: Settings; onEdit: (uid: number) => vo
         </header>
         <div className="page-body">
           <div className="empty" style={{ maxWidth: 560, margin: '0 auto' }}>
-            <strong>세이브를 읽지 못했습니다</strong>
+            <strong>아직 보여 줄 선수가 없습니다</strong>
             <p style={{ marginTop: 8 }}>{result.message}</p>
           </div>
         </div>
@@ -133,7 +140,9 @@ export function Targets(props: { settings: Settings; onEdit: (uid: number) => vo
       <header className="page-head">
         <h1>영입 후보</h1>
         <span className="page-sub">
-          {result?.saveName ? `세이브 “${result.saveName}”의 모든 구단 선수에서 찾습니다.` : '세이브를 읽는 중입니다. 몇 초 걸립니다.'}
+          {result?.saveName
+            ? `“${result.saveName}”의 모든 구단 선수 · ${link.data.source === 'game' ? '게임의 지금 값' : '세이브에 저장된 값'}`
+            : ''}
         </span>
         <div className="spacer" />
         {result?.ok && <span className="page-sub num">{benchLine(result)}</span>}
@@ -210,8 +219,7 @@ export function Targets(props: { settings: Settings; onEdit: (uid: number) => vo
       <div className="table-wrap">
         {result === null || (loading && rows.length === 0) ? (
           <div className="empty" style={{ flex: 1 }}>
-            <strong>세이브를 읽는 중입니다</strong>
-            모든 구단의 선수를 읽느라 처음 한 번은 몇 초 걸립니다.
+            <strong>선수를 고르는 중입니다</strong>
           </div>
         ) : sorted.length === 0 ? (
           <div className="empty" style={{ flex: 1 }}>

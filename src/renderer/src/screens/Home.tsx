@@ -1,179 +1,178 @@
-import { FolderOpen, Trash2, Upload } from 'lucide-react'
-import { useEffect, useState } from 'react'
-import type { AppStatus, BackupEntry, ImportResult, SnapshotMeta } from '@shared/types'
+import { CircleAlert, FolderOpen, RefreshCw } from 'lucide-react'
+import { useCallback, useEffect, useState } from 'react'
+import type { LinkStatus, SaveFileInfo } from '@shared/game'
+import type { AppStatus } from '@shared/types'
 import { api } from '@/api'
-import { formatTime, isFromSave, KIND_LABEL } from '@/lib/format'
+import type { Route } from '@/components/Sidebar'
+import { formatBytes, formatTime } from '@/lib/format'
 
-export function Home(props: {
-  status: AppStatus | null
-  snapshots: SnapshotMeta[]
-  onOpenSnapshot: (id: number) => void
-  onImported: (results: ImportResult[]) => void
-  onChanged: () => void
-}) {
-  const { status, snapshots, onOpenSnapshot, onImported, onChanged } = props
-  const [over, setOver] = useState(false)
-  const [lastBackup, setLastBackup] = useState<BackupEntry | null>(null)
+/**
+ * 시작 화면. 순서대로: 게임이 켜져 있는지 보고, 쓸 세이브를 골라 적용하고, 그 자료로 다른 화면을 쓴다.
+ */
+export function Home(props: { status: AppStatus | null; link: LinkStatus; onNavigate: (route: Route) => void }) {
+  const { status, link, onNavigate } = props
+  const { game, data, busy } = link
+  const [saves, setSaves] = useState<SaveFileInfo[] | null>(null)
+  const [picked, setPicked] = useState<string | null>(null)
+  const [notice, setNotice] = useState<{ text: string; error?: boolean } | null>(null)
 
+  const loadSaves = useCallback(async (): Promise<void> => setSaves(await api.listSaves()), [])
+
+  // 게임이 저장하면 목록의 저장 시각이 바뀐다
   useEffect(() => {
-    const load = async (): Promise<void> => setLastBackup((await api.backupList()).entries[0] ?? null)
-    void load()
-    return api.onBackupChanged(() => void load())
-  }, [])
+    void loadSaves()
+  }, [loadSaves, data.save?.savedAt])
 
-  const pick = async (): Promise<void> => onImported(await api.pickAndImport())
+  const applied = data.save?.path ?? null
+  const chosen = picked ?? applied ?? saves?.[0]?.path ?? null
 
-  const drop = async (event: React.DragEvent): Promise<void> => {
-    event.preventDefault()
-    setOver(false)
-    const paths = Array.from(event.dataTransfer.files)
-      .map((file) => api.pathForFile(file))
-      .filter(Boolean)
-    if (paths.length > 0) onImported(await api.importPaths(paths))
+  const apply = async (): Promise<void> => {
+    if (!chosen) return
+    setNotice(null)
+    const result = await api.applySave(chosen)
+    setNotice({ text: result.message, error: !result.ok })
+    setPicked(null)
+    await loadSaves()
   }
 
-  const remove = async (snapshot: SnapshotMeta): Promise<void> => {
-    if (!window.confirm(`“${snapshot.fileName}” 기록을 지울까요? 원본 파일은 그대로 남습니다.`)) return
-    await api.deleteSnapshot(snapshot.id)
-    onChanged()
-  }
+  const gameLine = !game.connected
+    ? 'FM이 꺼져 있습니다. 세이브에 저장된 값으로 쓸 수 있고, 값을 고치려면 FM을 켜야 합니다.'
+    : !game.loaded
+      ? 'FM이 켜져 있습니다. 아직 세이브를 불러오지 않았습니다(메인 메뉴).'
+      : `FM이 켜져 있습니다. ${game.team}${game.manager ? `, 감독 ${game.manager}` : ''}`
 
   return (
     <>
       <header className="page-head">
         <h1>홈</h1>
-        <span className="page-sub">게임에서 저장하면 내 스쿼드가 저절로 갱신됩니다.</span>
+        <span className="page-sub">FM이 켜져 있는지 확인하고, 쓸 세이브를 골라 적용하세요.</span>
       </header>
 
       <div className="page-body">
-        <div className="home-grid">
+        <div className="start">
           <section className="panel">
             <div className="panel-head">
-              <h2>내 스쿼드: 세이브에서 자동으로</h2>
+              <h2>FM 연결</h2>
             </div>
             <div className="panel-body">
-              <p className="muted" style={{ marginBottom: 10 }}>
-                게임이 저장할 때마다(자동 저장 포함) 세이브 파일에서 내 1군 선수의 포지션과 능력치를 읽습니다. 게임에서
-                따로 누를 것은 없습니다.
+              <p className="start-line">
+                <span className={`dot ${game.connected ? 'on' : 'off'}`} />
+                <span>{gameLine}</span>
               </p>
-              <ul className="folder-list">
-                {status && (
-                  <li>
-                    <span className={`dot ${status.saveDir.exists ? 'on' : ''}`} />
-                    <span className="path">
-                      {status.saveDir.dir}
-                      {!status.saveDir.exists && <span className="faint"> (아직 없는 폴더)</span>}
-                    </span>
-                    {status.saveDir.exists && (
-                      <button
-                        className="btn ghost icon"
-                        onClick={() => void api.openPath(status.saveDir.dir)}
-                        aria-label="세이브 폴더 열기"
-                        title="폴더 열기"
-                      >
-                        <FolderOpen size={16} />
-                      </button>
-                    )}
-                  </li>
-                )}
-              </ul>
-              <p className="muted" style={{ marginTop: 10 }}>
-                {lastBackup
-                  ? `마지막 세이브 사본: ${formatTime(lastBackup.savedAt)} 저장분. 되돌리려면 백업 화면에서 복원하세요.`
-                  : '세이브 사본은 아직 없습니다. 게임에서 저장하면 자동으로 남습니다.'}
-              </p>
-
-              <h2 style={{ fontSize: 15, fontWeight: 600, margin: '22px 0 10px' }}>다른 선수 목록: 게임에서 내보내기</h2>
-              <ol className="steps">
-                <li>FM26에서 선수 검색 같은 목록 화면을 열고, 보고 싶은 열이 있는 뷰로 바꿉니다.</li>
-                <li>
-                  선수를 선택하고 <kbd>F9</kbd>를 누른 뒤, 목록이 끝까지 스크롤될 때까지 마우스에서 손을 뗍니다.
-                </li>
-                <li>파일이 저장되면 이 앱이 알아채고 표로 보여 줍니다.</li>
-              </ol>
-
-              <div
-                className={`drop ${over ? 'over' : ''}`}
-                onDragOver={(event) => {
-                  event.preventDefault()
-                  setOver(true)
-                }}
-                onDragLeave={() => setOver(false)}
-                onDrop={(event) => void drop(event)}
-              >
-                <Upload size={18} />
-                <span style={{ flex: 1 }}>CSV나 HTML 파일을 여기에 끌어다 놓아도 됩니다.</span>
-                <button className="btn" onClick={() => void pick()}>
-                  파일 선택
-                </button>
-              </div>
-
-              <h2 style={{ fontSize: 13, margin: '20px 0 8px', color: 'var(--text-2)' }}>내보내기를 지켜보는 폴더</h2>
-              <ul className="folder-list">
-                {status?.watchDirs.map((entry) => (
-                  <li key={entry.dir}>
-                    <span className={`dot ${entry.exists ? 'on' : ''}`} />
-                    <span className="path">
-                      {entry.dir}
-                      {!entry.exists && <span className="faint"> (아직 없는 폴더)</span>}
-                    </span>
-                    {entry.exists && (
-                      <button
-                        className="btn ghost icon"
-                        onClick={() => void api.openPath(entry.dir)}
-                        aria-label="폴더 열기"
-                        title="폴더 열기"
-                      >
-                        <FolderOpen size={16} />
-                      </button>
-                    )}
-                  </li>
-                ))}
-              </ul>
+              {game.connected && <p className="faint num">게임 안 플러그인 {game.pluginVersion}</p>}
             </div>
           </section>
 
           <section className="panel">
             <div className="panel-head">
-              <h2>가져온 기록</h2>
-              <span className="faint num">{snapshots.length}개</span>
+              <h2>세이브 고르기</h2>
+              <div className="spacer" />
+              {status?.saveDir.exists && (
+                <button className="btn ghost" onClick={() => void api.openPath(status.saveDir.dir)} title={status.saveDir.dir}>
+                  <FolderOpen size={16} />
+                  세이브 폴더
+                </button>
+              )}
             </div>
             <div className="panel-body">
-              {snapshots.length === 0 ? (
-                <div className="empty">
-                  <strong>아직 가져온 기록이 없습니다</strong>
-                  ‘선수 목록 가져오기’의 순서대로 게임에서 한 번 내보내 보세요.
-                </div>
+              {saves === null ? (
+                <p className="muted">세이브 폴더를 보는 중입니다.</p>
+              ) : saves.length === 0 ? (
+                <p className="muted">
+                  세이브 폴더에 세이브가 없습니다. 게임에서 한 번 저장해 주세요.
+                  {status && !status.saveDir.exists && ` (${status.saveDir.dir} 폴더가 없습니다)`}
+                </p>
               ) : (
-                <ul className="snap-list">
-                  {snapshots.map((snapshot) => (
-                    <li className="snap-row" key={snapshot.id}>
-                      <span className={`tag ${snapshot.kind}`}>
-                        {isFromSave(snapshot.fileName) ? '세이브' : KIND_LABEL[snapshot.kind]}
-                      </span>
-                      <div className="snap-main">
-                        <div className="snap-name" title={snapshot.sourceFile}>
-                          {snapshot.fileName}
-                        </div>
-                        <div className="snap-meta num">
-                          {formatTime(snapshot.importedAt)}에 가져옴, 선수 {snapshot.rowCount}명, 열{' '}
-                          {snapshot.columnCount}개
-                        </div>
-                      </div>
-                      <button className="btn" onClick={() => onOpenSnapshot(snapshot.id)}>
-                        표로 보기
-                      </button>
-                      <button
-                        className="btn ghost icon danger"
-                        onClick={() => void remove(snapshot)}
-                        aria-label={`${snapshot.fileName} 기록 지우기`}
-                        title="기록 지우기"
-                      >
-                        <Trash2 size={16} />
-                      </button>
-                    </li>
-                  ))}
-                </ul>
+                <>
+                  <ul className="save-list" role="radiogroup" aria-label="세이브">
+                    {saves.map((save) => (
+                      <li key={save.path}>
+                        <label className={chosen === save.path ? 'save-row on' : 'save-row'}>
+                          <input
+                            type="radio"
+                            name="save"
+                            checked={chosen === save.path}
+                            disabled={busy}
+                            onChange={() => setPicked(save.path)}
+                          />
+                          <span className="save-name">{save.name}</span>
+                          {applied === save.path && <span className="tag squad">적용됨</span>}
+                          <span className="spacer" />
+                          <span className="muted num">
+                            {formatTime(save.savedAt)} 저장 · {formatBytes(save.bytes)}
+                          </span>
+                        </label>
+                      </li>
+                    ))}
+                  </ul>
+                  <div className="start-actions">
+                    <button className="btn primary" disabled={busy || !chosen} onClick={() => void apply()}>
+                      {busy ? '읽는 중…' : chosen === applied ? '다시 읽기' : '적용'}
+                    </button>
+                    <span className="muted">
+                      {busy
+                        ? '세이브의 모든 선수를 읽고 있습니다. 몇 초 걸립니다.'
+                        : '고른 세이브의 자료로 스쿼드, 영입 후보, 에디터가 채워집니다.'}
+                    </span>
+                  </div>
+                </>
+              )}
+              {notice && (
+                <p className={notice.error ? 'chat-caution' : 'backup-notice'} role={notice.error ? 'alert' : 'status'}>
+                  {notice.error && <CircleAlert size={15} />}
+                  {notice.text}
+                </p>
+              )}
+            </div>
+          </section>
+
+          <section className="panel">
+            <div className="panel-head">
+              <h2>지금 쓰는 자료</h2>
+              <div className="spacer" />
+              {data.save && game.loaded && (
+                <button className="btn ghost" disabled={busy} onClick={() => void api.refreshLive(true)}>
+                  <RefreshCw size={15} />
+                  게임에서 값 다시 받기
+                </button>
+              )}
+            </div>
+            <div className="panel-body">
+              {!data.save ? (
+                <p className="muted">아직 적용한 세이브가 없습니다.</p>
+              ) : (
+                <>
+                  <dl className="facts">
+                    <dt>세이브</dt>
+                    <dd>{data.save.name}</dd>
+                    <dt>선수</dt>
+                    <dd className="num">{data.players.toLocaleString()}명</dd>
+                    <dt>내 팀</dt>
+                    <dd>{data.hasTeam ? data.club || '찾음' : '아직 찾지 못함'}</dd>
+                    <dt>능력치 값</dt>
+                    <dd>
+                      {data.source === 'game' && data.liveAt
+                        ? `켜져 있는 게임의 지금 값 (${formatTime(data.liveAt)}에 받음, ${data.liveMatched.toLocaleString()}명)`
+                        : `세이브에 저장된 값 (${formatTime(data.save.savedAt)} 저장)`}
+                    </dd>
+                  </dl>
+                  {data.note && (
+                    <p className="muted" style={{ marginTop: 10 }}>
+                      {data.note}
+                    </p>
+                  )}
+                  <div className="start-actions">
+                    <button className="btn" onClick={() => onNavigate('squad')}>
+                      스쿼드 보기
+                    </button>
+                    <button className="btn" onClick={() => onNavigate('targets')}>
+                      영입 후보 찾기
+                    </button>
+                    <button className="btn" onClick={() => onNavigate('editor')}>
+                      에디터 열기
+                    </button>
+                  </div>
+                </>
               )}
             </div>
           </section>

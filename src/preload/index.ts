@@ -1,28 +1,28 @@
-import { contextBridge, ipcRenderer, webUtils } from 'electron'
-import type { Api, ImportResult } from '@shared/types'
+import { contextBridge, ipcRenderer } from 'electron'
+import type { LinkStatus } from '@shared/game'
+import type { Api } from '@shared/types'
 
 const api: Api = {
   getStatus: () => ipcRenderer.invoke('status:get'),
   getSettings: () => ipcRenderer.invoke('settings:get'),
   setSettings: (patch) => ipcRenderer.invoke('settings:set', patch),
-  listSnapshots: () => ipcRenderer.invoke('snapshots:list'),
-  getSnapshot: (id) => ipcRenderer.invoke('snapshots:get', id),
-  setSnapshotKind: (id, kind) => ipcRenderer.invoke('snapshots:setKind', id, kind),
-  deleteSnapshot: (id) => ipcRenderer.invoke('snapshots:delete', id),
-  pickAndImport: () => ipcRenderer.invoke('import:pick'),
-  importPaths: (paths) => ipcRenderer.invoke('import:paths', paths),
-  pickFolder: () => ipcRenderer.invoke('dialog:pickFolder'),
   openPath: (path) => ipcRenderer.invoke('shell:openPath', path),
-  pathForFile: (file) => webUtils.getPathForFile(file),
-  onImported: (cb) => {
-    const listener = (_event: unknown, result: ImportResult): void => cb(result)
-    ipcRenderer.on('import:done', listener)
-    return () => ipcRenderer.removeListener('import:done', listener)
+
+  linkStatus: () => ipcRenderer.invoke('link:status'),
+  listSaves: () => ipcRenderer.invoke('link:saves'),
+  applySave: (path) => ipcRenderer.invoke('link:apply', path),
+  refreshLive: (rescan) => ipcRenderer.invoke('link:refresh', rescan),
+  onLinkChanged: (cb) => {
+    const listener = (_event: unknown, status: LinkStatus): void => cb(status)
+    ipcRenderer.on('link:changed', listener)
+    return () => ipcRenderer.removeListener('link:changed', listener)
   },
+  worldSquad: () => ipcRenderer.invoke('world:squad'),
 
   talkStatus: () => ipcRenderer.invoke('talk:status'),
   talkSetKey: (key) => ipcRenderer.invoke('talk:setKey', key),
   talkClearKey: () => ipcRenderer.invoke('talk:clearKey'),
+
   worldCandidates: (query) => ipcRenderer.invoke('world:candidates', query),
   editorList: (search) => ipcRenderer.invoke('editor:list', search),
   editorPlayer: (uid) => ipcRenderer.invoke('editor:player', uid),

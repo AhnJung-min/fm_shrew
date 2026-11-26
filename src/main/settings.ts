@@ -2,25 +2,18 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import type { Settings } from '@shared/types'
 
-/** 내보내기 파일이 생길 만한 기본 폴더들. 플러그인 설명에 저장 위치가 두 가지로 나와 있어 둘 다 본다. */
-export function defaultWatchDirs(documentsDir: string): string[] {
-  const base = join(documentsDir, 'Sports Interactive')
-  return [join(base, 'Football Manager 26'), join(base, 'Football Manager 2026')]
-}
-
 export class SettingsStore {
   private current: Settings
 
   constructor(
     private file: string,
     documentsDir: string,
-    watchDirOverride?: string,
     saveDirOverride?: string
   ) {
     const defaults: Settings = {
-      watchDirs: watchDirOverride ? [watchDirOverride] : defaultWatchDirs(documentsDir),
       saveDir: saveDirOverride ?? join(documentsDir, 'Sports Interactive', 'Football Manager 26', 'games'),
       saveTeams: {},
+      activeSave: '',
       density: 'compact',
       formation: '4-2-3-1',
       slotRoles: {},
@@ -28,7 +21,6 @@ export class SettingsStore {
       talkModel: 'claude-sonnet-5-5',
       talkEffort: 'medium',
       talkStats: { requests: 0, inputTokens: 0, outputTokens: 0 },
-      columnOverrides: {},
       matchPairs: [],
       keepRunning: true,
       backupEnabled: true,
@@ -44,7 +36,6 @@ export class SettingsStore {
       }
     }
     this.current = { ...defaults, ...saved }
-    if (watchDirOverride) this.current.watchDirs = [watchDirOverride]
     if (saveDirOverride) this.current.saveDir = saveDirOverride
   }
 

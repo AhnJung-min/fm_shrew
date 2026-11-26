@@ -1,7 +1,6 @@
-import { parseExport } from '@shared/parse'
-import { sampleSquadCsv } from '@shared/sample'
-import type { Api, BackupEntry, ImportResult, Settings, Snapshot } from '@shared/types'
-import { mockCandidates, mockEditorList, mockEditorPlayer } from './lib/mockWorld'
+import type { LinkStatus, SaveFileInfo } from '@shared/game'
+import type { Api, BackupEntry, Settings } from '@shared/types'
+import { mockCandidates, mockEditorList, mockEditorPlayer, mockSquad } from './lib/mockWorld'
 
 declare global {
   interface Window {
@@ -12,15 +11,13 @@ declare global {
 /**
  * 브라우저에서 화면만 볼 때 쓰는 가짜 구현(`npm run web`).
  * 실제 앱에서는 preload가 넣어 준 window.api를 쓴다.
+ * 주소에 ?empty를 붙이면 세이브를 적용하기 전, ?off를 붙이면 게임이 꺼진 상태를 본다.
  */
 function createMockApi(): Api {
   let settings: Settings = {
-    watchDirs: [
-      'C:\\Users\\me\\Documents\\Sports Interactive\\Football Manager 26',
-      'C:\\Users\\me\\Documents\\Sports Interactive\\Football Manager 2026'
-    ],
     saveDir: 'C:\\Users\\me\\Documents\\Sports Interactive\\Football Manager 26\\games',
     saveTeams: {},
+    activeSave: '',
     density: 'compact',
     formation: '4-2-3-1',
     slotRoles: {},
@@ -28,13 +25,22 @@ function createMockApi(): Api {
     talkModel: 'claude-sonnet-5-5',
     talkEffort: 'medium',
     talkStats: { requests: 3, inputTokens: 5400, outputTokens: 900 },
-    columnOverrides: {},
     matchPairs: [],
     keepRunning: true,
     backupEnabled: true,
     backupKeep: 10
   }
+  const params = new URLSearchParams(location.search)
+  const gameOff = params.has('off')
   const hour = 3_600_000
+  const names = ['리버풀 2025', '리버풀 2025 (v02)', '뉴캐슬 시작']
+  const saves: SaveFileInfo[] = [0.4, 26, 50].map((ago, i) => ({
+    path: `${settings.saveDir}\\${names[i]}.fm`,
+    name: `${names[i]}.fm`,
+    savedAt: new Date(Date.now() - ago * hour).toISOString(),
+    bytes: 145_000_000 - i * 1_300_000
+  }))
+  let applied: SaveFileInfo | null = params.has('empty') ? null : saves[0]
   let mockBackups: BackupEntry[] = [0.4, 2.1, 26, 27.5, 50].map((ago, i) => ({
     id: `sample-${i}`,
     saveName: '리버풀 2025.fm',
@@ -42,69 +48,72 @@ function createMockApi(): Api {
     beforeRestore: i === 2,
     bytes: 141_000_000 + i * 310_000
   }))
-  const empty = new URLSearchParams(location.search).has('empty')
-  const snapshots: Snapshot[] = []
-  if (!empty) {
-    const parsed = parseExport(sampleSquadCsv(), 'player_export_20261125_213045.csv')
-    snapshots.push({
-      id: 1,
-      kind: 'squad',
-      sourceFile: `${settings.watchDirs[0]}\\player_export_20261125_213045.csv`,
-      fileName: 'player_export_20261125_213045.csv',
-      importedAt: new Date().toISOString(),
-      rowCount: parsed.rows.length,
-      columnCount: parsed.columns.length,
-      ...parsed
-    })
-  }
-  let mockHasKey = !new URLSearchParams(location.search).has('nokey')
-  const meta = ({ columns: _c, rows: _r, ...rest }: Snapshot) => rest
-  const notSupported = async (): Promise<ImportResult[]> => [
-    { ok: false, file: '', message: '브라우저 미리보기에서는 파일을 가져올 수 없습니다.' }
-  ]
+  let mockHasKey = !params.has('nokey')
+  const listeners = new Set<(status: LinkStatus) => void>()
+  const linkStatus = (busy = false): LinkStatus => ({
+    game: gameOff
+      ? { connected: false, pluginVersion: '', loaded: false, manager: '', team: '', teamShort: '' }
+      : { connected: true, pluginVersion: '0.8.0', loaded: true, manager: '김 감독', team: '리버풀', teamShort: 'LIV' },
+    data: {
+      save: applied,
+      players: applied ? 99_892 : 0,
+      hasTeam: applied !== null,
+      club: applied ? '리버풀' : '',
+      source: applied && !gameOff ? 'game' : 'save',
+      liveAt: applied && !gameOff ? new Date(Date.now() - 40_000).toISOString() : null,
+      liveMatched: applied && !gameOff ? 99_640 : 0,
+      note: applied && gameOff ? '게임이 꺼져 있어 세이브에 저장된 값을 보여 줍니다.' : ''
+    },
+    busy
+  })
+  const tell = (busy = false): void => listeners.forEach((listener) => listener(linkStatus(busy)))
 
   return {
     getStatus: async () => ({
-      watchDirs: settings.watchDirs.map((dir, i) => ({ dir, exists: i === 0 })),
       saveDir: { dir: settings.saveDir, exists: true },
       dataDir: 'C:\\Users\\me\\AppData\\Roaming\\fm-bojwagwan',
       version: '0.1.0'
     }),
     getSettings: async () => settings,
     setSettings: async (patch) => (settings = { ...settings, ...patch }),
-    listSnapshots: async () => snapshots.map(meta),
-    getSnapshot: async (id) => snapshots.find((s) => s.id === id) ?? null,
-    setSnapshotKind: async (id, kind) => {
-      const found = snapshots.find((s) => s.id === id)
-      if (found) found.kind = kind
-    },
-    deleteSnapshot: async (id) => {
-      const index = snapshots.findIndex((s) => s.id === id)
-      if (index >= 0) snapshots.splice(index, 1)
-    },
-    pickAndImport: notSupported,
-    importPaths: notSupported,
-    pickFolder: async () => null,
     openPath: async () => undefined,
-    pathForFile: () => '',
-    onImported: () => () => undefined,
+
+    linkStatus: async () => linkStatus(),
+    listSaves: async () => saves,
+    applySave: async (path) => {
+      tell(true)
+      await new Promise((resolve) => setTimeout(resolve, 900))
+      applied = saves.find((save) => save.path === path) ?? applied
+      tell()
+      return { ok: true, message: `“${applied?.name}”을 적용했습니다. 선수 99,892명을 읽었습니다.` }
+    },
+    refreshLive: async () => {
+      tell(true)
+      await new Promise((resolve) => setTimeout(resolve, 700))
+      tell()
+    },
+    onLinkChanged: (cb) => {
+      listeners.add(cb)
+      return () => listeners.delete(cb)
+    },
+    worldSquad: async () => mockSquad(applied === null),
 
     // 세이브 전체: 미리보기에서는 지어낸 선수들로 화면만 보여 준다
-    worldCandidates: async (query) => mockCandidates(query, empty),
-    editorList: async (search) => mockEditorList(search, empty),
-    editorPlayer: async (uid) => mockEditorPlayer(uid),
+    worldCandidates: async (query) => mockCandidates(query, applied === null),
+    editorList: async (search) => mockEditorList(search, applied === null),
+    editorPlayer: async (uid) => mockEditorPlayer(uid, !gameOff),
     editorApply: async (edits) => {
       await new Promise((resolve) => setTimeout(resolve, 500))
       return { ok: true, message: `선수 ${edits.length}명의 값을 게임에 반영했습니다. 게임에서 그 선수 화면을 다시 열면 보입니다.` }
     },
 
-    talkStatus: async () => ({ hasKey: mockHasKey, game: true }),
-    talkSetKey: async () => ({ hasKey: (mockHasKey = true), game: true }),
-    talkClearKey: async () => ({ hasKey: (mockHasKey = false), game: true }),
+    talkStatus: async () => ({ hasKey: mockHasKey, game: !gameOff }),
+    talkSetKey: async () => ({ hasKey: (mockHasKey = true), game: !gameOff }),
+    talkClearKey: async () => ({ hasKey: (mockHasKey = false), game: !gameOff }),
     backupList: async () => ({
       dir: 'C:\\Users\\me\\AppData\\Roaming\\fm-bojwagwan\\backups',
-      entries: empty ? [] : mockBackups,
-      totalBytes: empty ? 0 : mockBackups.reduce((sum, entry) => sum + entry.bytes, 0)
+      entries: mockBackups,
+      totalBytes: mockBackups.reduce((sum, entry) => sum + entry.bytes, 0)
     }),
     backupNow: async () => ({ ok: true, message: '가장 최근 저장은 이미 사본이 있습니다.' }),
     backupRestore: async () => {

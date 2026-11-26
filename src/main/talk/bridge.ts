@@ -165,3 +165,57 @@ export async function liveSet(edit: {
   if (edit.pa !== undefined) query.set('pa', String(edit.pa))
   return parseLive(await ask(`/live/set?${query.toString()}`, 90_000))
 }
+
+/** 켜져 있는 게임이 알려 주는 상태 */
+export interface GameState {
+  version: string
+  /** 세이브를 불러와 감독으로 들어가 있는지 */
+  loaded: boolean
+  manager: string
+  team: string
+  teamShort: string
+  /** 내 팀 선수 이름 */
+  players: string[]
+}
+
+/** 게임의 상태. 게임이 꺼져 있으면 null. 옛 플러그인(상태를 모르는 것)이면 연결됐다는 것만 알려 준다 */
+export async function gameState(): Promise<GameState | null> {
+  const text = await ask('/state', 2500)
+  if (text !== null) {
+    try {
+      const raw = JSON.parse(text) as Partial<GameState>
+      return {
+        version: String(raw.version ?? ''),
+        loaded: raw.loaded === true,
+        manager: String(raw.manager ?? ''),
+        team: String(raw.team ?? ''),
+        teamShort: String(raw.teamShort ?? ''),
+        players: Array.isArray(raw.players) ? raw.players.map(String) : []
+      }
+    } catch {
+      return null
+    }
+  }
+  const ping = await ask('/ping', 1500)
+  if (ping === null) return null
+  return { version: ping.replace(/^\D*/, ''), loaded: false, manager: '', team: '', teamShort: '', players: [] }
+}
+
+/**
+ * 켜져 있는 게임에서 모든 선수의 지금 값을 한 덩어리로 받는다.
+ * 처음에는 게임이 메모리를 훑느라 수십 초 걸릴 수 있다. 게임이 꺼져 있거나 받지 못하면 null
+ */
+export async function liveAll(rescan = false): Promise<Buffer | null> {
+  const bridge = await info()
+  if (!bridge) return null
+  try {
+    const response = await fetch(`http://${bridge.host}:${bridge.port}/live/all${rescan ? '?rescan=1' : ''}`, {
+      headers: { 'X-Bridge-Token': bridge.token },
+      signal: AbortSignal.timeout(180_000)
+    })
+    if (!response.ok) return null
+    return Buffer.from(await response.arrayBuffer())
+  } catch {
+    return null
+  }
+}

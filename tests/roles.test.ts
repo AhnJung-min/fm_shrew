@@ -1,8 +1,9 @@
 import { describe, expect, it } from 'vitest'
 import { buildDepth, FORMATION_BY_ID } from '../src/shared/depth'
-import { parseExport } from '../src/shared/parse'
+import { FIELDS } from '../src/shared/fields'
 import { parsePositions } from '../src/shared/positions'
 import { scoreRole } from '../src/shared/roles'
+import type { ColumnInfo, PlayerRow } from '../src/shared/types'
 
 describe('parsePositions', () => {
   it('게임 표기를 자리 목록으로 되돌린다', () => {
@@ -42,7 +43,17 @@ describe('buildDepth', () => {
     '수비수 을;D (C);5;8;12;14;10;11;15;15;15;15;15;15',
     '수비수 병;D (C);5;8;11;12;10;10;12;12;12;12;12;12'
   ].join('\n')
-  const { columns, rows } = parseExport(csv, 'squad.csv')
+  // 첫 줄은 열 이름, 나머지는 선수 한 줄씩
+  const [head, ...lines] = csv.split('\n').map((line) => line.split(';'))
+  const columns: ColumnInfo[] = head.map((header) => {
+    const field = FIELDS.find((each) => each.label === header)!
+    return { header, field: field.id, group: field.group, short: field.short, label: field.label, isAttr: field.isAttr, numeric: field.isAttr }
+  })
+  const rows: PlayerRow[] = lines.map((cells, idx) => ({
+    idx,
+    name: cells[0],
+    cells: Object.fromEntries(head.map((header, c) => [header, { raw: cells[c], num: columns[c].isAttr ? Number(cells[c]) : null }]))
+  }))
   const formation = { ...FORMATION_BY_ID['4-4-2'], id: 'test', rows: [['ST'], ['DC', 'DC']] as never }
 
   it('주전은 겹치지 않게 배정하고 후보는 남은 선수 가운데 점수순이다', () => {
