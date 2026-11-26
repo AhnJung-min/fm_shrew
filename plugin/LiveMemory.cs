@@ -47,6 +47,8 @@ internal static unsafe class LiveMemory
     private const int ChunkSize = 16 * 1024 * 1024;
     /// <summary>적어 두지 못한 선수를 찾으려고 메모리를 다시 훑는 것은 이 간격보다 자주 하지 않는다</summary>
     private const int RescanGapMs = 60 * 1000;
+    /// <summary>모든 선수를 읽을 때, 이웃한 기록 사이가 이보다 가까우면 한 번에 읽는다</summary>
+    private const int BatchGap = 64 * 1024;
     /// <summary>선수 기록이 이만큼은 나와야 제대로 찾은 것으로 본다</summary>
     private const int MinRecords = 500;
 
@@ -346,23 +348,47 @@ internal static unsafe class LiveMemory
             var packed = new byte[Index.Count * PackedSize];
             var count = 0;
             var gone = 0;
+            // 선수 기록은 메모리에 줄지어 놓여 있다. 한 명씩 읽으면 10만 번을 읽어야 해서 몇 초가 걸리므로,
+            // 주소 순으로 늘어놓고 가까이 붙은 기록들을 한 번에 읽는다.
+            var entries = new List<KeyValuePair<uint, long>>(Index.Count);
+            foreach (var entry in Index)
+                if (entry.Value > 0)
+                    entries.Add(entry);
+            entries.Sort((a, b) => a.Value.CompareTo(b.Value));
             fixed (byte* output = packed)
             {
-                foreach (var (uid, address) in Index)
+                var first = 0;
+                while (first < entries.Count)
                 {
-                    if (address <= 0) continue;
-                    if (!Read(address - Lead, scratch, RecordSpan) || !Genuine(scratch + Lead, out var found) || found != uid)
+                    var start = entries[first].Value - Lead;
+                    var last = first;
+                    while (last + 1 < entries.Count &&
+                           entries[last + 1].Value - entries[last].Value <= BatchGap &&
+                           entries[last + 1].Value - Lead + RecordSpan - start <= ChunkSize)
+                        last++;
+                    var length = (int)(entries[last].Value - Lead + RecordSpan - start);
+                    var together = last > first && Read(start, chunk, length);
+                    for (var k = first; k <= last; k++)
                     {
-                        gone++;
-                        continue;
+                        var (uid, address) = entries[k];
+                        byte* record;
+                        if (together) record = chunk + (address - Lead - start);
+                        else if (Read(address - Lead, scratch, RecordSpan)) record = scratch;
+                        else record = null;
+                        if (record == null || !Genuine(record + Lead, out var found) || found != uid)
+                        {
+                            gone++;
+                            continue;
+                        }
+                        var item = output + count * PackedSize;
+                        var block = record + Lead;
+                        *(uint*)item = uid;
+                        *(ushort*)(item + 4) = *(ushort*)(block + CaAt);
+                        *(ushort*)(item + 6) = *(ushort*)(block + PaAt);
+                        Buffer.MemoryCopy(block, item + 8, Positions + Attributes, Positions + Attributes);
+                        count++;
                     }
-                    var item = output + count * PackedSize;
-                    var block = scratch + Lead;
-                    *(uint*)item = uid;
-                    *(ushort*)(item + 4) = *(ushort*)(block + CaAt);
-                    *(ushort*)(item + 6) = *(ushort*)(block + PaAt);
-                    Buffer.MemoryCopy(block, item + 8, Positions + Attributes, Positions + Attributes);
-                    count++;
+                    first = last + 1;
                 }
             }
             // 사라진 자리가 많으면 게임이 다른 세이브를 불러온 것이다. 다음 요청 때 다시 훑게 한다

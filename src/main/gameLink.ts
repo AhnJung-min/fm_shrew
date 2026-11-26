@@ -8,7 +8,7 @@ import type { WorldService } from './worldService'
 /** 게임이 켜져 있는지 묻는 간격 */
 const POLL_MS = 3000
 /** 게임이 켜져 있는 동안 모든 선수의 지금 값을 다시 받는 간격 */
-const LIVE_EVERY_MS = 90_000
+const LIVE_EVERY_MS = 180_000
 
 const GAME_OFF = '게임이 꺼져 있어 세이브에 저장된 값을 보여 줍니다.'
 const oldPluginNote = (version: string): string =>
