@@ -151,6 +151,12 @@ internal static class TalkBox
             return;
         }
 
+        if (mode == Mode.Talk && state == State.Idle && ++slowTicks % 3 == 0 && !HasChoice(host))
+        {
+            // 고를 답이 없어졌다. 남아 있으면 다음으로 넘어가는 버튼을 가린다
+            Detach();
+            return;
+        }
         if (mode == Mode.Talk)
         {
             // 게임이 다음 질문으로 넘어갔으면 대화를 비운다
@@ -226,11 +232,33 @@ internal static class TalkBox
         var found = card ?? container;
         if (found == null) return null;
 
-        // 고를 것이 있을 때만 붙는다
-        var hasOption = Walk(found, element =>
-            IsSiButton(element) && element.enabledInHierarchy && element.worldBound.width > 100 &&
-            !element.ClassListContains("shortcut-fake-button") && JoinedText(element).Length > 0);
-        return hasOption ? found : null;
+        // 고를 답이 있을 때만 붙는다
+        return HasChoice(found) ? found : null;
+    }
+
+    /// <summary>
+    /// 대화 틀 안에 고를 답이 있는지.
+    /// "계약 협상"처럼 그림이 붙은 버튼은 답이 아니라 다음 화면으로 가는 버튼이라 세지 않는다
+    /// (답 버튼과 같은 목록에 놓이지만, 답에는 그림이 없다). 그런 버튼만 있는 화면에 칸을 붙이면 칸이 그 버튼을 가린다.
+    /// </summary>
+    private static bool HasChoice(VisualElement element)
+    {
+        if (element == null || !UiTree.Displayed(element)) return false;
+        if (IsSiButton(element) && element.enabledInHierarchy && element.worldBound.width > 100 &&
+            !element.ClassListContains("shortcut-fake-button") && JoinedText(element).Length > 0)
+        {
+            // 버튼 안에 버튼이 겹쳐 있지는 않으므로 여기서 답을 정한다
+            return !Walk(element, inner => inner.name == "IconVisible" && inner.worldBound.width > 1);
+        }
+        var children = element.m_Children;
+        if (children == null) return false;
+        var total = children.Count;
+        for (var i = 0; i < total; i++)
+        {
+            var child = children[i];
+            if (child != null && HasChoice(child)) return true;
+        }
+        return false;
     }
 
     /// <summary>
@@ -562,6 +590,30 @@ internal static class TalkBox
         if (fold) SetTyping(false);
         foldButton.text = fold ? "[펼치기]" : "[접기]";
         Try(() => body.style.display = new StyleEnum<DisplayStyle>(fold ? DisplayStyle.None : DisplayStyle.Flex));
+        if (mode != Mode.Talk) return;
+
+        // 대화 화면: 펼치면 틀의 아래쪽을 가로로 채우고, 접으면 오른쪽 위의 작은 표가 된다.
+        // 아래쪽에는 선택지와 다음으로 넘어가는 버튼이 있어서, 접은 칸을 거기 두면 그것들을 가린다.
+        Try(() =>
+        {
+            var style = box.style;
+            var auto = new StyleLength(StyleKeyword.Auto);
+            if (fold)
+            {
+                style.left = auto;
+                style.bottom = auto;
+                style.top = new StyleLength(6f);
+                style.right = new StyleLength(6f);
+            }
+            else
+            {
+                style.top = auto;
+                style.left = new StyleLength(0f);
+                style.right = new StyleLength(0f);
+                style.bottom = new StyleLength(0f);
+            }
+        });
+        Pad(box, fold ? 5 : Sized(12), fold ? 10 : Sized(14));
     }
 
     private static void Detach()
