@@ -25,16 +25,8 @@ export class SettingsStore {
       formation: '4-2-3-1',
       slotRoles: {},
       roleWeights: {},
-      talkHotkey: 'CommandOrControl+Shift+Space',
       talkModel: 'claude-sonnet-5-5',
       talkEffort: 'medium',
-      talkPhrases: [
-        '잘하고 있다, 이대로 계속 가자',
-        '실망스럽다, 더 집중해야 한다',
-        '부담 갖지 말고 즐겨라',
-        '이번 경기는 반드시 이겨야 한다'
-      ],
-      talkAllowScreen: false,
       talkStats: { requests: 0, inputTokens: 0, outputTokens: 0 },
       columnOverrides: {},
       matchPairs: [],

@@ -5,9 +5,10 @@ import { deriveColumns } from '@shared/parse'
 import { positionOrder, positionsLabel } from '@shared/positions'
 import type { CellValue, ImportResult, PlayerRow } from '@shared/types'
 import type { Store } from './db'
-import { findTeamByNames, indexSave, SAVE_ATTRIBUTE_ORDER, type GameDate, type SavePlayer } from './save/reader'
+import { SAVE_ATTRIBUTE_ORDER, type GameDate, type SavePlayer } from './save/reader'
+import { playersOfTeam, type SaveWorld } from './save/world'
 
-/** 세이브에 들어 있지만 게임 화면에는 보이지 않는 값. 컨펌한 범위에 따라 읽지 않는다. */
+/** 세이브에 들어 있지만 게임 화면에는 보이지 않는 값. 스쿼드 표에는 넣지 않는다(에디터에서만 다룬다). */
 const HIDDEN_ATTRIBUTES = new Set(['dirtiness', 'consistency', 'importantMatches', 'injuryProneness', 'versatility'])
 
 /** 표에 보여 줄 능력치: 기술 → 정신 → 신체 → 골키퍼 순 */
@@ -56,35 +57,24 @@ function toRow(player: SavePlayer, idx: number, today: GameDate | null): PlayerR
   }
 }
 
-export interface SaveImportOptions {
-  /** 이 세이브 파일에 대해 이미 알고 있는 내 팀 id */
-  knownTeamId?: number
-  /** 팀을 모를 때 대조할 명단(게임에서 내보낸 스쿼드의 선수 이름) */
-  rosterNames: string[]
-}
-
 export interface SaveImportOutcome extends ImportResult {
-  teamId?: number
   /** 팀을 찾지 못해 보류한 경우 */
   needsRoster?: boolean
 }
 
-/** 세이브 파일에서 내 팀 선수를 읽어 스냅샷으로 저장한다. */
-export async function importSave(store: Store, path: string, options: SaveImportOptions): Promise<SaveImportOutcome> {
+/**
+ * 세이브 파일에서 내 팀 선수를 읽어 스냅샷으로 저장한다.
+ * read는 세이브를 통째로 읽어 주는 함수다(내 팀 번호와 게임의 오늘까지 정해서 돌려준다).
+ */
+export async function importSave(store: Store, path: string, read: (path: string) => SaveWorld): Promise<SaveImportOutcome> {
   try {
     const info = await stat(path)
     if (store.hasImported(path, info.mtimeMs, info.size)) {
-      return { ok: true, skipped: true, file: path, message: '이미 읽은 세이브입니다.', teamId: options.knownTeamId }
+      return { ok: true, skipped: true, file: path, message: '이미 읽은 세이브입니다.' }
     }
-    const index = indexSave(path)
-
-    let teamId = options.knownTeamId
-    let players = teamId === undefined ? [] : index.playersOf(teamId)
-    if (players.length === 0) {
-      // 처음이거나 팀을 옮긴 경우: 내보낸 명단과 가장 많이 겹치는 팀을 찾는다
-      teamId = findTeamByNames(index, options.rosterNames) ?? undefined
-      players = teamId === undefined ? [] : index.playersOf(teamId)
-    }
+    const world = read(path)
+    const teamId = world.teamId
+    const players = teamId === undefined ? [] : playersOfTeam(world, teamId)
     if (teamId === undefined || players.length === 0) {
       return {
         ok: false,
@@ -95,7 +85,7 @@ export async function importSave(store: Store, path: string, options: SaveImport
       }
     }
 
-    const today = index.gameDateOf(teamId)
+    const today = world.gameDate
     players.sort((a, b) => positionOrder(a.positions) - positionOrder(b.positions) || a.name.localeCompare(b.name, 'ko'))
     const rows = players.map((player, idx) => toRow(player, idx, today))
     const headers = COLUMN_IDS.map((id) => FIELD_BY_ID[id].label)
@@ -110,7 +100,7 @@ export async function importSave(store: Store, path: string, options: SaveImport
       columns,
       rows
     })
-    return { ok: true, file: path, snapshot, teamId }
+    return { ok: true, file: path, snapshot }
   } catch (error) {
     return { ok: false, file: path, message: error instanceof Error ? error.message : String(error) }
   }

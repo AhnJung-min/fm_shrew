@@ -2,8 +2,8 @@ import { existsSync, mkdirSync, readdirSync, statSync, writeFileSync } from 'nod
 import { basename, join } from 'node:path'
 import { app, BrowserWindow, dialog, ipcMain, Menu, nativeImage, shell, Tray } from 'electron'
 import { deriveColumns } from '@shared/parse'
-import type { TalkLine } from '@shared/talk'
 import type { AppStatus, ImportResult, Settings, SnapshotKind } from '@shared/types'
+import type { CandidateQuery, EditorEdit } from '@shared/world'
 import { BackupManager } from './backup'
 import { Store } from './db'
 import { importFile } from './importer'
@@ -13,6 +13,7 @@ import { TalkController } from './talk/controller'
 import { KeyStore } from './talk/keyStore'
 import { TRAY_ICON } from './trayIcon'
 import { ExportWatcher, isSaveFile, SaveWatcher } from './watcher'
+import { WorldService } from './worldService'
 
 // 검증용 환경 변수: 데이터 폴더와 감시 폴더를 바꾸고, 화면을 PNG로 찍은 뒤 종료한다
 const SMOKE_OUT = process.env.FMB_SMOKE_OUT
@@ -37,6 +38,7 @@ let saveWatcher: SaveWatcher
 let talk: TalkController
 let keys: KeyStore
 let backups: BackupManager
+let world: WorldService
 let tray: Tray | null = null
 /** 정말 끄는 중인지(트레이 메뉴의 종료, 시스템 종료). 아니면 창을 닫아도 앱은 남는다 */
 let quitting = false
@@ -76,16 +78,9 @@ function latestSquadNames(): string[] {
 }
 
 async function handleSaveFile(path: string): Promise<void> {
-  const fileName = basename(path)
-  const result = await importSave(store, path, {
-    knownTeamId: settings.get().saveTeams[fileName],
-    rosterNames: latestRosterNames()
-  })
+  const result = await importSave(store, path, (file) => world.read(file))
   if (result.needsRoster) pendingSave = path
   else if (pendingSave === path) pendingSave = null
-  if (result.teamId !== undefined && settings.get().saveTeams[fileName] !== result.teamId) {
-    settings.set({ saveTeams: { ...settings.get().saveTeams, [fileName]: result.teamId } })
-  }
   if (!result.skipped) mainWindow?.webContents.send('import:done', result)
 }
 
@@ -200,7 +195,6 @@ function registerIpc(): void {
     const next = settings.set(patch)
     if (next.watchDirs.join('|') !== before.watchDirs.join('|')) await watcher.start(next.watchDirs)
     if (next.saveDir !== before.saveDir) await saveWatcher.start(next.saveDir)
-    if (next.talkHotkey !== before.talkHotkey) talk.registerHotkey()
     return next
   })
   ipcMain.handle('snapshots:list', () => store.listSnapshots())
@@ -266,6 +260,13 @@ function registerIpc(): void {
     mainWindow?.webContents.send('backup:changed')
   })
 
+  // 세이브 전체를 읽어야 하는 일은 몇 초 걸린다. 화면이 "읽는 중"을 먼저 그릴 틈을 준 뒤 시작한다
+  const soon = <T>(work: () => T): Promise<T> => new Promise((resolve) => setTimeout(() => resolve(work()), 30))
+  ipcMain.handle('world:candidates', (_event, query: CandidateQuery) => soon(() => world.candidates(query)))
+  ipcMain.handle('editor:list', (_event, search: string) => soon(() => world.editorList(String(search ?? ''))))
+  ipcMain.handle('editor:player', (_event, uid: number) => world.editorPlayer(Number(uid)))
+  ipcMain.handle('editor:save', (_event, edits: EditorEdit[]) => world.saveEdits(edits))
+
   ipcMain.handle('talk:status', () => talk.status())
   ipcMain.handle('talk:setKey', (_event, key: string) => {
     keys.save(key)
@@ -275,13 +276,6 @@ function registerIpc(): void {
     keys.clear()
     return talk.status()
   })
-  ipcMain.handle('talk:capture', () => talk.capture())
-  ipcMain.handle('talk:read', (_event, captureId: number) => talk.read(captureId))
-  ipcMain.handle('talk:say', (_event, sceneId: number, history: TalkLine[], words: string) =>
-    talk.say(sceneId, history, words)
-  )
-  ipcMain.handle('talk:press', (_event, sceneId: number, optionIndex: number) => talk.press(sceneId, optionIndex))
-  ipcMain.handle('window:hide', () => talk.hideWindow())
 }
 
 async function runSmoke(outFile: string): Promise<void> {
@@ -304,7 +298,7 @@ async function runSmoke(outFile: string): Promise<void> {
   app.quit()
 }
 
-// 앱을 두 번 켜면 단축키와 폴더 감시가 겹치므로, 이미 떠 있으면 그 창을 앞으로 가져오고 끝낸다
+// 앱을 두 번 켜면 폴더 감시와 게임 안 직접 답변이 겹치므로, 이미 떠 있으면 그 창을 앞으로 가져오고 끝낸다
 if (!SMOKE_OUT && !app.requestSingleInstanceLock()) {
   app.quit()
 } else {
@@ -327,17 +321,31 @@ app.whenReady().then(async () => {
     () => settings.get().saveDir,
     () => settings.get().backupKeep
   )
+  world = new WorldService({
+    newestSave,
+    knownTeam: (fileName) => settings.get().saveTeams[fileName],
+    rosterNames: latestRosterNames,
+    rememberTeam: (fileName, teamId) => {
+      if (settings.get().saveTeams[fileName] !== teamId) {
+        settings.set({ saveTeams: { ...settings.get().saveTeams, [fileName]: teamId } })
+      }
+    },
+    roleWeights: () => settings.get().roleWeights,
+    backup: async (path) => {
+      await backups.backup(path)
+      mainWindow?.webContents.send('backup:changed')
+    }
+  })
   saveWatcher = new SaveWatcher((path) => {
     void handleSaveFile(path)
     void backupSave(path)
   })
   keys = new KeyStore(join(dataDir, 'claude-key.bin'))
-  talk = new TalkController(keys, settings, () => mainWindow, latestSquadNames)
+  talk = new TalkController(keys, settings, latestSquadNames)
 
   registerIpc()
   createWindow()
   if (!SMOKE_OUT) createTray()
-  talk.registerHotkey()
   // 게임 안 "직접 답변" 칸을 맡는다(검사용 실행에서는 돌리지 않는다)
   if (!process.env.FMB_SMOKE_OUT) void talk.serveGame()
   await watcher.start(settings.get().watchDirs)

@@ -1,4 +1,5 @@
 import { X } from 'lucide-react'
+import type { ReactNode } from 'react'
 import { GROUP_LABEL } from '@shared/fields'
 import type { ColumnGroup, ColumnInfo, PlayerRow } from '@shared/types'
 import { attrBand, attrText, attrTitle, plainText } from '@/lib/format'
@@ -20,8 +21,10 @@ export function PlayerDrawer(props: {
   onClose: () => void
   /** 선수 비교에 담는 버튼을 보여 줄 때만 넘긴다 */
   compare?: DrawerCompare
+  /** 그 밖에 이 선수로 할 수 있는 일(버튼) */
+  action?: ReactNode
 }) {
-  const { columns, row, onClose, compare } = props
+  const { columns, row, onClose, compare, action } = props
   const byField = (field: string): string | undefined => {
     const col = columns.find((c) => c.field === field)
     return col ? row.cells[col.header]?.raw || undefined : undefined
@@ -63,6 +66,7 @@ export function PlayerDrawer(props: {
             )}
           </div>
         )}
+        {action && <div className="drawer-actions">{action}</div>}
         <dl className="facts">
           {facts.map((col) => (
             <div key={col.header} style={{ display: 'contents' }}>

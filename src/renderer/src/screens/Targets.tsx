@@ -1,134 +1,127 @@
+import { PencilRuler, Search } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
-import { parsePositions } from '@shared/positions'
-import { attributesOf, effectiveWeights, ROLE_BY_ID, ROLES, scoreRole } from '@shared/roles'
-import type { ColumnInfo, PlayerRow, Settings, Snapshot, SnapshotMeta } from '@shared/types'
+import { FIELDS } from '@shared/fields'
+import { ROLES } from '@shared/roles'
+import type { CellValue, ColumnInfo, PlayerRow, Settings } from '@shared/types'
+import {
+  CATEGORY_HELP,
+  CATEGORY_LABEL,
+  SAVE_ATTRIBUTE_ORDER,
+  type CandidateCategory,
+  type CandidateQuery,
+  type CandidateResult,
+  type CandidateRow
+} from '@shared/world'
 import { api } from '@/api'
 import { PlayerDrawer } from '@/components/PlayerDrawer'
 import { PlayerTable, sortRows, type SortState } from '@/components/PlayerTable'
-import { formatTime, isFromSave } from '@/lib/format'
 
-const SCORE: ColumnInfo = {
-  header: '역할 점수', field: 'roleScore', group: 'info', short: '역할 점수', label: '고른 역할의 적합도 (0~100)', isAttr: false, numeric: true
-}
-const GAP: ColumnInfo = {
-  header: '주전 대비', field: 'starterGap', group: 'info', short: '주전 대비', label: '내 팀에서 이 역할 점수가 가장 높은 선수와의 차이', isAttr: false, numeric: true
-}
+const CATEGORIES: CandidateCategory[] = ['all', 'starter', 'rotation', 'prospect', 'free']
 
-interface Benchmark {
-  name: string
-  score: number
-}
+const info = (header: string, field: string, label: string, numeric: boolean): ColumnInfo => ({
+  header, field, group: 'info', short: header, label, isAttr: false, numeric
+})
 
-/** 내 스쿼드에서 이 역할을 뛸 수 있는 선수 가운데 점수가 가장 높은 선수 */
-function benchmarkOf(squad: Snapshot | null, roleId: string, weights: Settings['roleWeights']): Benchmark | null {
-  if (!squad) return null
-  const role = ROLE_BY_ID[roleId]
-  const positionHeader = squad.columns.find((col) => col.field === 'position')?.header
-  if (!positionHeader) return null
-  let best: Benchmark | null = null
-  for (const row of squad.rows) {
-    const positions = parsePositions(row.cells[positionHeader]?.raw ?? '')
-    if (!role.positions.some((p) => positions.includes(p))) continue
-    const result = scoreRole(attributesOf(row, squad.columns), effectiveWeights(roleId, weights))
-    if (result && (!best || result.score > best.score)) best = { name: row.name, score: result.score }
+const NAME = info('이름', 'name', '이름', false)
+const KIND = info('유형', 'candidateKind', '이 선수가 드는 유형', false)
+const SCORE = info('역할 점수', 'roleScore', '고른 역할의 적합도 (0~100)', true)
+const GAP = info('주전 대비', 'starterGap', '내 팀에서 이 역할 점수가 가장 높은 선수와의 차이', true)
+const AGE = info('나이', 'age', '나이', true)
+const POSITION = info('포지션', 'position', '포지션', false)
+const CLUB = info('소속 구단', 'club', '소속 구단', false)
+const ABILITY = info('현재 능력', 'ability', '현재 능력 (1~200)', true)
+const POTENTIAL = info('잠재 능력', 'potential', '잠재 능력 (1~200)', true)
+
+/** 게임 화면에 보이는 능력치 열들: 기술 → 정신 → 신체 → 골키퍼 */
+const ATTRIBUTE_COLUMNS: Array<{ column: ColumnInfo; index: number }> = FIELDS.filter((field) => field.isAttr).map((field) => ({
+  column: { header: field.label, field: field.id, group: field.group, short: field.short, label: field.label, isAttr: true, numeric: true },
+  index: SAVE_ATTRIBUTE_ORDER.indexOf(field.id as (typeof SAVE_ATTRIBUTE_ORDER)[number])
+}))
+
+const COLUMNS: ColumnInfo[] = [NAME, KIND, SCORE, GAP, AGE, POSITION, CLUB, ABILITY, POTENTIAL, ...ATTRIBUTE_COLUMNS.map((each) => each.column)]
+
+const text = (raw: string): CellValue => ({ raw, num: null })
+const number = (value: number | null, raw?: string): CellValue => (value === null ? { raw: '', num: null } : { raw: raw ?? String(value), num: value })
+
+function toRow(row: CandidateRow, idx: number): PlayerRow {
+  const cells: Record<string, CellValue> = {
+    [NAME.header]: text(row.name),
+    [KIND.header]: text(row.categories.map((category) => CATEGORY_LABEL[category]).join(' · ')),
+    [SCORE.header]: number(row.score, String(Math.round(row.score))),
+    [GAP.header]: number(row.gap, row.gap === null ? '' : `${row.gap > 0 ? '+' : ''}${row.gap.toFixed(1)}`),
+    [AGE.header]: number(row.age),
+    [POSITION.header]: text(row.position),
+    [CLUB.header]: text(row.club || '알 수 없음'),
+    [ABILITY.header]: number(row.ca),
+    [POTENTIAL.header]: number(row.pa)
   }
-  return best
+  for (const { column, index } of ATTRIBUTE_COLUMNS) cells[column.header] = number(row.attributes[index] ?? null)
+  return { idx, name: row.name, cells }
 }
 
-/** 게임에서 내보낸 선수 검색 목록을 고른 역할의 점수로 줄 세우고, 내 주전과 비교한다. */
-export function Targets(props: { snapshots: SnapshotMeta[]; settings: Settings }) {
-  const { snapshots, settings } = props
-  const lists = useMemo(() => snapshots.filter((s) => s.kind === 'search'), [snapshots])
-  const squadMeta = useMemo(
-    () => snapshots.find((s) => isFromSave(s.fileName)) ?? snapshots.find((s) => s.kind === 'squad') ?? null,
-    [snapshots]
-  )
-  const [listId, setListId] = useState<number | null>(null)
-  const [list, setList] = useState<Snapshot | null>(null)
-  const [squad, setSquad] = useState<Snapshot | null>(null)
+function benchLine(result: CandidateResult): string {
+  const { starter, backup } = result.bench
+  if (!starter) return '내 팀에 이 역할을 뛸 선수가 없어 비교 기준이 없습니다'
+  const second = backup ? `, 두 번째 ${backup.name} ${Math.round(backup.score)}점` : ''
+  return `내 팀 주전 ${starter.name} ${Math.round(starter.score)}점${second}`
+}
+
+/**
+ * 세이브에 든 모든 구단의 선수를 고른 역할의 점수로 줄 세우고, 내 팀 주전과 견주어 유형별로 보여 준다.
+ * 계산은 메인 프로세스가 한다(선수가 10만 명쯤이라 화면으로 다 가져오지 않는다).
+ */
+export function Targets(props: { settings: Settings; onEdit: (uid: number) => void }) {
+  const { settings, onEdit } = props
   const [roleId, setRoleId] = useState('cb')
-  const [onlyEligible, setOnlyEligible] = useState(true)
+  const [category, setCategory] = useState<CandidateCategory>('starter')
   const [maxAge, setMaxAge] = useState('')
-  const [sort, setSort] = useState<SortState | null>({ header: SCORE.header, dir: 'desc' })
+  const [onlyEligible, setOnlyEligible] = useState(true)
+  const [includeUnknownClub, setIncludeUnknownClub] = useState(false)
+  const [search, setSearch] = useState('')
+  const [result, setResult] = useState<CandidateResult | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [sort, setSort] = useState<SortState | null>(null)
   const [selectedIdx, setSelectedIdx] = useState<number | null>(null)
 
-  const activeId = listId ?? lists[0]?.id ?? null
+  const query: CandidateQuery = useMemo(
+    () => ({ roleId, category, maxAge: Number(maxAge) || null, onlyEligible, includeUnknownClub, search }),
+    [roleId, category, maxAge, onlyEligible, includeUnknownClub, search]
+  )
+
   useEffect(() => {
     let alive = true
-    setSelectedIdx(null)
-    if (activeId === null) setList(null)
-    else void api.getSnapshot(activeId).then((loaded) => alive && setList(loaded))
-    return () => {
-      alive = false
-    }
-  }, [activeId])
-  useEffect(() => {
-    let alive = true
-    if (!squadMeta) setSquad(null)
-    else void api.getSnapshot(squadMeta.id).then((loaded) => alive && setSquad(loaded))
-    return () => {
-      alive = false
-    }
-  }, [squadMeta])
-
-  const benchmark = useMemo(() => benchmarkOf(squad, roleId, settings.roleWeights), [squad, roleId, settings.roleWeights])
-
-  const ranked = useMemo(() => {
-    if (!list) return null
-    const role = ROLE_BY_ID[roleId]
-    const weights = effectiveWeights(roleId, settings.roleWeights)
-    const positionHeader = list.columns.find((col) => col.field === 'position')?.header
-    const ageHeader = list.columns.find((col) => col.field === 'age')?.header
-    const ageLimit = Number(maxAge) || null
-    const rows: PlayerRow[] = []
-    for (const row of list.rows) {
-      const positions = positionHeader ? parsePositions(row.cells[positionHeader]?.raw ?? '') : []
-      if (onlyEligible && positionHeader && !role.positions.some((p) => positions.includes(p))) continue
-      const age = ageHeader ? row.cells[ageHeader]?.num : null
-      if (ageLimit && age !== null && age !== undefined && age > ageLimit) continue
-      const result = scoreRole(attributesOf(row, list.columns), weights)
-      const gap = result && benchmark ? Math.round((result.score - benchmark.score) * 10) / 10 : null
-      rows.push({
-        ...row,
-        cells: {
-          ...row.cells,
-          [SCORE.header]: result
-            ? { raw: `${result.uncertain ? '~' : ''}${Math.round(result.score)}`, num: result.score }
-            : { raw: '', num: null },
-          [GAP.header]: gap === null ? { raw: '', num: null } : { raw: `${gap > 0 ? '+' : ''}${gap.toFixed(1)}`, num: gap }
-        }
+    setLoading(true)
+    // 글자를 치는 동안에는 기다렸다가 한 번만 묻는다
+    const timer = window.setTimeout(() => {
+      void api.worldCandidates(query).then((next) => {
+        if (!alive) return
+        setResult(next)
+        setLoading(false)
+        setSelectedIdx(null)
       })
+    }, 180)
+    return () => {
+      alive = false
+      window.clearTimeout(timer)
     }
-    const nameAt = Math.max(0, list.columns.findIndex((col) => col.field === 'name'))
-    const columns = [...list.columns]
-    columns.splice(nameAt + 1, 0, SCORE, GAP)
-    return { columns, rows }
-  }, [list, roleId, settings.roleWeights, onlyEligible, maxAge, benchmark])
+    // 역할 가중치를 고치면 점수가 달라지므로 다시 묻는다
+  }, [query, settings.roleWeights])
 
-  const hasAttrs = list?.columns.some((col) => col.isAttr) ?? false
-  const sorted = useMemo(() => (ranked ? sortRows(ranked.rows, sort) : []), [ranked, sort])
-  const selected = selectedIdx === null ? null : (ranked?.rows.find((row) => row.idx === selectedIdx) ?? null)
+  const rows = useMemo(() => (result?.rows ?? []).map(toRow), [result])
+  const sorted = useMemo(() => sortRows(rows, sort), [rows, sort])
+  const selected = selectedIdx === null ? null : (rows.find((row) => row.idx === selectedIdx) ?? null)
+  const selectedUid = selectedIdx === null ? null : (result?.rows[selectedIdx]?.uid ?? null)
 
-  if (lists.length === 0) {
+  if (result && !result.ok) {
     return (
       <>
         <header className="page-head">
           <h1>영입 후보</h1>
         </header>
         <div className="page-body">
-          <div className="empty" style={{ maxWidth: 560, margin: '0 auto', textAlign: 'left' }}>
-            <strong>아직 가져온 선수 검색 목록이 없습니다</strong>
-            <ol className="steps" style={{ marginTop: 12 }}>
-              <li>게임의 선수 검색 화면에서 원하는 조건으로 거릅니다.</li>
-              <li>능력치가 열로 보이는 뷰로 바꿉니다. 화면에 보이는 열만 내보내집니다.</li>
-              <li>
-                선수를 모두 선택하고 <kbd>F9</kbd>를 누릅니다.
-              </li>
-            </ol>
-            <p style={{ marginTop: 12 }}>
-              60명이 넘는 목록은 자동으로 여기에 나타납니다. 그보다 적은 목록은 스쿼드 화면에서 종류를 “선수 검색”으로
-              바꾸면 됩니다.
-            </p>
+          <div className="empty" style={{ maxWidth: 560, margin: '0 auto' }}>
+            <strong>세이브를 읽지 못했습니다</strong>
+            <p style={{ marginTop: 8 }}>{result.message}</p>
           </div>
         </div>
       </>
@@ -139,21 +132,11 @@ export function Targets(props: { snapshots: SnapshotMeta[]; settings: Settings }
     <>
       <header className="page-head">
         <h1>영입 후보</h1>
-        <select
-          className="field"
-          aria-label="선수 검색 목록"
-          value={activeId ?? ''}
-          onChange={(event) => setListId(Number(event.target.value))}
-          style={{ maxWidth: 340 }}
-        >
-          {lists.map((s) => (
-            <option key={s.id} value={s.id}>
-              선수 검색 {s.rowCount}명, {formatTime(s.importedAt)}
-            </option>
-          ))}
-        </select>
+        <span className="page-sub">
+          {result?.saveName ? `세이브 “${result.saveName}”의 모든 구단 선수에서 찾습니다.` : '세이브를 읽는 중입니다. 몇 초 걸립니다.'}
+        </span>
         <div className="spacer" />
-        {ranked && <span className="page-sub num">{`${list!.rows.length}명 중 ${ranked.rows.length}명`}</span>}
+        {result?.ok && <span className="page-sub num">{benchLine(result)}</span>}
       </header>
 
       <div className="toolbar">
@@ -167,46 +150,77 @@ export function Targets(props: { snapshots: SnapshotMeta[]; settings: Settings }
             ))}
           </select>
         </label>
+        <div className="chips" role="group" aria-label="유형">
+          {CATEGORIES.map((each) => (
+            <button
+              key={each}
+              className="chip"
+              aria-pressed={category === each}
+              title={CATEGORY_HELP[each]}
+              onClick={() => setCategory(each)}
+            >
+              {CATEGORY_LABEL[each]}
+              {result?.ok && <span className="num faint"> {result.counts[each].toLocaleString()}</span>}
+            </button>
+          ))}
+        </div>
         <label className="inline-field">
-          <span className="muted">나이</span>
           <input
             className="field num"
             type="number"
             min={15}
             max={45}
-            placeholder="제한 없음"
+            placeholder="나이"
+            aria-label="나이 상한"
             value={maxAge}
             onChange={(event) => setMaxAge(event.target.value)}
-            style={{ width: 104 }}
+            style={{ width: 76 }}
           />
           <span className="muted">세 이하</span>
         </label>
+        <label className="search-box">
+          <Search size={15} />
+          <input
+            className="field"
+            placeholder="이름으로 찾기"
+            aria-label="이름으로 찾기"
+            value={search}
+            onChange={(event) => setSearch(event.target.value)}
+          />
+        </label>
+      </div>
+      <div className="toolbar">
         <label className="inline-field">
           <input type="checkbox" checked={onlyEligible} onChange={(event) => setOnlyEligible(event.target.checked)} />
           <span>이 역할의 자리에서 뛸 수 있는 선수만</span>
         </label>
+        <label className="inline-field" title="세이브에서 소속 구단을 알아내지 못한 선수들입니다. 여자 팀 선수가 섞여 있을 수 있습니다.">
+          <input type="checkbox" checked={includeUnknownClub} onChange={(event) => setIncludeUnknownClub(event.target.checked)} />
+          <span>구단을 알아내지 못한 선수도</span>
+        </label>
         <div className="spacer" />
         <span className="page-sub num">
-          {benchmark
-            ? `내 팀 기준: ${benchmark.name} ${Math.round(benchmark.score)}점`
-            : '내 팀에 이 역할을 뛸 선수가 없어 비교 기준이 없습니다'}
+          {result?.ok &&
+            (result.matched > result.rows.length
+              ? `${CATEGORY_HELP[category]}: ${result.matched.toLocaleString()}명 중 위에서 ${result.rows.length}명`
+              : `${CATEGORY_HELP[category]}: ${result.matched.toLocaleString()}명`)}
         </span>
       </div>
 
       <div className="table-wrap">
-        {!hasAttrs ? (
+        {result === null || (loading && rows.length === 0) ? (
           <div className="empty" style={{ flex: 1 }}>
-            <strong>이 목록에는 능력치 열이 없어 점수를 매길 수 없습니다</strong>
-            게임에서 능력치가 열로 보이는 뷰로 바꾼 뒤 다시 내보내 주세요.
+            <strong>세이브를 읽는 중입니다</strong>
+            모든 구단의 선수를 읽느라 처음 한 번은 몇 초 걸립니다.
           </div>
         ) : sorted.length === 0 ? (
           <div className="empty" style={{ flex: 1 }}>
             <strong>조건에 맞는 선수가 없습니다</strong>
-            역할이나 나이 조건을 바꿔 보세요.
+            유형을 “전체”로 바꾸거나 역할·나이 조건을 풀어 보세요.
           </div>
         ) : (
           <PlayerTable
-            columns={ranked!.columns}
+            columns={COLUMNS}
             rows={sorted}
             density={settings.density}
             sort={sort}
@@ -215,8 +229,20 @@ export function Targets(props: { snapshots: SnapshotMeta[]; settings: Settings }
             onSelect={(row) => setSelectedIdx(selectedIdx === row.idx ? null : row.idx)}
           />
         )}
-        {ranked && selected && (
-          <PlayerDrawer columns={ranked.columns} row={selected} onClose={() => setSelectedIdx(null)} />
+        {selected && (
+          <PlayerDrawer
+            columns={COLUMNS}
+            row={selected}
+            onClose={() => setSelectedIdx(null)}
+            action={
+              selectedUid !== null && (
+                <button className="btn" onClick={() => onEdit(selectedUid)}>
+                  <PencilRuler size={15} />
+                  에디터에서 열기
+                </button>
+              )
+            }
+          />
         )}
       </div>
     </>

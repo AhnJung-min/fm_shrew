@@ -123,7 +123,7 @@ export function Settings(props: {
 
           <section className="panel">
             <div className="panel-head">
-              <h2>토크·협상 도우미</h2>
+              <h2>게임 안 직접 답변</h2>
             </div>
             <div className="panel-body">
               <TalkSettings settings={settings} onChange={onChange} />

@@ -1,22 +1,18 @@
-import { X } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { estimateCostUsd, TALK_EFFORTS, TALK_MODELS, type TalkEffort, type TalkStatus } from '@shared/talk'
 import type { Settings } from '@shared/types'
 import { api } from '@/api'
-import { hotkeyLabel } from '@/screens/Talk'
 
-/** 토크·협상 도우미 설정: API 키, 모델, 단축키, 캡처 범위, 자주 쓰는 말, 누적 사용량 */
+/** 게임 안 직접 답변이 쓰는 AI 설정: API 키, 모델, 누적 사용량 */
 export function TalkSettings(props: { settings: Settings; onChange: (patch: Partial<Settings>) => Promise<void> }) {
   const { settings, onChange } = props
   const [status, setStatus] = useState<TalkStatus | null>(null)
   const [key, setKey] = useState('')
-  const [hotkey, setHotkey] = useState(settings.talkHotkey)
-  const [phrase, setPhrase] = useState('')
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
     void api.talkStatus().then(setStatus)
-  }, [settings.talkHotkey])
+  }, [])
 
   const saveKey = async (): Promise<void> => {
     try {
@@ -26,13 +22,6 @@ export function TalkSettings(props: { settings: Settings; onChange: (patch: Part
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e))
     }
-  }
-
-  const addPhrase = (): Promise<void> | undefined => {
-    const text = phrase.trim()
-    if (!text || settings.talkPhrases.includes(text)) return
-    setPhrase('')
-    return onChange({ talkPhrases: [...settings.talkPhrases, text] })
   }
 
   const stats = settings.talkStats
@@ -75,7 +64,7 @@ export function TalkSettings(props: { settings: Settings; onChange: (patch: Part
         <div>
           <strong>AI 모델</strong>
           <p className="muted">
-            모델이 좋을수록, 생각의 깊이가 높을수록 정확하지만 느리고 요금이 더 나옵니다. 추천이 자주 틀리면 한 단계씩 올려
+            모델이 좋을수록, 생각의 깊이가 높을수록 정확하지만 느리고 요금이 더 나옵니다. 고른 선택지가 자주 틀리면 한 단계씩 올려
             보세요.
           </p>
         </div>
@@ -105,83 +94,6 @@ export function TalkSettings(props: { settings: Settings; onChange: (patch: Part
               </option>
             ))}
           </select>
-        </div>
-      </div>
-
-      <div className="setting-row">
-        <div>
-          <strong>부르는 단축키</strong>
-          <p className="muted">
-            지금: {hotkeyLabel(status?.hotkey ?? null)}. 예: CommandOrControl+Shift+Space, Alt+F10
-            {status?.hotkeyError && <span className="talk-error-text"> {status.hotkeyError}</span>}
-          </p>
-        </div>
-        <div className="setting-control">
-          <input
-            className="field"
-            aria-label="단축키"
-            value={hotkey}
-            onChange={(event) => setHotkey(event.target.value)}
-          />
-          <button
-            className="btn"
-            disabled={hotkey.trim() === settings.talkHotkey}
-            onClick={() => void onChange({ talkHotkey: hotkey.trim() })}
-          >
-            적용
-          </button>
-        </div>
-      </div>
-
-      <div className="setting-row">
-        <div>
-          <strong>화면 전체 캡처 허용</strong>
-          <p className="muted">
-            꺼 두면 게임 창만 찍습니다. 켜면 게임 창을 못 찾을 때 주 모니터 전체를 찍어 보내므로, 다른 창의 내용이 함께
-            전송될 수 있습니다.
-          </p>
-        </div>
-        <div className="setting-control">
-          <label className="inline-field">
-            <input
-              type="checkbox"
-              checked={settings.talkAllowScreen}
-              onChange={(event) => void onChange({ talkAllowScreen: event.target.checked })}
-            />
-            <span>허용</span>
-          </label>
-        </div>
-      </div>
-
-      <div className="setting-block">
-        <strong>자주 쓰는 말</strong>
-        <ul className="phrase-list">
-          {settings.talkPhrases.map((text) => (
-            <li key={text}>
-              <span>{text}</span>
-              <button
-                className="btn ghost icon"
-                aria-label={`“${text}” 지우기`}
-                onClick={() => void onChange({ talkPhrases: settings.talkPhrases.filter((p) => p !== text) })}
-              >
-                <X size={15} />
-              </button>
-            </li>
-          ))}
-        </ul>
-        <div className="setting-control">
-          <input
-            className="field"
-            placeholder="새로 넣을 말"
-            aria-label="자주 쓰는 말 추가"
-            value={phrase}
-            onChange={(event) => setPhrase(event.target.value)}
-            onKeyDown={(event) => event.key === 'Enter' && void addPhrase()}
-            style={{ flex: 1 }}
-          />
-          <button className="btn" disabled={!phrase.trim()} onClick={() => void addPhrase()}>
-            넣기
-          </button>
         </div>
       </div>
 

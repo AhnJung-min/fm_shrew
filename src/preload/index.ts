@@ -23,10 +23,10 @@ const api: Api = {
   talkStatus: () => ipcRenderer.invoke('talk:status'),
   talkSetKey: (key) => ipcRenderer.invoke('talk:setKey', key),
   talkClearKey: () => ipcRenderer.invoke('talk:clearKey'),
-  talkCapture: () => ipcRenderer.invoke('talk:capture'),
-  talkRead: (captureId) => ipcRenderer.invoke('talk:read', captureId),
-  talkSay: (sceneId, history, words) => ipcRenderer.invoke('talk:say', sceneId, history, words),
-  talkPress: (sceneId, optionIndex) => ipcRenderer.invoke('talk:press', sceneId, optionIndex),
+  worldCandidates: (query) => ipcRenderer.invoke('world:candidates', query),
+  editorList: (search) => ipcRenderer.invoke('editor:list', search),
+  editorPlayer: (uid) => ipcRenderer.invoke('editor:player', uid),
+  editorSave: (edits) => ipcRenderer.invoke('editor:save', edits),
   backupList: () => ipcRenderer.invoke('backup:list'),
   backupNow: () => ipcRenderer.invoke('backup:now'),
   backupRestore: (id) => ipcRenderer.invoke('backup:restore', id),
@@ -35,13 +35,7 @@ const api: Api = {
     const listener = (): void => cb()
     ipcRenderer.on('backup:changed', listener)
     return () => ipcRenderer.removeListener('backup:changed', listener)
-  },
-  onTalkCaptured: (cb) => {
-    const listener = (_event: unknown, payload: Parameters<typeof cb>[0]): void => cb(payload)
-    ipcRenderer.on('talk:captured', listener)
-    return () => ipcRenderer.removeListener('talk:captured', listener)
-  },
-  hideWindow: () => ipcRenderer.invoke('window:hide')
+  }
 }
 
 contextBridge.exposeInMainWorld('api', api)

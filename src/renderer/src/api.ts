@@ -1,6 +1,7 @@
 import { parseExport } from '@shared/parse'
 import { sampleSquadCsv } from '@shared/sample'
 import type { Api, BackupEntry, ImportResult, Settings, Snapshot } from '@shared/types'
+import { mockCandidates, mockEditorList, mockEditorPlayer } from './lib/mockWorld'
 
 declare global {
   interface Window {
@@ -24,11 +25,8 @@ function createMockApi(): Api {
     formation: '4-2-3-1',
     slotRoles: {},
     roleWeights: {},
-    talkHotkey: 'CommandOrControl+Shift+Space',
     talkModel: 'claude-sonnet-5-5',
     talkEffort: 'medium',
-    talkPhrases: ['잘하고 있다, 이대로 계속 가자', '실망스럽다, 더 집중해야 한다'],
-    talkAllowScreen: false,
     talkStats: { requests: 3, inputTokens: 5400, outputTokens: 900 },
     columnOverrides: {},
     matchPairs: [],
@@ -91,51 +89,18 @@ function createMockApi(): Api {
     pathForFile: () => '',
     onImported: () => () => undefined,
 
-    // 토크 도우미: 미리보기에서는 정해 둔 답을 돌려준다
-    talkStatus: async () => ({ hasKey: mockHasKey, hotkey: 'Ctrl+Shift+Space', game: true }),
-    talkSetKey: async () => ({ hasKey: (mockHasKey = true), hotkey: 'Ctrl+Shift+Space', game: true }),
-    talkClearKey: async () => ({ hasKey: (mockHasKey = false), hotkey: 'Ctrl+Shift+Space', game: true }),
-    talkCapture: async () => ({
-      ok: true,
-      capture: { id: 1, preview: '', capturedAt: new Date().toISOString(), source: 'game', width: 0, height: 0 }
-    }),
-    talkRead: async (captureId) => ({
-      ok: true,
-      scene: {
-        id: captureId,
-        screen: 'press_conference',
-        readable: true,
-        situation: '경기 전 기자회견입니다. 다음 상대는 브라이턴입니다.',
-        speaker: '제임스 피어스 (디 애슬레틱)',
-        question: '최근 세 경기에서 실점이 많았습니다. 수비진에 변화를 줄 계획이 있습니까?',
-        options: [
-          { text: '수비진을 전적으로 신뢰한다.', tone: '긍정적', ref: 11 },
-          { text: '몇 자리는 경쟁이 필요하다.', tone: '중립적', ref: 12 },
-          { text: '그 질문에는 답하지 않겠다.', tone: '부정적', ref: 13 },
-          { text: '기자회견장을 떠난다', tone: '', ref: 14 }
-        ],
-        facts: [],
-        source: 'game'
-      },
-      usage: { inputTokens: 2140, outputTokens: 310, model: 'claude-sonnet-5-5' }
-    }),
-    talkSay: async () => ({
-      ok: true,
-      turn: {
-        pickIndex: 1,
-        confidence: 0.82,
-        reason: '믿지만 긴장감은 필요하다는 말이라, 경쟁을 언급하는 선택지가 가장 가깝습니다.',
-        replies: [{ speaker: '제임스 피어스 (디 애슬레틱)', text: '그렇다면 브라이턴전 선발 명단에 변화가 있다고 봐도 되겠습니까?' }],
-        nextAction: '',
-        offer: { opening: '', structure: '', walkAway: '' },
-        caution: ''
-      },
-      usage: { inputTokens: 640, outputTokens: 180, model: 'claude-sonnet-5-5' }
-    }),
-    talkPress: async () => {
-      await new Promise((resolve) => setTimeout(resolve, 500))
-      return { ok: true }
+    // 세이브 전체: 미리보기에서는 지어낸 선수들로 화면만 보여 준다
+    worldCandidates: async (query) => mockCandidates(query, empty),
+    editorList: async (search) => mockEditorList(search, empty),
+    editorPlayer: async (uid) => mockEditorPlayer(uid),
+    editorSave: async (edits) => {
+      await new Promise((resolve) => setTimeout(resolve, 700))
+      return { ok: true, fileName: '리버풀 2025 (수정).fm', message: `선수 ${edits.length}명의 값을 고친 세이브 “리버풀 2025 (수정).fm”을 만들었습니다. 게임에서 이 세이브를 불러오세요.` }
     },
+
+    talkStatus: async () => ({ hasKey: mockHasKey, game: true }),
+    talkSetKey: async () => ({ hasKey: (mockHasKey = true), game: true }),
+    talkClearKey: async () => ({ hasKey: (mockHasKey = false), game: true }),
     backupList: async () => ({
       dir: 'C:\\Users\\me\\AppData\\Roaming\\fm-bojwagwan\\backups',
       entries: empty ? [] : mockBackups,
@@ -149,9 +114,7 @@ function createMockApi(): Api {
     backupDelete: async (id) => {
       mockBackups = mockBackups.filter((entry) => entry.id !== id)
     },
-    onBackupChanged: () => () => undefined,
-    onTalkCaptured: () => () => undefined,
-    hideWindow: async () => undefined
+    onBackupChanged: () => () => undefined
   }
 }
 

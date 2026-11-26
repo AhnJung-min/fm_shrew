@@ -4,13 +4,12 @@ import type { AppStatus, ImportResult, Settings as SettingsData, SnapshotMeta } 
 import { api } from './api'
 import { Sidebar, type Route } from './components/Sidebar'
 import { isFromSave, KIND_LABEL } from './lib/format'
-import { talkStore } from './lib/talkStore'
 import { Backups } from './screens/Backups'
 import { Compare, MAX_COMPARE, type CompareState } from './screens/Compare'
+import { Editor } from './screens/Editor'
 import { Home } from './screens/Home'
 import { Settings } from './screens/Settings'
 import { Squad } from './screens/Squad'
-import { Talk } from './screens/Talk'
 import { Targets } from './screens/Targets'
 
 interface Toast {
@@ -21,7 +20,7 @@ interface Toast {
   snapshotId?: number
 }
 
-const ROUTES: Route[] = ['home', 'squad', 'targets', 'compare', 'talk', 'backups', 'settings']
+const ROUTES: Route[] = ['home', 'squad', 'targets', 'compare', 'editor', 'backups', 'settings']
 
 function initialRoute(): Route {
   const fromHash = location.hash.replace('#', '') as Route
@@ -37,16 +36,8 @@ export function App() {
   const [toasts, setToasts] = useState<Toast[]>([])
   const [compare, setCompare] = useState<CompareState>({ snapshotId: null, idxs: [] })
   const nextToastId = useRef(1)
-  // 게임에서 단축키를 누르면 화면이 찍혀 오고, 토크 도우미로 넘어가 그 화면을 바로 읽는다
-  useEffect(
-    () =>
-      api.onTalkCaptured((event) => {
-        setRoute('talk')
-        if (event.capture) void talkStore.addCapture(event.capture)
-        else talkStore.addError(event.message ?? '화면을 캡처하지 못했습니다.')
-      }),
-    []
-  )
+  /** 영입 후보에서 고른 선수를 에디터로 넘길 때 */
+  const [editorUid, setEditorUid] = useState<number | null>(null)
 
   /** 스쿼드 표에서 선수를 비교에 담거나 뺀다. 다른 기록의 선수를 담으면 새로 시작한다. */
   const toggleCompare = (snapshotId: number, idx: number): void => {
@@ -146,7 +137,15 @@ export function App() {
             onOpenCompare={() => setRoute('compare')}
           />
         )}
-        {route === 'targets' && <Targets snapshots={snapshots} settings={settings} />}
+        {route === 'targets' && (
+          <Targets
+            settings={settings}
+            onEdit={(uid) => {
+              setEditorUid(uid)
+              setRoute('editor')
+            }}
+          />
+        )}
         {route === 'compare' && (
           <Compare
             snapshots={snapshots}
@@ -156,9 +155,7 @@ export function App() {
             onGoSquad={() => setRoute('squad')}
           />
         )}
-        {route === 'talk' && (
-          <Talk settings={settings} onGoSettings={() => setRoute('settings')} />
-        )}
+        {route === 'editor' && <Editor openUid={editorUid} onOpened={() => setEditorUid(null)} />}
         {route === 'backups' && <Backups settings={settings} onChange={changeSettings} />}
         {route === 'settings' && (
           <Settings status={status} settings={settings} latest={snapshots[0] ?? null} onChange={changeSettings} />

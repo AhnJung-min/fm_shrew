@@ -1,4 +1,4 @@
-/** 토크·협상 도우미가 화면에서 알아본 장면 */
+/** 게임 안 직접 답변이 다루는 대화 장면의 종류 */
 export type TalkScreen =
   | 'press_conference'
   | 'player_talk'
@@ -25,7 +25,7 @@ export function isNegotiation(screen: TalkScreen): boolean {
 /** 확신도가 이 값보다 낮으면 "딱 맞는 선택지가 없었다"고 알린다 */
 export const LOW_CONFIDENCE = 0.4
 
-/** AI가 캡처에서 읽어 낸 장면. 대화는 이 장면을 놓고 이어진다 */
+/** 게임에서 읽은 장면. 대화는 이 장면을 놓고 이어진다 */
 export interface TalkScene {
   id: number
   screen: TalkScreen
@@ -41,8 +41,8 @@ export interface TalkScene {
   options: Array<{ text: string; tone: string; ref?: number }>
   /** 협상 화면에서 읽은 숫자와 조건(예: "요구 이적료 950억 원") */
   facts: string[]
-  /** 'game'은 게임 안 플러그인이 직접 읽은 것, 'screen'은 캡처를 AI가 읽은 것 */
-  source?: 'game' | 'screen'
+  /** 게임 안 플러그인이 직접 읽은 장면 */
+  source?: 'game'
 }
 
 /** 대화 한 줄 */
@@ -78,13 +78,6 @@ export interface TalkUsage {
   model: string
 }
 
-export interface TalkReadResult {
-  ok: boolean
-  scene?: TalkScene
-  usage?: TalkUsage
-  message?: string
-}
-
 export interface TalkSayResult {
   ok: boolean
   turn?: TalkTurn
@@ -92,32 +85,10 @@ export interface TalkSayResult {
   message?: string
 }
 
-export interface TalkCapture {
-  id: number
-  /** 화면에 보여 줄 축소 이미지(data URL) */
-  preview: string
-  capturedAt: string
-  /** 게임 창을 찍었는지, 화면 전체를 찍었는지, 찍지 않고 게임에서 직접 읽었는지 */
-  source: 'window' | 'screen' | 'game'
-  width: number
-  height: number
-}
-
 export interface TalkStatus {
   hasKey: boolean
-  /** 등록된 단축키. 등록에 실패했으면 null */
-  hotkey: string | null
-  hotkeyError?: string
   /** 게임 안 플러그인과 연결돼 있는지(게임이 켜져 있어야 한다) */
   game: boolean
-}
-
-/** 선택지를 게임에서 누른 결과 */
-export interface TalkPressResult {
-  ok: boolean
-  message?: string
-  /** 누른 뒤 게임이 다음 질문으로 넘어갔으면 그 장면 */
-  next?: TalkCapture
 }
 
 /** 누적 사용량 */

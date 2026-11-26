@@ -1877,3 +1877,136 @@ a {
   justify-content: flex-end;
   gap: 6px;
 }
+
+/* ---------- 에디터 ---------- */
+
+.editor {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: 300px minmax(0, 1fr);
+}
+
+.editor-list {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  padding: 14px 12px 0 16px;
+  border-right: 1px solid var(--line);
+}
+.editor-list .search-box .field {
+  width: 100%;
+}
+.editor-list-note {
+  margin: 10px 2px 6px;
+  font-size: 12px;
+}
+.editor-players {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding-bottom: 12px;
+}
+.editor-players > p {
+  padding: 8px 2px;
+  font-size: 13px;
+}
+.editor-player {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  width: 100%;
+  padding: 7px 10px;
+  border: 0;
+  border-radius: var(--radius-s);
+  background: transparent;
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+}
+.editor-player:hover {
+  background: var(--hover);
+}
+.editor-player[aria-current='true'] {
+  background: var(--raised);
+  box-shadow: inset 2px 0 0 var(--accent);
+}
+.editor-player strong {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 600;
+}
+.editor-player span.muted {
+  font-size: 12px;
+}
+
+.editor-form {
+  min-height: 0;
+  overflow: auto;
+  padding: 16px 24px 32px;
+}
+.editor-who {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+}
+.editor-who h2 {
+  font-size: 20px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+.editor-group {
+  margin-top: 20px;
+}
+.editor-group h3 {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-2);
+}
+.editor-group > p.faint {
+  margin-top: 3px;
+  font-size: 12px;
+}
+.edit-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(168px, 1fr));
+  gap: 4px 20px;
+  margin-top: 8px;
+}
+.edit-cell {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  height: 32px;
+  font-size: 13px;
+  color: var(--text-2);
+}
+.edit-cell input {
+  width: 62px;
+  height: 28px;
+  padding: 0 6px;
+  text-align: right;
+}
+/* 바뀐 값: 색만이 아니라 굵기와 테두리로도 드러낸다 */
+.edit-cell.changed {
+  color: var(--text);
+  font-weight: 600;
+}
+.edit-cell.changed input {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  font-weight: 700;
+}
+
+@media (max-width: 860px) {
+  .editor {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: 220px minmax(0, 1fr);
+  }
+  .editor-list {
+    border-right: 0;
+    border-bottom: 1px solid var(--line);
+  }
+}

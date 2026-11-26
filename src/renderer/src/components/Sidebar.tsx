@@ -1,7 +1,7 @@
 import {
   Archive,
   House,
-  MessageSquareText,
+  PencilRuler,
   Scale,
   Settings as SettingsIcon,
   UserSearch,
@@ -10,7 +10,7 @@ import {
 } from 'lucide-react'
 import type { AppStatus } from '@shared/types'
 
-export type Route = 'home' | 'squad' | 'targets' | 'compare' | 'talk' | 'backups' | 'settings'
+export type Route = 'home' | 'squad' | 'targets' | 'compare' | 'editor' | 'backups' | 'settings'
 
 interface NavEntry {
   id: Route | null
@@ -25,7 +25,7 @@ const ENTRIES: NavEntry[] = [
   { id: 'squad', label: '스쿼드', icon: Users },
   { id: 'targets', label: '영입 후보', icon: UserSearch },
   { id: 'compare', label: '선수 비교', icon: Scale },
-  { id: 'talk', label: '토크 도우미', icon: MessageSquareText },
+  { id: 'editor', label: '에디터', icon: PencilRuler },
   { id: 'backups', label: '백업', icon: Archive }
 ]
 
