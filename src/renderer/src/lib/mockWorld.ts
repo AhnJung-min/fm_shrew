@@ -109,6 +109,7 @@ export function mockCandidates(query: CandidateQuery, empty: boolean): Candidate
     matched: picked.length,
     rows: picked.map(({ player, score, categories }) => ({
       uid: player.uid,
+      value: Math.round(player.ca ** 3 * 2.2),
       name: player.name,
       age: player.age,
       position: player.position,

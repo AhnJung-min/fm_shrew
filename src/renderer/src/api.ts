@@ -105,8 +105,8 @@ function createMockApi(): Api {
     // 세이브 전체: 미리보기에서는 지어낸 선수들로 화면만 보여 준다
     worldCandidates: async (query) => mockCandidates(query, applied === null),
     worldMarket: async (uids) => {
-      if (gameOff) return { ok: false, message: '게임이 꺼져 있어 몸값·주급·계약은 볼 수 없습니다.', players: [] }
-      if (oldPlugin) return { ok: false, message: '몸값·주급·계약은 FM을 완전히 껐다가 다시 켜면 보입니다.', players: [] }
+      if (gameOff) return { ok: false, message: '게임이 꺼져 있어 주급·계약·국적은 볼 수 없습니다. 몸값은 세이브에 적힌 기준값(파운드)입니다.', players: [] }
+      if (oldPlugin) return { ok: false, message: '주급·계약·국적과 게임이 보여 주는 몸값 범위는 FM을 완전히 껐다가 다시 켜면 보입니다.', players: [] }
       await new Promise((resolve) => setTimeout(resolve, 400))
       const nations = ['대한민국', '브라질', '프랑스', '잉글랜드', '아르헨티나', '독일']
       return {

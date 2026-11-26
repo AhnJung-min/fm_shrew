@@ -28,6 +28,8 @@ import {
  */
 
 export const NO_TEAM = 0xffffffff
+/** 몸값 자리에 이 값이 적혀 있으면 몸값이 정해지지 않은 것이다 */
+const VALUE_PLACEHOLDER = 300_000_000
 const WOMEN_CLUB_UID = 2_000_000_000
 
 export interface ClubInfo {
@@ -48,6 +50,11 @@ export interface SaveWorld {
   /** 현재 능력, 잠재 능력(1~200) */
   ca: Uint16Array
   pa: Uint16Array
+  /**
+   * 세이브에 적힌 기준 몸값(게임의 기준 통화인 파운드). 모르면 0.
+   * 능력치 블록 바로 뒤의 u32다. 켜져 있는 게임이 알려 주는 기준 몸값과 같은 수다(공개 해독기 fmsave의 구조 설명에서 알게 됨).
+   */
+  value: Uint32Array
   /** 생일을 모르면 0 */
   birthYear: Uint16Array
   birthDay: Uint16Array
@@ -232,6 +239,7 @@ export function buildWorld(db: Buffer, pickTeam?: (world: SaveWorld) => number |
     clubs: clubs.map(({ name, short, women }) => ({ name, short, women })),
     ca: new Uint16Array(count),
     pa: new Uint16Array(count),
+    value: new Uint32Array(count),
     birthYear: new Uint16Array(count),
     birthDay: new Uint16Array(count),
     positions: new Uint8Array(count * POSITION_COUNT),
@@ -249,6 +257,8 @@ export function buildWorld(db: Buffer, pickTeam?: (world: SaveWorld) => number |
     world.ca[k] = db.readUInt16LE(block - 24)
     world.pa[k] = db.readUInt16LE(block - 22)
     world.uids[k] = ownerUid(db, block, recordEnd(k))
+    const value = block + BLOCK_SIZE + 4 <= db.length ? db.readUInt32LE(block + BLOCK_SIZE) : 0
+    world.value[k] = value === VALUE_PLACEHOLDER ? 0 : value
     world.positions.set(db.subarray(block, block + POSITION_COUNT), k * POSITION_COUNT)
     world.attributes.set(db.subarray(block + POSITION_COUNT, block + BLOCK_SIZE), k * ATTRIBUTE_COUNT)
   }

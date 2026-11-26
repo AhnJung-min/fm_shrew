@@ -31,7 +31,12 @@ const GAP = info('주전 대비', 'starterGap', '내 팀에서 이 역할 점수
 const AGE = info('나이', 'age', '나이', true)
 const POSITION = info('포지션', 'position', '포지션', false)
 const CLUB = info('소속 구단', 'club', '소속 구단', false)
-const VALUE = info('몸값', 'value', '게임이 보여 주는 몸값(스카우트하지 않은 선수는 범위가 넓다)', true)
+const VALUE = info(
+  '몸값',
+  'value',
+  '게임이 보여 주는 몸값(스카우트하지 않은 선수는 범위가 넓다). 게임에 묻기 전이나 FM이 꺼져 있을 때는 세이브에 적힌 기준 몸값(파운드)',
+  true
+)
 const WAGE = info('주급', 'wage', '지금 받는 주급', true)
 const CONTRACT = info('계약 만료', 'contractEnd', '계약이 끝나는 날', true)
 const NATION = info('국적', 'nation', '국적', false)
@@ -55,6 +60,14 @@ const MARKET_BATCH = 30
 const text = (raw: string): CellValue => ({ raw, num: null })
 const number = (value: number | null, raw?: string): CellValue => (value === null ? { raw: '', num: null } : { raw: raw ?? String(value), num: value })
 
+/** 파운드 금액을 짧게: £9.0M, £152K */
+function pounds(value: number): string {
+  if (value >= 10_000_000) return `£${Math.round(value / 1_000_000)}M`
+  if (value >= 1_000_000) return `£${(value / 1_000_000).toFixed(1)}M`
+  if (value >= 1_000) return `£${Math.round(value / 1_000)}K`
+  return `£${value}`
+}
+
 /** 정렬할 수가 있는 글자 칸. 수를 모르면 글자만 */
 const sortable = (raw: string | undefined, num: number | undefined): CellValue => ({ raw: raw ?? '', num: raw && num !== undefined ? num : null })
 
@@ -68,7 +81,12 @@ function toRow(row: CandidateRow, idx: number, market: PlayerMarket | undefined)
     [AGE.header]: number(row.age),
     [POSITION.header]: text(row.position),
     [CLUB.header]: text(row.club || market?.club || '알 수 없음'),
-    [VALUE.header]: sortable(market?.value, market?.valueSort),
+    // 정렬은 어느 쪽이든 같은 기준 몸값(파운드)으로 한다
+    [VALUE.header]: market?.value
+      ? sortable(market.value, market.valueSort ?? row.value ?? undefined)
+      : row.value !== null
+        ? { raw: pounds(row.value), num: row.value }
+        : text(''),
     [WAGE.header]: sortable(market?.wage?.replace(/^주급\s*/, ''), market?.wageSort),
     [CONTRACT.header]: end ? { raw: `${end.year}.${end.month}.${end.day}`, num: end.year * 10000 + end.month * 100 + end.day } : text(''),
     [NATION.header]: text(market?.nation ?? ''),

@@ -108,6 +108,8 @@ export interface CandidateRow {
   club: string
   ca: number
   pa: number
+  /** 세이브에 적힌 기준 몸값(파운드). 모르면 null */
+  value: number | null
   /** 고른 역할의 점수(0~100) */
   score: number
   /** 내 주전과의 점수 차이. 주전이 없으면 null */

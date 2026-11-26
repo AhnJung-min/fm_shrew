@@ -93,11 +93,11 @@ export class GameLink {
     this.world.setLiveOff(!next.connected ? GAME_OFF : next.pluginOld ? oldPluginNote(next.pluginVersion) : null)
     this.world.setMarketOff(
       !next.connected
-        ? '게임이 꺼져 있어 몸값·주급·계약은 볼 수 없습니다.'
+        ? '게임이 꺼져 있어 주급·계약·국적은 볼 수 없습니다. 몸값은 세이브에 적힌 기준값(파운드)입니다.'
         : versionOlder(next.pluginVersion, MARKET_PLUGIN)
-          ? `몸값·주급·계약은 FM을 완전히 껐다가 다시 켜면 보입니다(게임에 올라가 있는 플러그인 ${next.pluginVersion}, 필요한 버전 ${MARKET_PLUGIN}).`
+          ? `주급·계약·국적과 게임이 보여 주는 몸값 범위는 FM을 완전히 껐다가 다시 켜면 보입니다(게임에 올라가 있는 플러그인 ${next.pluginVersion}, 필요한 버전 ${MARKET_PLUGIN}).`
           : !next.loaded
-            ? '게임에서 세이브를 불러오면 몸값·주급·계약이 보입니다.'
+            ? '게임에서 세이브를 불러오면 주급·계약·국적이 보입니다. 몸값은 세이브에 적힌 기준값(파운드)입니다.'
             : null
     )
     const before = this.game

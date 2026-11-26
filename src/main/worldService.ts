@@ -337,6 +337,7 @@ export class WorldService {
       club: this.clubName(world, k),
       ca: world.ca[k],
       pa: world.pa[k],
+      value: world.value[k] || null,
       score,
       gap: bench.starter ? Math.round((score - bench.starter.score) * 10) / 10 : null,
       categories,
