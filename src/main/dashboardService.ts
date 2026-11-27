@@ -14,7 +14,8 @@ import {
   type DashboardData,
   type LoanEntry,
   type RecommendRow,
-  type WageModelInfo
+  type WageModelInfo,
+  type WagePoint
 } from '@shared/dashboard'
 import { positionsLabel } from '@shared/positions'
 import type { SeasonResult } from '@shared/season'
@@ -25,10 +26,8 @@ import { calendar } from './save/contracts'
 import { POSITION_COUNT } from './save/reader'
 import { ageAt, NO_TEAM, SEX_FEMALE, type SaveWorld } from './save/world'
 import type { SeasonService } from './seasonService'
-import type { WorldService } from './worldService'
+import { MIN_LOANS_IN_SAVE, type WorldService } from './worldService'
 
-/** 임대를 읽는 규칙이 맞다고 믿으려면 세이브 전체에서 이만큼은 임대 선수가 나와야 한다(게임 데이터베이스에는 수천 명이 임대 중이다) */
-const MIN_LOANS_IN_SAVE = 100
 /** 영입 추천으로 보여 주는 후보 수 */
 const RECOMMEND_SHOWN = 3
 /** 같은 리그 순위표가 이 팀 수 이상이어야 "내 리그"의 주급으로 기준을 세운다 */
@@ -142,6 +141,7 @@ export class DashboardService {
     // 임대: 선수의 소속 팀(임대받은 팀)과 원 소속 팀(world.loanFrom)이 서로 다른 구단이면 임대다
     let loansInSave = 0
     for (let k = 0; k < world.count; k++) if (world.loanFrom[k] !== NO_TEAM) loansInSave++
+    const loansTrusted = myClub >= 0 && loansInSave >= MIN_LOANS_IN_SAVE
     let loans: DashboardData['squad']['loans'] = null
     let loanNote: string | undefined
     if (myClub < 0) {
@@ -192,19 +192,23 @@ export class DashboardService {
     const ages = ageStructure(players)
     const contracts = contractWindows(players, today)
 
+    // 임대로 들어온 선수는 이 구단이 정리할 수 없고 주급도 원 소속 계약 값이라, 정리 후보와 주급 과다 의심에서 뺀다
+    const loanedIn = new Set(loans ? loans.in.map((entry) => entry.uid) : [])
+
+    // 주급 과다 의심: 내 리그(순위표의 팀들) 선수들의 주급으로 ln(주급) = a + b × 현재 능력 + 나이 더미를 구한다
+    const model = this.wageModel(world, table, loansTrusted)
+
     // 정리 후보
-    let surplus: DashboardData['surplus'] = { ok: false, message: '전술을 분석하지 못해 정리 후보를 가리지 못했습니다.', formation: settings.formation, medianWage: null, rows: [], prospects: [] }
+    let surplus: DashboardData['surplus'] = { ok: false, message: '전술을 분석하지 못해 정리 후보를 가리지 못했습니다.', formation: settings.formation, rows: [], prospects: [] }
     if (analysis) {
       surplus = {
         ok: true,
         formation: analysis.formation.label,
-        ...surplusReport({ players, rows: squad.rows, columns: squad.columns, analysis, roleWeights: settings.roleWeights })
+        ...surplusReport({ players, rows: squad.rows, columns: squad.columns, analysis, roleWeights: settings.roleWeights, norms: squad.roleNorms, wageModel: model, loanedIn })
       }
     }
 
-    // 주급 과다 의심: 내 리그(순위표의 팀들) 선수들의 주급으로 ln(주급) = a + b × 현재 능력을 구한다
-    const model = this.wageModel(world, table)
-    const over = model ? overpaidPlayers(players, model) : { rows: [], total: 0 }
+    const over = model ? overpaidPlayers(players, model, loanedIn) : { rows: [], total: 0 }
     const overpaid: DashboardData['overpaid'] = model
       ? { ok: true, model, rows: over.rows, total: over.total }
       : { ok: false, message: '주급 기준을 세울 만큼 선수의 주급을 읽지 못했습니다.', model: null, rows: [], total: 0 }
@@ -236,7 +240,9 @@ export class DashboardService {
         total: row.recommend.total,
         tier: row.tier,
         score: row.score,
-        gap: row.gap
+        gap: row.gap,
+        loanedTo: row.loanedTo,
+        realism: row.recommend.realism
       }))
       recommend = {
         ok: found.ok,
@@ -282,17 +288,21 @@ export class DashboardService {
     }
   }
 
-  /** 주급 기준선. 순위표의 팀들(내 리그)이 있으면 그 선수들로, 표본이 모자라면 구단이 있는 모든 남자 선수로 */
-  private wageModel(world: SaveWorld, table: SeasonResult['table'] | null): WageModelInfo | null {
+  /**
+   * 주급 기준선. 순위표의 팀들(내 리그)이 있으면 그 선수들로, 표본이 모자라면 구단이 있는 모든 남자 선수로.
+   * 임대 중인 선수는 뺀다(주급이 원 소속 계약 값이라 지금 뛰는 팀·리그의 기준이 아니다).
+   */
+  private wageModel(world: SaveWorld, table: SeasonResult['table'] | null, loansTrusted: boolean): WageModelInfo | null {
     const league = table && table.length >= MIN_LEAGUE_TEAMS ? new Set(table.map((row) => row.teamId)) : null
-    const collect = (only: Set<number> | null): Array<{ ca: number; wage: number }> => {
-      const points: Array<{ ca: number; wage: number }> = []
+    const collect = (only: Set<number> | null): WagePoint[] => {
+      const points: WagePoint[] = []
       for (let k = 0; k < world.count; k++) {
         const wage = world.wage[k]
         const ca = world.ca[k]
         if (wage <= 0 || ca <= 0 || world.club[k] < 0 || world.clubs[world.club[k]].women || world.sex[k] === SEX_FEMALE) continue
+        if (loansTrusted && world.loanFrom[k] !== NO_TEAM) continue
         if (only && !only.has(world.teamIds[k])) continue
-        points.push({ ca, wage })
+        points.push({ ca, wage, age: plausibleAge(ageAt(world, k)) })
       }
       return points
     }

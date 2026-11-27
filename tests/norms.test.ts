@@ -13,7 +13,7 @@ import {
   zWords,
   type RoleNorm
 } from '../src/shared/norms'
-import { AGING_DROP_PER_YEAR, benchmarkOf, categoriesOf, projectedScore, type CandidateBench } from '../src/shared/world'
+import { AGING_DROP_PER_YEAR, benchmarkOf, categoriesOf, growthShare, hasGrowthRoom, projectedScore, type CandidateBench } from '../src/shared/world'
 
 describe('기준 능력', () => {
   it('내 상위 11명 현재 능력의 중간값에서 10을 뺀 값이고 100 아래로는 내려가지 않는다', () => {
@@ -179,10 +179,10 @@ describe('영입 유형 판정', () => {
     const lbBench: CandidateBench = { starter: { name: '주전', score: 73.3, ca: 153, age: 25 }, backup: { name: '후보', score: 71.1 } }
     const a = categoriesOf({ score: 66.9, age: 17, ca: 120, pa: 168, hasClub: true }, lbBench, lb)
     expect(a).toEqual(['prospect'])
-    // 17세의 실현률 ρ = 0.80 - 0.03 × 7 = 0.59
-    expect(projectedScore(66.9, 17, 120, 168, 0.283)).toBeCloseTo(66.9 + 0.283 * 0.59 * 48, 5)
+    // 17세의 성장 몫은 0.78(3회차 단면 실측표)
+    expect(projectedScore(66.9, 17, 120, 168, 0.283)).toBeCloseTo(66.9 + 0.283 * 0.78 * 48, 5)
     expect(categoriesOf({ score: 50.6, age: 16, ca: 86, pa: 175, hasClub: true }, lbBench, lb)).toEqual([])
-    expect(projectedScore(50.6, 16, 86, 175, 0.283)).toBeCloseTo(50.6 + 0.283 * 0.56 * 89, 5)
+    expect(projectedScore(50.6, 16, 86, 175, 0.283)).toBeCloseTo(50.6 + 0.283 * 0.78 * 89, 5)
   })
   it('유망주는 23세 이하이고 잠재 여지가 10 이상이어야 한다', () => {
     const lb: RoleNorm = { mu: 70, sigma: 3, beta: 0.283, n: 100, caRef: 150 }
@@ -246,5 +246,52 @@ describe('절 잇기', () => {
     expect(joinClauses(['주전 A가 34세입니다', '후보가 B 한 명뿐입니다'])).toBe('주전 A가 34세이고, 후보가 B 한 명뿐입니다.')
     expect(joinClauses(['후보가 없습니다'])).toBe('후보가 없습니다.')
     expect(joinClauses([])).toBe('')
+  })
+})
+
+describe('성장 몫과 유망주 자격(3회차)', () => {
+  it('growthShare: 17세 이하 0.78, 18세 0.70, 20세 0.57, 22세 0.38, 24세 0.15, 26세 이상 0이고 사이는 직선이다', () => {
+    const table: Array<[number, number]> = [[14, 0.78], [17, 0.78], [18, 0.7], [20, 0.57], [22, 0.38], [24, 0.15], [26, 0], [30, 0]]
+    for (const [age, share] of table) expect(growthShare(age), `${age}세`).toBeCloseTo(share, 10)
+    expect(growthShare(19)).toBeCloseTo(0.635, 10)
+    expect(growthShare(23)).toBeCloseTo(0.265, 10)
+    expect(growthShare(25)).toBeCloseTo(0.075, 10)
+  })
+
+  it('나이가 많을수록 성장 몫이 줄지 않는 방향으로만 바뀐다(어릴수록 크다)', () => {
+    for (let age = 15; age < 35; age++) expect(growthShare(age + 1)).toBeLessThanOrEqual(growthShare(age) + 1e-12)
+  })
+
+  it('성숙 시 적합도: 22세 CA150/PA170(β 0.265)은 +2.0점, 26세 이상이나 나이를 모르면 그대로다', () => {
+    expect(projectedScore(70, 22, 150, 170, 0.265) - 70).toBeCloseTo(0.38 * 20 * 0.265, 6)
+    expect(projectedScore(70, 22, 150, 170, 0.265) - 70).toBeCloseTo(2.01, 2)
+    expect(projectedScore(70, 26, 150, 190, 0.265)).toBe(70)
+    expect(projectedScore(70, null, 150, 190, 0.265)).toBe(70)
+  })
+
+  it('유망주 자격: 23세 CA152/PA164(β 0.265, σ 3.15)는 아니고 18세 CA165/PA183은 맞다', () => {
+    expect(hasGrowthRoom(23, 152, 164, 0.265, 3.15)).toBe(false)
+    expect(hasGrowthRoom(18, 165, 183, 0.265, 3.15)).toBe(true)
+    // 성숙 시 이득: 23세 0.265 × 0.265 × 12 = 0.84점(0.27σ), 18세 0.70 × 0.265 × 18 = 3.34점(1.06σ)
+    expect(0.265 * growthShare(23) * 12).toBeCloseTo(0.84, 2)
+    expect(0.265 * growthShare(18) * 18).toBeCloseTo(3.34, 2)
+  })
+
+  it('나이 ≤ 23, 잠재 여지 ≥ 10, 이득 ≥ 0.5σ를 모두 만족해야 하고, 나이를 모르면 아니다', () => {
+    expect(hasGrowthRoom(24, 120, 180, 0.265, 3.15)).toBe(false)
+    expect(hasGrowthRoom(18, 150, 159, 0.265, 3.15)).toBe(false)
+    expect(hasGrowthRoom(null, 120, 180, 0.265, 3.15)).toBe(false)
+    // 여지 12라도 21세이면 이득 0.265 × 0.465 × 12 = 1.48점 < 1.575점(0.5σ): 아니다. 22세 여지 16이면 1.61점: 맞다
+    expect(hasGrowthRoom(21, 150, 162, 0.265, 3.15)).toBe(false)
+    expect(hasGrowthRoom(22, 150, 166, 0.265, 3.15)).toBe(true)
+  })
+
+  it('categoriesOf의 유망주 유형도 같은 자격을 쓴다(자격에서 빠진 23세는 로테이션에는 남는다)', () => {
+    const cb: RoleNorm = { mu: 74.4, sigma: 3.15, beta: 0.265, n: 49, caRef: 153 }
+    const bench: CandidateBench = { starter: { name: '주전', score: 76, ca: 157, age: 26 }, backup: { name: '후보', score: 72.5 } }
+    const javarni = categoriesOf({ score: 76, age: 23, ca: 152, pa: 164, hasClub: true }, bench, cb)
+    expect(javarni).not.toContain('prospect')
+    expect(javarni).toContain('starter')
+    expect(categoriesOf({ score: 74, age: 18, ca: 165, pa: 183, hasClub: true }, bench, cb)).toContain('prospect')
   })
 })

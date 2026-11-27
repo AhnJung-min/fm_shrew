@@ -609,6 +609,12 @@ input[type='radio'] {
   color: var(--gold);
   font-weight: 700;
 }
+/* 주의: 영입 현실성 낮음처럼 읽고 넘어가면 안 되는 표지 */
+.tag.warn {
+  background: var(--warn-soft);
+  color: var(--warn);
+  font-weight: 700;
+}
 
 /* 패널: 구역 하나. 그림자 없이 테두리만 */
 .panel {

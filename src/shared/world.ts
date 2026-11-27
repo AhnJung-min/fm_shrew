@@ -46,7 +46,7 @@ export const CATEGORY_HELP: Record<CandidateCategory, string> = {
   all: '즉시 전력·로테이션·유망주에 드는 선수 모두',
   starter: '이 자리(역할)의 적합도가 내 주전 수준이거나 그 이상인 선수',
   rotation: '주전에는 못 미치지만 내 첫 후보보다는 나은, 번갈아 쓸 만한 선수',
-  prospect: '23세 이하이고, 앞으로 크면 내 주전 수준이 될 것으로 보이는 선수',
+  prospect: '23세 이하이고, 크고 나면 내 주전 수준이 될 것으로 보이며 다 컸을 때 적합도가 0.5 표준편차 넘게 오르는 선수',
   free: '소속이 없는 선수 가운데 위 유형에 드는 선수'
 }
 
@@ -56,19 +56,32 @@ export const CATEGORY_HELP: Record<CandidateCategory, string> = {
 export const PROSPECT_MAX_AGE = 23
 export const PROSPECT_MIN_ROOM = 10
 /**
- * 성숙 시 전력: 성숙 시 적합도 proj = f_eff + beta × ρ(나이) × R(나이) × (PA - CA)   (f_eff는 숙련 감점·나이 하락을 뺀 지금 적합도).
- * beta는 역할별 기준 분포(norms.ts)의 "현재 능력 1점당 적합도". R은 성장이 끝나기까지 남은 기간, ρ는 남은 성장 여지(PA - CA) 가운데 실제로 이루어지는 몫이다.
- * 추정: ρ와 R은 두 날짜의 세이브 사본으로 아직 검증하지 못했다(검토 1회차 검증 계획 3번, 2회차 검증 계획 4번).
- *
- * ρ(나이) = 0.80 - 0.03 × max(0, 24 - 나이): 24세 이상 0.80, 21세 0.71, 18세 0.62, 16세 0.56.
- * 어릴수록 잠재에 이르기까지 8년 가까이 걸려 불확실하므로 낮춘다(2회차. 1회차는 나이와 상관없이 0.75였다).
+ * 유망주 자격(3회차): 성숙 시 적합도 이득이 이 값 × σ 이상이어야 "클 여지가 있다"고 본다. 23세 CA152/PA164는 이득 0.27σ라 빠지고(로테이션 자원),
+ * 18세 CA165/PA183은 1.1σ라 든다. 추정: 0.5σ는 "한 시즌 주전 경쟁에 보탬이 될 만한 크기"라는 어림이다.
  */
-export const GROWTH_REALIZATION = 0.8
-export const GROWTH_REALIZATION_PER_YEAR = 0.03
-export const GROWTH_REALIZATION_FULL_AGE = 24
-/** R(나이) = clamp01((27 - 나이) / 6): 21세 이하 1, 27세 이상 0 (추정) */
-export const GROWTH_END_AGE = 27
-export const GROWTH_SPAN_YEARS = 6
+export const PROSPECT_MIN_GAIN_SIGMA = 0.5
+/** 역할을 정할 수 없을 때 쓰는 대표 기울기와 σ(실제 세이브에서 역할별 β 0.24~0.34, σ 2.8~5.9의 가운데쯤. 3회차 보고서) */
+export const REPRESENTATIVE_BETA = 0.265
+export const REPRESENTATIVE_SIGMA = 3.2
+
+/**
+ * 성숙 시 적합도 proj_eff = f_eff + β × growthShare(나이) × max(0, PA - CA)  (f_eff는 숙련 감점·나이 하락을 뺀 지금 적합도, β는 역할 기준 분포의 "현재 능력 1점당 적합도").
+ * growthShare(나이)는 지금 현재 능력(CA)과 잠재 능력(PA)의 차이 가운데 성숙까지 채워질 몫이다(3회차).
+ * 직선 보간표: (17세 이하 0.78) (18 0.70) (20 0.57) (22 0.38) (24 0.15) (26세 이상 0).
+ * 근거(단면 실측, 실험): 같은 PA 구간(120~140, 140~160, 160~180) 선수들이 나이별로 평균 현재 능력이 27~29세 평균에 대해
+ * (PA - CA)를 얼마나 채웠는가를 셋 구간에서 평균했다(16~18세 0.77~0.80/0.68~0.71, 20세 0.54~0.59, 22세 0.36~0.42, 24세 0.00~0.16, 26세 이후 0에 수렴).
+ * 한계: 한 시점의 단면이라 세대(코호트) 차이와 은퇴·방출 편향이 섞여 있다. 두 날짜의 세이브로 같은 선수들의 변화를 직접 재어 다시 확인해야 한다.
+ * (1·2회차의 ρ(나이)·R(나이) 곱은 22~26세에서 이 실측의 약 2배였다.)
+ */
+export const GROWTH_SHARE_TABLE: Array<[number, number]> = [
+  [17, 0.78],
+  [18, 0.7],
+  [20, 0.57],
+  [22, 0.38],
+  [24, 0.15],
+  [26, 0]
+]
+
 /** 이 나이를 넘으면 한 해마다 AGING_DROP_PER_YEAR점씩 내려갈 것으로 보고 적합도를 낮춘다(주전과 영입 후보에 똑같이 적용. 골키퍼는 늦게 내려간다) */
 export const AGING_START_AGE = 31
 export const AGING_START_AGE_GOALKEEPER = 34
@@ -108,20 +121,37 @@ export function benchLine(bench: CandidateBench, groupSlots: number): string {
   return `내 팀 ${weakest} ${starter.name} ${Math.round(starter.shownScore ?? starter.score)}점${second}`
 }
 
-/** 어린 선수의 성장 인정 비율 R(나이): 21세 이하 1, 27세 이상 0, 그 사이는 직선 */
-export function growthRatio(age: number): number {
-  return Math.min(1, Math.max(0, (GROWTH_END_AGE - age) / GROWTH_SPAN_YEARS))
+/** 성장 몫(GROWTH_SHARE_TABLE을 직선으로 이은 값). 17세 이하 0.78, 26세 이상 0 */
+export function growthShare(age: number): number {
+  const table = GROWTH_SHARE_TABLE
+  if (age <= table[0][0]) return table[0][1]
+  for (let i = 1; i < table.length; i++) {
+    const [x1, y1] = table[i]
+    if (age <= x1) {
+      const [x0, y0] = table[i - 1]
+      return y0 + ((y1 - y0) * (age - x0)) / (x1 - x0)
+    }
+  }
+  return table[table.length - 1][1]
 }
 
-/** 성장 실현률 ρ(나이): 24세 이상 0.80, 한 살 어릴 때마다 0.03씩 낮다 */
-export function realizationOf(age: number): number {
-  return GROWTH_REALIZATION - GROWTH_REALIZATION_PER_YEAR * Math.max(0, GROWTH_REALIZATION_FULL_AGE - age)
+/** 성숙 시 적합도가 지금보다 오르는 점수: β × growthShare(나이) × max(0, PA - CA). 나이를 모르면 0 */
+export function growthGain(age: number | null, ca: number, pa: number, beta: number): number {
+  if (age === null) return 0
+  return beta * growthShare(age) * Math.max(0, pa - ca)
 }
 
-/** 성숙 시 예상 적합도(proj). 27세 이상이거나 나이를 모르면 지금 적합도 그대로다 */
+/** 성숙 시 예상 적합도(proj). 26세 이상이거나 나이를 모르면 지금 적합도 그대로다 */
 export function projectedScore(score: number, age: number | null, ca: number, pa: number, beta: number): number {
-  if (age === null) return score
-  return score + beta * realizationOf(age) * growthRatio(age) * Math.max(0, pa - ca)
+  return score + growthGain(age, ca, pa, beta)
+}
+
+/**
+ * 클 여지가 있는가(유망주 자격의 앞 절반): 나이 ≤ 23 ∧ PA - CA ≥ 10 ∧ 성숙 시 이득 ≥ 0.5σ.
+ * 영입 후보의 유망주 유형(categoriesOf)과 대시보드의 "임대 보내 키울 선수"가 이 함수 하나를 쓴다.
+ */
+export function hasGrowthRoom(age: number | null, ca: number, pa: number, beta: number, sigma: number): boolean {
+  return age !== null && age <= PROSPECT_MAX_AGE && pa - ca >= PROSPECT_MIN_ROOM && growthGain(age, ca, pa, beta) >= PROSPECT_MIN_GAIN_SIGMA * sigma
 }
 
 /** 나이 하락으로 내년까지 깎아 보는 적합도(점). 시작 나이(필드 31, 골키퍼 34)를 넘은 해마다 AGING_DROP_PER_YEAR */
@@ -190,7 +220,7 @@ export function benchmarkOf(starter: CandidateBench['starter'], norm: RoleNorm =
  * f_b 첫 후보, σ 이 역할의 표준편차.
  *   starter : f_eff ≥ anchor - 0.25σ ∧ CA ≥ 0.85·기준 주전 CA
  *   rotation: f_eff < anchor - 0.25σ ∧ f_eff ≥ max(f_b, anchor - 1.5σ) - 0.25σ ∧ CA 문턱 (후보가 없으면 f_b = -∞)
- *   prospect: 나이 ≤ 23 ∧ PA - CA ≥ 10 ∧ 성숙 시 적합도(proj_eff) ≥ anchor - 0.25σ
+ *   prospect: 나이 ≤ 23 ∧ PA - CA ≥ 10 ∧ β·growthShare(나이)·(PA - CA) ≥ 0.5σ ∧ 성숙 시 적합도(proj_eff) ≥ anchor - 0.25σ
  * 주전이 없으면 anchor 대신 이 역할 상위권 평균(mu), CA 문턱은 0.85 × 기준 능력(caRef).
  * 같은 포지션·같은 역할 자리가 여럿이면 bench가 그 그룹의 값이다(shared/tactic.ts의 slotBench).
  */
@@ -212,12 +242,7 @@ export function categoriesOf(
       if (fit >= floor) found.push('rotation')
     }
   }
-  if (
-    player.age !== null &&
-    player.age <= PROSPECT_MAX_AGE &&
-    player.pa - player.ca >= PROSPECT_MIN_ROOM &&
-    projectedScore(fit, player.age, player.ca, player.pa, norm.beta) >= line
-  ) {
+  if (hasGrowthRoom(player.age, player.ca, player.pa, norm.beta, norm.sigma) && projectedScore(fit, player.age, player.ca, player.pa, norm.beta) >= line) {
     found.push('prospect')
   }
   if (found.length > 0 && !player.hasClub) found.push('free')
@@ -268,6 +293,8 @@ export interface CandidateRow {
   nation: string
   /** 소속 구단의 고유 번호(엠블럼용). 구단을 알아내지 못했거나 자유 계약이면 null */
   clubUid: number | null
+  /** 임대 중이면 지금 뛰고 있는 구단 이름. club은 원 소속 구단이다(이적료를 받는 쪽). 임대가 아니면 null */
+  loanedTo: string | null
   /** 고른 역할의 적합도(0~100). 화면에 보이는 값이고 숙련·나이 감점은 반영 전이다 */
   score: number
   /** 내 주전(그룹에서 가장 약한 주전)과 화면의 적합도끼리의 차이(후보 - 주전). 주전이 없으면 null */
@@ -449,10 +476,12 @@ export interface PlayerProfile {
   goalkeeper: boolean
   ca: number
   pa: number
-  /** 구단 이름. 소속이 없으면 "자유 계약", 모르면 빈 글자 */
+  /** 구단 이름. 소속이 없으면 "자유 계약", 모르면 빈 글자. 임대 중이면 원 소속 구단 */
   club: string
   /** 소속 구단의 고유 번호(엠블럼). 모르면 null */
   clubUid: number | null
+  /** 임대 중이면 지금 뛰고 있는 구단 이름 */
+  loanedTo?: string
   nation: string
   /** 몸값. 모르면 빈 글자 */
   value: string

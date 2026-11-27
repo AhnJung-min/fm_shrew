@@ -6,6 +6,7 @@ import { footValues, formatPounds, hiddenAttributes, isGoalkeeper, visibleAttrib
 import { normOf, type RoleNorms } from '@shared/norms'
 import { prepareRole, ROLE_BY_ID, savedRoleScore } from '@shared/roles'
 import {
+  capTierByRealism,
   recommend,
   squadMoney,
   tierRanker,
@@ -52,6 +53,8 @@ const MARKET_KEEP_MS = 10 * 60_000
 const MAX_ROWS = 300
 /** 에디터에서 이름으로 찾을 때 보여 주는 줄 수 */
 const MAX_FOUND = 80
+/** 임대를 읽는 규칙이 맞다고 믿으려면 세이브 전체에서 이만큼은 임대 선수가 나와야 한다(게임 데이터베이스에는 수천 명이 임대 중이다) */
+export const MIN_LOANS_IN_SAVE = 100
 /** 게임이 한 덩어리로 넘겨주는 선수 한 명의 크기: 번호 4 + 현재·잠재 능력 4 + 숙련도 15 + 능력치 54 */
 const PACKED_SIZE = 8 + POSITION_COUNT + ATTRIBUTE_COUNT
 
@@ -111,6 +114,8 @@ export class WorldService {
    */
   private revision = 0
   private femaleCache: { world: SaveWorld; revision: number; mask: Uint8Array } | null = null
+  /** 팀 번호 → 구단 순번(임대 선수의 원 소속 구단을 찾는 데 쓴다). 임대 기록을 믿을 수 있는지도 함께 */
+  private loanCache: { world: SaveWorld; teamClub: Map<number, number>; trusted: boolean } | null = null
   private normCache: { world: SaveWorld; revision: number; weights: string; norms: RoleNorms } | null = null
 
   constructor(private readonly deps: WorldDeps) {
@@ -327,6 +332,39 @@ export class WorldService {
     return team ? team.club || team.name : ''
   }
 
+  private loanIndex(world: SaveWorld): { teamClub: Map<number, number>; trusted: boolean } {
+    const kept = this.loanCache
+    if (kept && kept.world === world) return kept
+    const teamClub = new Map<number, number>()
+    let loans = 0
+    for (let k = 0; k < world.count; k++) {
+      const team = world.teamIds[k]
+      if (team !== NO_TEAM && world.club[k] >= 0 && !teamClub.has(team)) teamClub.set(team, world.club[k])
+      if (world.loanFrom[k] !== NO_TEAM) loans++
+    }
+    // 대시보드와 같은 기준: 세이브 전체에서 임대가 이만큼은 읽혀야 임대 기록을 믿는다
+    const entry = { world, teamClub, trusted: loans >= MIN_LOANS_IN_SAVE }
+    this.loanCache = entry
+    return entry
+  }
+
+  /**
+   * 선수의 소속 구단. 임대 중이면 원 소속 구단(이적료를 받는 쪽)을 돌려주고 지금 뛰는 구단은 loanedTo에 적는다.
+   * 원 소속을 알아내지 못하면 지금 뛰는 구단을 그대로 소속으로 본다.
+   */
+  private clubOf(world: SaveWorld, k: number): { name: string; uid: number | null; loanedTo: string | null } {
+    const host = { name: this.clubName(world, k), uid: world.club[k] >= 0 ? world.clubs[world.club[k]].uid : null, loanedTo: null }
+    const lender = world.loanFrom[k]
+    if (lender === NO_TEAM) return host
+    const index = this.loanIndex(world)
+    if (!index.trusted) return host
+    const club = index.teamClub.get(lender)
+    if (club !== undefined) return { name: world.clubs[club].name, uid: world.clubs[club].uid, loanedTo: host.name }
+    const learned = this.names.team(lender)
+    const name = learned ? learned.club || learned.name : ''
+    return name ? { name, uid: null, loanedTo: host.name } : host
+  }
+
   /**
    * 여자 선수인지. 세이브에 적힌 성별(world.sex)을 기준으로 하고, 게임이 알려 준 여자 팀의 선수도 여자로 본다.
    * (구단 번호가 20억 이상이면 여자 구단이라는 어림은 새로 만든 남자 구단에도 걸려 쓰지 않는다.)
@@ -534,27 +572,33 @@ export class WorldService {
     picked.sort((a, b) => b.total - a.total || b.score - a.score || world.ca[b.k] - world.ca[a.k])
     const tierOf = tierRanker(qualifiedTotals)
 
-    const rows: CandidateRow[] = picked.slice(0, MAX_ROWS).map(({ k, score, age, categories, total, inTab }) => ({
-      uid: world.uids[k],
-      name: world.names[k],
-      age,
-      position: positionsLabel([...world.positions.subarray(k * POSITION_COUNT, (k + 1) * POSITION_COUNT)]),
-      club: this.clubName(world, k),
-      clubUid: world.club[k] >= 0 ? world.clubs[world.club[k]].uid : null,
-      ca: world.ca[k],
-      pa: world.pa[k],
-      value: world.value[k] || null,
-      wage: world.wage[k] || null,
-      contractEnd: world.contractEnd[k] ? calendar({ year: Math.floor(world.contractEnd[k] / 1000), day: world.contractEnd[k] % 1000 }) : null,
-      squadStatus: SQUAD_STATUS_LABEL[world.squadStatus[k]] ?? '',
-      nation: this.names.nation(world.nationId[k]),
-      score,
-      gap: bench.starter ? Math.round((score - (bench.starter.shownScore ?? bench.starter.score)) * 10) / 10 : null,
-      categories,
-      recommend: recommend(inputOf(k, score, age), context),
-      tier: (inTab ? tierOf(total) : 'outside') as RecommendTierId,
-      attributes: [...world.attributes.subarray(k * ATTRIBUTE_COUNT, (k + 1) * ATTRIBUTE_COUNT)].map(shownValue)
-    }))
+    const rows: CandidateRow[] = picked.slice(0, MAX_ROWS).map(({ k, score, age, categories, total, inTab }) => {
+      const club = this.clubOf(world, k)
+      const recommendation = recommend(inputOf(k, score, age), context)
+      return {
+        uid: world.uids[k],
+        name: world.names[k],
+        age,
+        position: positionsLabel([...world.positions.subarray(k * POSITION_COUNT, (k + 1) * POSITION_COUNT)]),
+        club: club.name,
+        clubUid: club.uid,
+        loanedTo: club.loanedTo,
+        ca: world.ca[k],
+        pa: world.pa[k],
+        value: world.value[k] || null,
+        wage: world.wage[k] || null,
+        contractEnd: world.contractEnd[k] ? calendar({ year: Math.floor(world.contractEnd[k] / 1000), day: world.contractEnd[k] % 1000 }) : null,
+        squadStatus: SQUAD_STATUS_LABEL[world.squadStatus[k]] ?? '',
+        nation: this.names.nation(world.nationId[k]),
+        score,
+        gap: bench.starter ? Math.round((score - (bench.starter.shownScore ?? bench.starter.score)) * 10) / 10 : null,
+        categories,
+        recommend: recommendation,
+        // 영입 현실성이 낮으면 등급만 "고려"까지로 제한한다(총점·정렬은 그대로)
+        tier: (inTab ? capTierByRealism(tierOf(total), recommendation.realism) : 'outside') as RecommendTierId,
+        attributes: [...world.attributes.subarray(k * ATTRIBUTE_COUNT, (k + 1) * ATTRIBUTE_COUNT)].map(shownValue)
+      }
+    })
     return { ok: true, saveName, bench, counts, rows, matched: picked.length, ranked: qualifiedTotals.length, norm, need, group: group ? { label: group.label, slots: group.slots.length } : null, baseline: money }
   }
 
@@ -671,6 +715,7 @@ export class WorldService {
     const shown = base.attributes.map(shownValue)
     const market = (await this.market([uid])).players.find((player) => player.uid === uid)
 
+    const club = this.clubOf(world, k)
     const gameMoney = Boolean(market?.value || market?.wage)
     const savedEnd = world.contractEnd[k] ? calendar({ year: Math.floor(world.contractEnd[k] / 1000), day: world.contractEnd[k] % 1000 }) : null
     const born = world.birthYear[k] ? calendar({ year: world.birthYear[k], day: world.birthDay[k] || 1 }) : null
@@ -685,8 +730,9 @@ export class WorldService {
       goalkeeper,
       ca: base.ca,
       pa: base.pa,
-      club: base.club || market?.club || '',
-      clubUid: world.club[k] >= 0 ? world.clubs[world.club[k]].uid : null,
+      club: club.loanedTo ? club.name : base.club || market?.club || '',
+      clubUid: club.loanedTo ? club.uid : world.club[k] >= 0 ? world.clubs[world.club[k]].uid : null,
+      loanedTo: club.loanedTo ?? undefined,
       nation: this.names.nation(world.nationId[k]) || market?.nation || '',
       value: gameMoney ? (market?.value ?? '') : formatPounds(world.value[k]),
       wage: gameMoney ? (market?.wage ?? '').replace(/^주급\s*/, '') : formatPounds(world.wage[k]),
