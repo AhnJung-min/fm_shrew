@@ -282,6 +282,19 @@ export function buildWorld(db: Buffer, pickTeam?: (world: SaveWorld) => number |
   }
   const count = blocks.length
   const recordEnd = (k: number): number => Math.min(blocks[k + 1] ?? db.length, blocks[k] + 60_000)
+  /**
+   * 사람 기록의 이름 번호가 이름표에 실제로 있는가(없음 표시 ffffffff는 허용, 0번 칸은 허용하지 않음).
+   * 모양만 보고 찾으면 사람 기록 앞의 다른 자료가 먼저 잡히는 선수가 있었다(26.3.2 세이브 99,890명 중 3,296명).
+   * 그 경우 이름 번호가 0이나 이름표에 없는 값이라, 표시 이름표의 0번("Stiven Rua") 같은 엉뚱한 이름과 생일(나이 11세 등)이 나왔다.
+   * 진짜 사람 기록은 수십~수백 바이트 뒤에 있고, 이 검사로 3,277명을 되찾았다. 남은 19명은 이름 번호가 네 이름표 밖에 있는 새로 만들어진 선수다.
+   */
+  const NO_NAME = 0xffffffff
+  const known = (id: number, ...lookups: Array<Map<number, string>>): boolean => id === NO_NAME || (id !== 0 && lookups.some((table) => table.has(id)))
+  const plausible = (person: Person): boolean =>
+    known(person.firstId, firstNames, extraFirstNames) &&
+    known(person.secondId, secondNames) &&
+    known(person.displayId, displayNames) &&
+    !(person.firstId === NO_NAME && person.secondId === NO_NAME && person.displayId === NO_NAME)
   const nameOf = (person: Person): string => {
     const shown = displayNames.get(person.displayId)
     if (shown) return shown
@@ -318,7 +331,7 @@ export function buildWorld(db: Buffer, pickTeam?: (world: SaveWorld) => number |
   const ownerIndex = new Uint32Array(count)
   for (let k = 0; k < count; k++) {
     const block = blocks[k]
-    const person = findPerson(db, block + BLOCK_SIZE, recordEnd(k))
+    const person = findPerson(db, block + BLOCK_SIZE, recordEnd(k), plausible)
     world.names[k] = person ? nameOf(person) : ''
     world.birthYear[k] = person?.birthYear ?? 0
     world.birthDay[k] = person?.birthDay ?? 0

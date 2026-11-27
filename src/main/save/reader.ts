@@ -112,13 +112,19 @@ export interface Person {
 /** 나라 번호가 가질 수 있는 가장 큰 값 */
 const MAX_NATION_ID = 999
 
-export function findPerson(db: Buffer, from: number, to: number): Person | null {
+/**
+ * 선수 기록 안에서 사람 기록(이름 번호 셋, 생일, 국적)을 찾는다.
+ * 모양만 보고 찾으므로 다른 자료가 우연히 같은 모양이면 잘못 잡힌다. accept를 주면 그것을 통과하는 첫 후보를 쓰고,
+ * 통과하는 후보가 없을 때만 모양이 맞는 첫 후보를 쓴다(예전 동작).
+ */
+export function findPerson(db: Buffer, from: number, to: number, accept?: (person: Person) => boolean): Person | null {
+  let first: Person | null = null
   for (let q = from; q < to - 30; q++) {
     if (db[q + 4] !== 0 || db[q + 9] !== 0 || db[q + 14] !== 0) continue
     const nameLength = db.readUInt32LE(q + 15)
     if (nameLength > 90) continue
     const dateAt = q + 19 + nameLength
-    if (dateAt + 4 > db.length) return null
+    if (dateAt + 4 > db.length) break
     const birthDay = db.readUInt16LE(dateAt)
     const birthYear = db.readUInt16LE(dateAt + 2)
     if (birthDay < 1 || birthDay > 366 || birthYear < 1940 || birthYear > 2015) continue
@@ -127,9 +133,11 @@ export function findPerson(db: Buffer, from: number, to: number): Person | null 
     if (firstId === 0 && secondId === 0) continue
     // 생일에서 13바이트 뒤에 국적의 나라 번호가 있다(공개 해독기 fmsave의 구조 설명에서 알게 됨)
     const nation = dateAt + 15 <= db.length ? db.readUInt16LE(dateAt + 13) : 0
-    return { firstId, secondId, displayId: db.readUInt32LE(q + 10), birthDay, birthYear, nationId: nation <= MAX_NATION_ID ? nation : 0 }
+    const person = { firstId, secondId, displayId: db.readUInt32LE(q + 10), birthDay, birthYear, nationId: nation <= MAX_NATION_ID ? nation : 0 }
+    if (!accept || accept(person)) return person
+    first ??= person
   }
-  return null
+  return first
 }
 
 /** 선수 기록(숙련도 15개 + 능력치 54개)이 시작하는 위치들 */

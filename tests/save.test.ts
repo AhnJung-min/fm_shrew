@@ -1,7 +1,7 @@
 import { constants, zstdCompressSync } from 'node:zlib'
 import { describe, expect, it } from 'vitest'
 import { extractDatabase, openContainer } from '../src/main/save/container'
-import { SaveFormatError } from '../src/main/save/reader'
+import { findPerson, SaveFormatError, type Person } from '../src/main/save/reader'
 import { ownerUid } from '../src/main/save/world'
 import { versionOlder } from '../src/shared/game'
 import { categoriesOf, checkEdit, parseGameDate, shownValue, type CandidateBench } from '../src/shared/world'
@@ -146,5 +146,39 @@ describe('게임이 적어 준 날짜', () => {
     expect(parseGameDate('-')).toBeNull()
     expect(parseGameDate('계약 없음')).toBeNull()
     expect(parseGameDate('13/13/2027')).toBeNull()
+  })
+})
+
+describe('사람 기록 찾기', () => {
+  /** 사람 기록 모양 하나를 at에 쓴다: [이름 u32][0][성 u32][0][표시 이름 u32][0][길이 u32][이름 글자][생일 u16][해 u16] */
+  function writePerson(db: Buffer, at: number, ids: { first: number; second: number; display: number }, born: number): void {
+    db.writeUInt32LE(ids.first, at)
+    db[at + 4] = 0
+    db.writeUInt32LE(ids.second, at + 5)
+    db[at + 9] = 0
+    db.writeUInt32LE(ids.display, at + 10)
+    db[at + 14] = 0
+    db.writeUInt32LE(0, at + 15)
+    db.writeUInt16LE(100, at + 19)
+    db.writeUInt16LE(born, at + 21)
+  }
+
+  it('모양만 맞는 앞의 자료보다 이름 번호가 이름표에 있는 뒤의 기록을 고른다', () => {
+    const db = Buffer.alloc(400, 0xaa)
+    // 앞: 이름 번호가 이름표에 없고 표시 이름이 0번(세이브에서 "Stiven Rua"로 나오던 경우)
+    writePerson(db, 40, { first: 65536, second: 0xffffff, display: 0 }, 2014)
+    // 뒤: 진짜 기록
+    writePerson(db, 200, { first: 11, second: 22, display: 33 }, 1994)
+    const names = new Set([11, 22, 33])
+    const accept = (person: Person): boolean => names.has(person.firstId) && names.has(person.secondId) && names.has(person.displayId)
+    expect(findPerson(db, 0, db.length)?.birthYear).toBe(2014)
+    const found = findPerson(db, 0, db.length, accept)
+    expect(found).toMatchObject({ firstId: 11, secondId: 22, displayId: 33, birthYear: 1994 })
+  })
+
+  it('통과하는 후보가 없으면 모양이 맞는 첫 후보를 쓴다(예전 동작)', () => {
+    const db = Buffer.alloc(300, 0xaa)
+    writePerson(db, 40, { first: 7, second: 8, display: 9 }, 2001)
+    expect(findPerson(db, 0, db.length, () => false)).toMatchObject({ firstId: 7, birthYear: 2001 })
   })
 })
