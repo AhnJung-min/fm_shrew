@@ -2,6 +2,7 @@ import type { RoleNorms } from './norms'
 import type { ClubSnapshot } from './club'
 import type { DashboardData } from './dashboard'
 import type { ApplyResult, LinkStatus, SaveFileInfo } from './game'
+import type { SaveRecords } from './records'
 import type { SeasonResult } from './season'
 import type { TalkEffort, TalkStats, TalkStatus } from './talk'
 import type { CandidateQuery, CandidateResult, EditorApplyResult, EditorEdit, EditorListItem, EditorPlayer, MarketResult, PlayerProfile } from './world'
@@ -192,4 +193,8 @@ export interface Api {
   backupDelete(id: string): Promise<void>
   /** 사본이 생기거나 없어졌을 때 */
   onBackupChanged(cb: () => void): () => void
+  // 기록 보관(성장 스냅샷·경기 평점)
+  recordsList(): Promise<SaveRecords[]>
+  /** 세이브 하나의 기록 폴더를 휴지통으로 보낸다 */
+  recordsRemove(id: string): Promise<{ ok: boolean; message?: string }>
 }

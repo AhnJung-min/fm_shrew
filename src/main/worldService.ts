@@ -92,6 +92,8 @@ export interface WorldDeps {
   wageModel?(): WageCoefs | null
   /** 게임에 물어 알게 된 이름(나라, 팀)을 적어 두는 폴더 */
   namesDir: string
+  /** 세이브 파일을 새로 읽은 직후(게임의 지금 값으로 덮어쓰기 전). 기록 보관이 그날의 값을 남기는 데 쓴다 */
+  onRead?(path: string, world: SaveWorld): void
 }
 
 /**
@@ -180,6 +182,7 @@ export class WorldService {
       if (uid !== 0) byUid.set(uid, byUid.has(uid) ? -1 : k)
     }
     this.loaded = { path, mtimeMs: info.mtimeMs, size: info.size, world, byUid, live: null, note: '' }
+    this.deps.onRead?.(path, world)
     return world
   }
 

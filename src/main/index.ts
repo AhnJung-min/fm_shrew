@@ -9,6 +9,8 @@ import { ClubService } from './clubService'
 import { DashboardService } from './dashboardService'
 import { GameLink } from './gameLink'
 import { FaceFinder, imageRequestFrom, LogoFinder } from './graphics'
+import { RecordKeeper } from './records/keeper'
+import { RecordStore } from './records/store'
 import { SeasonService } from './seasonService'
 import { SettingsStore } from './settings'
 import { TalkController } from './talk/controller'
@@ -46,11 +48,13 @@ let world: WorldService
 let season: SeasonService
 let dashboard: DashboardService
 let club: ClubService
+let records: RecordKeeper
 let link: GameLink
 let tray: Tray | null = null
 /** 정말 끄는 중인지(트레이 메뉴의 종료, 시스템 종료). 아니면 창을 닫아도 앱은 남는다 */
 let quitting = false
 let toldAboutTray = false
+let pluginWasConnected = false
 
 function getStatus(): AppStatus {
   const { saveDir } = settings.get()
@@ -179,6 +183,19 @@ function registerIpc(): void {
   ipcMain.handle('world:dashboard', () => dashboard.dashboard())
   ipcMain.handle('world:club', (_event, force: boolean) => club.snapshot(force === true))
 
+  // 기록 보관: 세이브마다의 성장 스냅샷·경기 평점. 지울 때는 휴지통으로 보낸다
+  ipcMain.handle('records:list', () => records.summaries())
+  ipcMain.handle('records:remove', async (_event, id: string) => {
+    const dir = records.store.folderOf(String(id))
+    if (!dir) return { ok: false, message: '기록 폴더를 찾지 못했습니다.' }
+    try {
+      await shell.trashItem(dir)
+      return { ok: true }
+    } catch (error) {
+      return { ok: false, message: error instanceof Error ? error.message : String(error) }
+    }
+  })
+
   ipcMain.handle('backup:list', () => backups.list())
   ipcMain.handle('backup:now', async () => {
     const newest = world.path ?? link.saves()[0]?.path
@@ -270,7 +287,13 @@ app.whenReady().then(async () => {
     () => settings.get().saveDir,
     () => settings.get().backupKeep
   )
+  // 기록 폴더와 플러그인의 평점 파일 위치는 환경 변수로 바꿀 수 있다(시험용)
+  records = new RecordKeeper(
+    new RecordStore(process.env.FMB_RECORDS_DIR ?? join(dataDir, 'records')),
+    () => join(process.env.FMB_PLUGIN_RECORDS ?? join(process.env.LOCALAPPDATA ?? '', 'FmBojwagwan', 'records'), 'ratings.jsonl')
+  )
   world = new WorldService({
+    onRead: (path, loaded) => void records.onRead(path, loaded),
     knownTeam: (fileName) => settings.get().saveTeams[fileName],
     rosterNames: () => link.rosterNames(),
     rememberTeam: (fileName, teamId) => {
@@ -292,11 +315,17 @@ app.whenReady().then(async () => {
   link = new GameLink(
     world,
     () => settings.get().saveDir,
-    (status) => mainWindow?.webContents.send('link:changed', status)
+    (status) => {
+      mainWindow?.webContents.send('link:changed', status)
+      // 플러그인이 연결되는 순간, 쌓인 경기 평점을 가져온다
+      if (status.game.connected && !pluginWasConnected && world.path) records.importRatings(world.path, world.world?.teamId)
+      pluginWasConnected = status.game.connected
+    }
   )
   club = new ClubService(world, () => link.status())
   saveWatcher = new SaveWatcher((path) => {
     void backupSave(path)
+    if (world.path === path) records.importRatings(path, world.world?.teamId)
     // 적용해 둔 세이브를 게임이 다시 저장했으면 그 내용을 다시 읽는다
     void link.saved(path)
   })

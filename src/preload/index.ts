@@ -38,6 +38,8 @@ const api: Api = {
   backupNow: () => ipcRenderer.invoke('backup:now'),
   backupRestore: (id) => ipcRenderer.invoke('backup:restore', id),
   backupDelete: (id) => ipcRenderer.invoke('backup:delete', id),
+  recordsList: () => ipcRenderer.invoke('records:list'),
+  recordsRemove: (id) => ipcRenderer.invoke('records:remove', id),
   onBackupChanged: (cb) => {
     const listener = (): void => cb()
     ipcRenderer.on('backup:changed', listener)

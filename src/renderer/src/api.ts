@@ -1,4 +1,5 @@
 import type { LinkStatus, SaveFileInfo } from '@shared/game'
+import type { SaveRecords } from '@shared/records'
 import type { Api, BackupEntry, Settings } from '@shared/types'
 import { mockCandidates, mockClub, mockDashboard, mockEditorList, mockEditorPlayer, mockProfile, mockSeason, mockSquad } from './lib/mockWorld'
 import { WON_RATE_TEXT } from '@shared/playerView'
@@ -52,6 +53,10 @@ function createMockApi(): Api {
     beforeRestore: i === 2,
     bytes: 141_000_000 + i * 310_000
   }))
+  let mockRecords: SaveRecords[] = [
+    { id: 'a1b2c3d4', label: '내 세이브 A', teamId: 101, created: '2026-11-01', bytes: 3_400_000, snapshots: 6, lastSnapshot: '2027-01-15', ratedMatches: 24 },
+    { id: 'e5f6a7b8', label: '내 세이브 B', teamId: 202, created: '2026-11-20', bytes: 620_000, snapshots: 1, lastSnapshot: '2026-07-01', ratedMatches: 0 }
+  ]
   let mockHasKey = !params.has('nokey')
   const listeners = new Set<(status: LinkStatus) => void>()
   /** 게임의 지금 값을 쓰고 있는 상태인지 */
@@ -161,6 +166,11 @@ function createMockApi(): Api {
     },
     backupDelete: async (id) => {
       mockBackups = mockBackups.filter((entry) => entry.id !== id)
+    },
+    recordsList: async () => mockRecords,
+    recordsRemove: async (id) => {
+      mockRecords = mockRecords.filter((entry) => entry.id !== id)
+      return { ok: true }
     },
     onBackupChanged: () => () => undefined
   }

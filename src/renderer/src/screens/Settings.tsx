@@ -1,6 +1,7 @@
 import { FolderOpen } from 'lucide-react'
 import type { AppStatus, Settings as SettingsData, ThemeId } from '@shared/types'
 import { api } from '@/api'
+import { RecordsSettings } from '@/components/RecordsSettings'
 import { RoleWeights } from '@/components/RoleWeights'
 import { TalkSettings } from '@/components/TalkSettings'
 
@@ -71,6 +72,15 @@ export function Settings(props: {
             </div>
             <div className="panel-body">
               <RoleWeights settings={settings} onChange={onChange} />
+            </div>
+          </section>
+
+          <section className="panel">
+            <div className="panel-head">
+              <h2>기록</h2>
+            </div>
+            <div className="panel-body">
+              <RecordsSettings />
             </div>
           </section>
 
