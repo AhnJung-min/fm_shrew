@@ -1,8 +1,11 @@
 import { Check, CircleAlert, FolderOpen, RefreshCw } from 'lucide-react'
 import { useCallback, useEffect, useState } from 'react'
-import { NEEDED_PLUGIN, type LinkStatus, type SaveFileInfo } from '@shared/game'
+import { extrasOf } from '@shared/connect'
+import type { LinkStatus, SaveFileInfo } from '@shared/game'
+import { oldPluginNotice, pluginUnmetLine } from '@shared/pluginGates'
 import type { AppStatus } from '@shared/types'
 import { api } from '@/api'
+import { ClubPicker } from '@/components/ClubPicker'
 import { MetaLine } from '@/components/MetaLine'
 import type { Route } from '@/components/Sidebar'
 import { formatBytes, formatTime } from '@/lib/format'
@@ -25,6 +28,9 @@ export function Home(props: { status: AppStatus | null; link: LinkStatus; onNavi
   const [saves, setSaves] = useState<SaveFileInfo[] | null>(null)
   const [picked, setPicked] = useState<string | null>(null)
   const [notice, setNotice] = useState<{ text: string; error?: boolean } | null>(null)
+  /** 내 구단을 이미 아는데 다시 고르려고 목록을 연 상태 */
+  const [repick, setRepick] = useState(false)
+  const { check, teamNote } = extrasOf(link)
 
   const loadSaves = useCallback(async (): Promise<void> => setSaves(await api.listSaves()), [])
 
@@ -72,12 +78,16 @@ export function Home(props: { status: AppStatus | null; link: LinkStatus; onNavi
                   <span className={`dot ${game.pluginOld ? 'warn' : game.connected ? 'on' : 'idle'}`} aria-hidden="true" />
                   <span>{gameLine}</span>
                 </p>
-                {game.connected && !game.pluginOld && <p className="faint num">게임 안 플러그인 {game.pluginVersion}</p>}
+                {game.connected && !game.pluginOld && (
+                  <p className="faint num">
+                    게임 안 플러그인 {game.pluginVersion}
+                    {pluginUnmetLine(game.pluginVersion) && ` · ${pluginUnmetLine(game.pluginVersion)}`}
+                  </p>
+                )}
                 {game.pluginOld && (
                   <p className="chat-caution" role="status">
                     <CircleAlert size={15} />
-                    게임에 올라가 있는 연결 플러그인이 옛 버전({game.pluginVersion || '알 수 없음'})입니다. FM을 완전히 껐다가 다시 켜면 새
-                    버전({NEEDED_PLUGIN})으로 바뀝니다. 그 전까지는 세이브에 저장된 값만 볼 수 있고, 에디터로 값을 고칠 수 없습니다.
+                    {oldPluginNotice(game.pluginVersion)} 그 전까지는 세이브에 저장된 값만 볼 수 있고, 에디터로 값을 고칠 수 없습니다.
                   </p>
                 )}
               </div>
@@ -178,7 +188,14 @@ export function Home(props: { status: AppStatus | null; link: LinkStatus; onNavi
                       <dt>선수</dt>
                       <dd className="num">{data.players.toLocaleString()}명</dd>
                       <dt>내 팀</dt>
-                      <dd>{data.hasTeam ? data.club || '찾음' : '아직 찾지 못함'}</dd>
+                      <dd>
+                        {data.hasTeam ? data.club || '찾음' : '아직 모름'}
+                        {data.hasTeam && !repick && (
+                          <button className="btn ghost" disabled={busy} onClick={() => setRepick(true)}>
+                            다시 고르기
+                          </button>
+                        )}
+                      </dd>
                       <dt>능력치 값</dt>
                       <dd>
                         {data.source === 'game' && data.liveAt
@@ -186,6 +203,32 @@ export function Home(props: { status: AppStatus | null; link: LinkStatus; onNavi
                           : `세이브에 저장된 값 (${formatTime(data.save.savedAt)} 저장)`}
                       </dd>
                     </dl>
+                    {teamNote && <p className="muted">{teamNote}</p>}
+                    {!check.ok && (
+                      <div className="chat-caution ed-report" role="alert">
+                        <CircleAlert size={15} />
+                        <div>
+                          <p>세이브 형식이 바뀐 것 같습니다. 점수 화면(대시보드, 스쿼드, 영입 후보, 선수 비교)을 막았습니다. 백업과 설정은 쓸 수 있습니다.</p>
+                          <ul>
+                            {check.problems.map((problem) => (
+                              <li key={problem}>{problem}</li>
+                            ))}
+                          </ul>
+                        </div>
+                      </div>
+                    )}
+                    {(!data.hasTeam || repick) && check.ok && (
+                      <div style={{ marginTop: 12 }}>
+                        <ClubPicker
+                          busy={busy}
+                          savePath={data.save.path}
+                          onChosen={() => {
+                            setRepick(false)
+                            onNavigate('dashboard')
+                          }}
+                        />
+                      </div>
+                    )}
                     {data.note && (
                       <p className="muted" style={{ marginTop: 10 }}>
                         {data.note}

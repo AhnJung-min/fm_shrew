@@ -4,7 +4,7 @@ import { positionOrder, positionsLabel } from '@shared/positions'
 import { POSITION_COUNT } from './save/reader'
 import type { SaveWorld } from './save/world'
 import { gameClub, gameHealth } from './talk/bridge'
-import type { WorldService } from './worldService'
+import { NO_TEAM_MESSAGE, type WorldService } from './worldService'
 
 /** 게임에서 받은 구단·선수단 상태를 다시 묻지 않고 쓰는 시간 */
 const KEEP_MS = 3 * 60_000
@@ -54,9 +54,9 @@ export class ClubService {
         `이 정보는 게임 안 플러그인 ${CLUB_PLUGIN} 이상에서 읽습니다(지금 올라가 있는 것은 ${game.pluginVersion || '알 수 없는 버전'}). FM을 완전히 껐다가 다시 켜 주세요.`
       )
     }
-    if (!world || !this.world.path) return emptySnapshot('noSave', '먼저 홈 화면에서 세이브를 골라 적용해 주세요.')
+    if (!world || !this.world.path) return emptySnapshot('noSave', '먼저 시작 화면에서 세이브를 골라 적용해 주세요.')
     if (world.teamId === undefined) {
-      return emptySnapshot('noTeam', '이 세이브에서 내 팀을 아직 찾지 못했습니다. 게임을 켜고 이 세이브를 불러오면 내 팀을 찾습니다.')
+      return emptySnapshot('noTeam', NO_TEAM_MESSAGE)
     }
     if (!game.loaded) return emptySnapshot('notLoaded', '게임에서 세이브를 불러오면 구단 재정·시설과 선수단 건강이 채워집니다.')
     const club = link.data.club

@@ -45,6 +45,21 @@ async function ask(path: string, timeoutMs = 12_000, body?: string): Promise<str
   }
 }
 
+/** 상태 번호까지 돌려주는 요청. 연결하지 못하면 null (오류 응답도 본문을 돌려준다) */
+async function askWithStatus(path: string, timeoutMs: number): Promise<{ status: number; text: string } | null> {
+  const bridge = await info()
+  if (!bridge) return null
+  try {
+    const response = await fetch(`http://${bridge.host}:${bridge.port}${path}`, {
+      headers: { 'X-Bridge-Token': bridge.token },
+      signal: AbortSignal.timeout(timeoutMs)
+    })
+    return { status: response.status, text: await response.text() }
+  } catch {
+    return null
+  }
+}
+
 /** 게임이 켜져 있고 플러그인이 대답하는지 */
 export async function bridgeAlive(): Promise<boolean> {
   return (await ask('/ping', 1500)) !== null
@@ -226,6 +241,54 @@ export async function liveSet(edit: {
   if (edit.ca !== undefined) query.set('ca', String(edit.ca))
   if (edit.pa !== undefined) query.set('pa', String(edit.pa))
   return parseLive(await ask(`/live/set?${query.toString()}`, 90_000))
+}
+
+/** 선수의 값을 쓴 결과(플러그인 0.13.0부터 실패 응답에 어디서 멈췄는지와 되돌림 결과가 담긴다) */
+export type LiveSetOutcome =
+  | { kind: 'ok'; player: LivePlayer }
+  /** 게임이 꺼져 있거나 플러그인이 대답하지 않는다 */
+  | { kind: 'offline' }
+  /** 온라인(네트워크) 게임이라 플러그인이 쓰기를 막았다(403) */
+  | { kind: 'online' }
+  /** 쓰다가 실패했다. failedAt은 실패한 부분, rolledBack은 썼다가 되돌린 부분, restored가 false면 되돌리지도 못했다(옛 플러그인은 모른다) */
+  | { kind: 'failed'; failedAt?: string; rolledBack: string[]; restored?: boolean; error: string }
+
+/** 플러그인이 돌려준 오류 글을 화면에 보이기 좋게 짧게 줄인다(이 PC 안의 응답이지만 길이는 제한한다) */
+const shortError = (text: string): string => text.replace(/\s+/g, ' ').trim().slice(0, 160)
+
+/** liveSet과 같지만, 실패한 이유와 되돌림 결과까지 돌려준다 */
+export async function liveSetOutcome(edit: {
+  uid: number
+  positions?: number[]
+  attributes?: number[]
+  ca?: number
+  pa?: number
+}): Promise<LiveSetOutcome> {
+  const query = new URLSearchParams({ uid: String(edit.uid) })
+  if (edit.positions) query.set('positions', edit.positions.join(','))
+  if (edit.attributes) query.set('attributes', edit.attributes.join(','))
+  if (edit.ca !== undefined) query.set('ca', String(edit.ca))
+  if (edit.pa !== undefined) query.set('pa', String(edit.pa))
+  const answer = await askWithStatus(`/live/set?${query.toString()}`, 90_000)
+  if (answer === null) return { kind: 'offline' }
+  if (answer.status === 403) return { kind: 'online' }
+  if (answer.status >= 200 && answer.status < 300) {
+    const player = parseLive(answer.text)
+    return player ? { kind: 'ok', player } : { kind: 'failed', rolledBack: [], error: '게임의 대답을 읽지 못했습니다.' }
+  }
+  try {
+    const raw = JSON.parse(answer.text) as { error?: unknown; failedAt?: unknown; rolledBack?: unknown; restored?: unknown }
+    return {
+      kind: 'failed',
+      failedAt: typeof raw.failedAt === 'string' ? raw.failedAt : undefined,
+      rolledBack: Array.isArray(raw.rolledBack) ? raw.rolledBack.filter((part): part is string => typeof part === 'string') : [],
+      restored: typeof raw.restored === 'boolean' ? raw.restored : undefined,
+      error: typeof raw.error === 'string' ? shortError(raw.error) : '값을 넣지 못했습니다.'
+    }
+  } catch {
+    // 알 수 없는 오류는 "형식: 첫 줄" 요약만 온다
+    return { kind: 'failed', rolledBack: [], error: shortError(answer.text) || '값을 넣지 못했습니다.' }
+  }
 }
 
 /** 켜져 있는 게임이 알려 주는 상태 */

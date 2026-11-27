@@ -1,11 +1,12 @@
-import type { LinkStatus, SaveFileInfo } from '@shared/game'
+import type { ClubChoice, EditorApplyReport, ExtendedLinkStatus, ExtraApi } from '@shared/connect'
+import { CLUB_PLUGIN, type SaveFileInfo } from '@shared/game'
 import type { Api, BackupEntry, Settings } from '@shared/types'
 import { mockCandidates, mockClub, mockDashboard, mockEditorList, mockEditorPlayer, mockProfile, mockSeason, mockSquad } from './lib/mockWorld'
 import { WON_RATE_TEXT } from '@shared/playerView'
 
 declare global {
   interface Window {
-    api?: Api
+    api?: Api & ExtraApi
   }
 }
 
@@ -13,9 +14,9 @@ declare global {
  * 브라우저에서 화면만 볼 때 쓰는 가짜 구현(`npm run web`).
  * 실제 앱에서는 preload가 넣어 준 window.api를 쓴다.
  * 주소에 ?empty를 붙이면 세이브를 적용하기 전, ?off를 붙이면 게임이 꺼진 상태,
- * ?old를 붙이면 게임에 옛 플러그인이 올라가 있는 상태를 본다.
+ * ?old를 붙이면 게임에 옛 플러그인이 올라가 있는 상태, ?noteam을 붙이면 내 구단을 아직 모르는 상태, ?badformat을 붙이면 세이브 형식 점검에 걸린 상태를 본다.
  */
-function createMockApi(): Api {
+function createMockApi(): Api & ExtraApi {
   let settings: Settings = {
     saveDir: 'C:\\Users\\me\\Documents\\Sports Interactive\\Football Manager 26\\games',
     saveTeams: {},
@@ -36,6 +37,15 @@ function createMockApi(): Api {
   const params = new URLSearchParams(location.search)
   const gameOff = params.has('off')
   const oldPlugin = params.has('old')
+  let teamKnown = !params.has('noteam')
+  const badFormat = params.has('badformat')
+  /** 지어낸 구단들(고르기 화면용) */
+  const clubs: ClubChoice[] = [
+    { teamId: 1, uid: 0, name: '가온 시티', short: 'GAO', nation: '가상 나라', women: false, players: 27, strength: 132, human: true },
+    { teamId: 2, uid: 0, name: '나루 유나이티드', short: 'NAR', nation: '가상 나라', women: false, players: 25, strength: 128, human: false },
+    { teamId: 3, uid: 0, name: '다솜 로버스', short: 'DAS', nation: '', women: false, players: 31, strength: 104, human: false },
+    { teamId: 4, uid: 0, name: '라온 레이디스', short: 'RAO', nation: '가상 나라', women: true, players: 24, strength: 96, human: false }
+  ]
   const hour = 3_600_000
   const names = ['리버풀 2025', '리버풀 2025 (v02)', '뉴캐슬 시작']
   const saves: SaveFileInfo[] = [0.4, 26, 50].map((ago, i) => ({
@@ -53,18 +63,18 @@ function createMockApi(): Api {
     bytes: 141_000_000 + i * 310_000
   }))
   let mockHasKey = !params.has('nokey')
-  const listeners = new Set<(status: LinkStatus) => void>()
+  const listeners = new Set<(status: ExtendedLinkStatus) => void>()
   /** 게임의 지금 값을 쓰고 있는 상태인지 */
   const live = (): boolean => applied !== null && !gameOff && !oldPlugin
-  const linkStatus = (busy = false): LinkStatus => ({
+  const linkStatus = (busy = false): ExtendedLinkStatus => ({
     game: gameOff
       ? { connected: false, pluginVersion: '', pluginOld: false, loaded: false, manager: '', team: '', teamShort: '' }
-      : { connected: true, pluginVersion: oldPlugin ? '0.8.0' : '0.9.0', pluginOld: oldPlugin, loaded: true, manager: '김 감독', team: '리버풀', teamShort: 'LIV' },
+      : { connected: true, pluginVersion: oldPlugin ? '0.8.0' : CLUB_PLUGIN, pluginOld: oldPlugin, loaded: true, manager: '김 감독', team: '가온 시티', teamShort: 'GAO' },
     data: {
       save: applied,
       players: applied ? 99_892 : 0,
-      hasTeam: applied !== null,
-      club: applied ? '리버풀' : '',
+      hasTeam: applied !== null && teamKnown,
+      club: applied && teamKnown ? '가온 시티' : '',
       clubUid: null,
       source: live() ? 'game' : 'save',
       liveAt: live() ? new Date(Date.now() - 40_000).toISOString() : null,
@@ -72,7 +82,9 @@ function createMockApi(): Api {
       note: applied && gameOff ? '게임이 꺼져 있어 세이브에 저장된 값을 보여 줍니다.' : '',
       namesStage: live() ? 3 : 0
     },
-    busy
+    busy,
+    check: badFormat && applied ? { ok: false, problems: ['이름을 읽지 못한 선수가 41,200명(41.2%)입니다. 보통은 0.1% 미만입니다.', '현재 능력과 능력치 평균의 관계가 약합니다(상관 0.05, 보통 0.9 안팎). 두 값이 어긋나게 읽혔을 수 있습니다.'] } : { ok: true, problems: [] },
+    teamNote: ''
   })
   const tell = (busy = false): void => listeners.forEach((listener) => listener(linkStatus(busy)))
 
@@ -87,6 +99,14 @@ function createMockApi(): Api {
     openPath: async () => undefined,
 
     linkStatus: async () => linkStatus(),
+    worldClubs: async () => ({ ok: applied !== null, clubs: applied ? clubs : [] }),
+    chooseTeam: async (teamId) => {
+      tell(true)
+      await new Promise((resolve) => setTimeout(resolve, 600))
+      teamKnown = true
+      tell()
+      return { ok: true, message: `내 구단을 ${clubs.find((club) => club.teamId === teamId)?.name ?? ''}(으)로 정했습니다.` }
+    },
     listSaves: async () => saves,
     applySave: async (path) => {
       tell(true)
@@ -141,6 +161,11 @@ function createMockApi(): Api {
     clubLogoUrl: () => null,
     editorList: async (search) => mockEditorList(search, applied === null),
     editorPlayer: async (uid) => mockEditorPlayer(uid, !gameOff && !oldPlugin),
+    editorApplyReport: async (edits): Promise<EditorApplyReport> => ({
+      ok: true,
+      message: `선수 ${edits.length}명의 값을 게임에 반영했습니다.`,
+      players: edits.map((edit) => ({ uid: edit.uid, name: String(edit.uid), status: 'written', written: ['ca'], failed: [] }))
+    }),
     editorApply: async (edits) => {
       await new Promise((resolve) => setTimeout(resolve, 500))
       return { ok: true, message: `선수 ${edits.length}명의 값을 게임에 반영했습니다. 게임에서 그 선수 화면을 다시 열면 보입니다.` }
@@ -166,5 +191,5 @@ function createMockApi(): Api {
   }
 }
 
-export const api: Api = window.api ?? createMockApi()
+export const api: Api & ExtraApi = window.api ?? createMockApi()
 export const isPreview = !window.api

@@ -7,6 +7,7 @@ import type { LeagueTable } from './save/leagueTable'
 import { SaveFormatError } from './save/reader'
 import { readSeason, type SaveSeason } from './save/season'
 import type { SaveWorld } from './save/world'
+import { NO_TEAM_MESSAGE } from './worldService'
 
 /** 화면에 보여 주는 지난 경기·앞으로 할 경기 수 */
 const SHOWN = 5
@@ -49,7 +50,7 @@ export class SeasonService {
     if (!current) return { ...NO_SEASON, message: '먼저 세이브를 골라 적용해 주세요.' }
     const { path, world } = current
     if (world.teamId === undefined) {
-      return { ...NO_SEASON, message: '이 세이브에서 내 팀을 아직 찾지 못했습니다. 게임을 켜고 이 세이브를 불러오면 내 팀을 찾습니다.' }
+      return { ...NO_SEASON, message: NO_TEAM_MESSAGE }
     }
     const today = world.gameDate
     if (!today) return { ...NO_SEASON, teamId: world.teamId, message: '세이브에서 게임 속 오늘 날짜를 읽지 못했습니다.' }

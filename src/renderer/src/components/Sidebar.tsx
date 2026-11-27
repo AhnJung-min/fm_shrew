@@ -11,6 +11,7 @@ import {
   type LucideIcon
 } from 'lucide-react'
 import type { LinkStatus } from '@shared/game'
+import { useEditorState } from '@/lib/editorStore'
 
 export type Route = 'dashboard' | 'home' | 'squad' | 'targets' | 'compare' | 'editor' | 'backups' | 'settings'
 
@@ -58,6 +59,8 @@ export function BrandMark(props: { size?: number }) {
 export function Sidebar(props: { route: Route; onNavigate: (route: Route) => void; link: LinkStatus }) {
   const { route, onNavigate, link } = props
   const { game, data } = link
+  /** 에디터에서 고쳐 두고 아직 게임에 넣지 않은 선수 수 */
+  const edited = useEditorState().pending.size
   const gameLine = !game.connected
     ? 'FM이 꺼져 있습니다'
     : game.pluginOld
@@ -104,6 +107,11 @@ export function Sidebar(props: { route: Route; onNavigate: (route: Route) => voi
                 <span className="nav-hint">{entry.hint}</span>
               </span>
               {entry.later && <span className="nav-later">{entry.later}</span>}
+              {entry.id === 'editor' && edited > 0 && (
+                <span className="tag edited nav-mark" title={`게임에 아직 넣지 않은 고친 선수 ${edited}명`} aria-label={`고친 선수 ${edited}명, 아직 게임에 넣지 않음`}>
+                  <span className="nav-mark-text">고침 {edited}</span>
+                </span>
+              )}
             </button>
           )
         })}

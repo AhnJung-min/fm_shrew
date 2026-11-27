@@ -1,8 +1,9 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import type { LinkStatus } from '@shared/game'
+import type { ExtraApi } from '@shared/connect'
 import type { Api } from '@shared/types'
 
-const api: Api = {
+const api: Api & ExtraApi = {
   getStatus: () => ipcRenderer.invoke('status:get'),
   getSettings: () => ipcRenderer.invoke('settings:get'),
   setSettings: (patch) => ipcRenderer.invoke('settings:set', patch),
@@ -17,6 +18,8 @@ const api: Api = {
     ipcRenderer.on('link:changed', listener)
     return () => ipcRenderer.removeListener('link:changed', listener)
   },
+  worldClubs: () => ipcRenderer.invoke('world:clubs'),
+  chooseTeam: (teamId) => ipcRenderer.invoke('link:chooseTeam', teamId),
   worldSquad: () => ipcRenderer.invoke('world:squad'),
   worldSeason: () => ipcRenderer.invoke('world:season'),
   worldDashboard: () => ipcRenderer.invoke('world:dashboard'),
@@ -34,6 +37,7 @@ const api: Api = {
   editorList: (search) => ipcRenderer.invoke('editor:list', search),
   editorPlayer: (uid) => ipcRenderer.invoke('editor:player', uid),
   editorApply: (edits) => ipcRenderer.invoke('editor:apply', edits),
+  editorApplyReport: (edits) => ipcRenderer.invoke('editor:apply', edits),
   backupList: () => ipcRenderer.invoke('backup:list'),
   backupNow: () => ipcRenderer.invoke('backup:now'),
   backupRestore: (id) => ipcRenderer.invoke('backup:restore', id),

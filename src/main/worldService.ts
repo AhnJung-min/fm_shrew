@@ -1,6 +1,8 @@
 import { existsSync, statSync } from 'node:fs'
 import { basename } from 'node:path'
 import { expectedWage, type WageCoefs } from '@shared/dashboard'
+import type { ClubChoices, EditorApplyReport, EditorPlayerResult, LinkExtras, SaveCheck } from '@shared/connect'
+import { SAVE_CHECK_OK } from '@shared/connect'
 import { NO_DATA, type DataStatus, type SaveFileInfo } from '@shared/game'
 import { POSITION_KEYS, PLAYABLE_RATING, positionOrder, positionsLabel } from '@shared/positions'
 import { footValues, formatPounds, hiddenAttributes, isGoalkeeper, visibleAttributes } from '@shared/playerView'
@@ -32,7 +34,6 @@ import {
   type CandidateQuery,
   type CandidateResult,
   type CandidateRow,
-  type EditorApplyResult,
   type EditorEdit,
   type EditorListItem,
   type EditorPlayer,
@@ -44,11 +45,14 @@ import {
 } from '@shared/world'
 import { ATTRIBUTE_COUNT, POSITION_COUNT } from './save/reader'
 import { ageAt, findTeamByNames, NO_TEAM, readWorld, SEX_FEMALE, signedClubTeam, teamHasPlayers, type SaveWorld } from './save/world'
+import { clubChoices } from './clubChoices'
+import { playerResult, reportOf, skippedResult } from './editorReport'
 import { computeRoleNorms } from './roleNorms'
+import { checkSaveWorld } from './saveCheck'
 import { NameBook } from './names'
 import { calendar } from './save/contracts'
 import { squadTable, type SquadTable } from './squad'
-import { gamePeople, livePlayer, liveSet, PEOPLE_PER_REQUEST, type GameName } from './talk/bridge'
+import { gamePeople, livePlayer, liveSetOutcome, PEOPLE_PER_REQUEST, type GameName } from './talk/bridge'
 
 /** 게임에서 받은 시장 정보를 다시 묻지 않고 쓰는 시간 */
 const MARKET_KEEP_MS = 10 * 60_000
@@ -63,7 +67,11 @@ const PACKED_SIZE = 8 + POSITION_COUNT + ATTRIBUTE_COUNT
 
 const ATTRIBUTE_INDEX = new Map<string, number>(SAVE_ATTRIBUTE_ORDER.map((id, i) => [id, i]))
 const POSITION_INDEX = new Map<string, number>(POSITION_KEYS.map((key, i) => [key, i]))
-const NO_SAVE = '먼저 홈 화면에서 세이브를 골라 적용해 주세요.'
+const NO_SAVE = '먼저 시작 화면에서 세이브를 골라 적용해 주세요.'
+/** 내 팀을 모를 때 화면마다 보여 주는 안내 */
+export const NO_TEAM_MESSAGE = '이 세이브에서 내 팀을 아직 찾지 못했습니다. 시작 화면에서 내 구단을 고르거나, 게임을 켜고 이 세이브를 불러오세요.'
+/** 세이브 형식 점검에 걸렸을 때 점수 화면에 주는 안내(걸린 내용은 화면이 따로 보여 준다) */
+export const FORMAT_CHANGED_MESSAGE = '세이브 형식이 바뀐 것 같습니다. 틀린 점수를 보여 주지 않으려고 이 화면을 막았습니다.'
 
 interface Loaded {
   path: string
@@ -75,6 +83,8 @@ interface Loaded {
   /** 게임에서 지금 값을 받아 덮어쓴 시각과 선수 수. 받은 적이 없으면 null */
   live: { at: number; matched: number } | null
   note: string
+  /** 세이브 형식 자가 점검 결과(A-16). 시험에서 직접 끼워 넣은 자료에는 없을 수 있고, 없으면 이상 없음으로 본다 */
+  check?: SaveCheck
 }
 
 export interface WorldDeps {
@@ -115,6 +125,8 @@ export class WorldService {
   /** 이번에 물어봤지만 게임이 답하지 않은 번호(다시 묻지 않는다) */
   private readonly unanswered = { team: new Set<number>(), nation: new Set<number>() }
   private namesStage = 0
+  /** 게임이 알려 준 구단으로 내 구단을 바꿨다는 한 줄 안내와 그 세이브 경로(다른 세이브를 적용하면 보이지 않는다) */
+  private teamNote: { path: string; text: string } | null = null
 
   /**
    * 세이브 안의 값(능력치·이름 정보)이 바뀔 때마다 늘린다. 이 값이 같으면 아래 캐시(여자 선수 표시, 역할 기준 분포)가 아직 맞다.
@@ -179,8 +191,65 @@ export class WorldService {
       // 번호가 겹치는 기록은 어느 선수인지 가릴 수 없어 뺀다
       if (uid !== 0) byUid.set(uid, byUid.has(uid) ? -1 : k)
     }
-    this.loaded = { path, mtimeMs: info.mtimeMs, size: info.size, world, byUid, live: null, note: '' }
+    const check = checkSaveWorld(world, { minLoans: MIN_LOANS_IN_SAVE })
+    this.loaded = { path, mtimeMs: info.mtimeMs, size: info.size, world, byUid, live: null, note: '', check }
     return world
+  }
+
+  /** 세이브 형식 점검과 구단 안내. LinkStatus에 얹어 화면으로 보낸다 */
+  extras(): LinkExtras {
+    const loaded = this.loaded
+    const note = this.teamNote && loaded && this.teamNote.path === loaded.path ? this.teamNote.text : ''
+    return { check: loaded?.check ?? SAVE_CHECK_OK, teamNote: note }
+  }
+
+  /** 세이브 형식 점검에 걸렸으면 점수 화면에 줄 안내. 아니면 null */
+  blocked(): string | null {
+    return this.loaded?.check && !this.loaded.check.ok ? FORMAT_CHANGED_MESSAGE : null
+  }
+
+  /** 세이브를 다시 읽는다(내 팀이 바뀌었을 때). 게임에서 받은 지금 값은 사라지므로 부른 쪽이 다시 받는다 */
+  private reread(path: string): void {
+    this.loaded = null
+    this.apply(path)
+  }
+
+  /** 내 구단 고르기에 보여 줄 구단 목록(A-14). 이 세이브의 대표 팀(1군)마다 하나 */
+  clubs(): ClubChoices {
+    const world = this.loaded?.world
+    if (!world) return { ok: false, message: NO_SAVE, clubs: [] }
+    return { ok: true, clubs: clubChoices(world, (id) => this.names.nation(id)) }
+  }
+
+  /** 사용자가 고른 구단을 이 세이브의 내 팀으로 기억하고 세이브를 다시 읽는다(A-14) */
+  chooseTeam(teamId: number): { ok: boolean; message: string } {
+    const loaded = this.loaded
+    if (!loaded) return { ok: false, message: NO_SAVE }
+    const choice = clubChoices(loaded.world, () => '').find((club) => club.teamId === teamId)
+    if (!choice) return { ok: false, message: '이 세이브에서 그 구단의 1군 선수를 찾지 못했습니다.' }
+    this.deps.rememberTeam(basename(loaded.path), teamId)
+    this.teamNote = null
+    this.reread(loaded.path)
+    return { ok: true, message: `내 구단을 ${choice.name}(으)로 정했습니다.` }
+  }
+
+  /**
+   * 켜져 있는 게임이 알려 주는 내 팀이 이 세이브 안의 다른 팀이면 게임을 따른다(A-14. 게임이 이긴다).
+   * 게임의 내 팀 선수 이름이 이 세이브의 한 팀과 절반 넘게 겹칠 때만 같은 세이브로 본다(다른 세이브를 불러와 있으면 겹치지 않는다).
+   * 바꿨으면 true
+   */
+  followGame(): boolean {
+    const loaded = this.loaded
+    if (!loaded || loaded.world.teamId === undefined) return false
+    const fromGame = findTeamByNames(loaded.world, this.deps.rosterNames())
+    if (fromGame === null || fromGame === loaded.world.teamId) return false
+    const before = this.myClubName(loaded.world)
+    this.deps.rememberTeam(basename(loaded.path), fromGame)
+    const path = loaded.path
+    this.reread(path)
+    const now = this.loaded?.world ? this.myClubName(this.loaded.world) : ''
+    this.teamNote = { path, text: `게임이 알려 준 구단(${now || '이름 모름'})으로 바꿨습니다.${before ? ` 전에 고른 구단은 ${before}입니다.` : ''}` }
+    return true
   }
 
   private pickTeam(world: SaveWorld, fileName: string): number | undefined {
@@ -301,10 +370,12 @@ export class WorldService {
   squad(): SquadTable & { ok: boolean; message?: string; roleNorms?: RoleNorms } {
     const world = this.loaded?.world
     if (!world) return { ok: false, message: NO_SAVE, columns: [], rows: [] }
+    const blocked = this.blocked()
+    if (blocked) return { ok: false, message: blocked, columns: [], rows: [] }
     if (world.teamId === undefined) {
       return {
         ok: false,
-        message: '이 세이브에서 내 팀을 아직 찾지 못했습니다. 게임을 켜고 이 세이브를 불러오면 내 팀을 찾습니다.',
+        message: NO_TEAM_MESSAGE,
         columns: [],
         rows: []
       }
@@ -512,8 +583,10 @@ export class WorldService {
     if (!loaded) return fail(NO_SAVE)
     const { world } = loaded
     const saveName = basename(loaded.path)
+    const blocked = this.blocked()
+    if (blocked) return fail(blocked, saveName)
     if (world.teamId === undefined) {
-      return fail('이 세이브에서 내 팀을 아직 찾지 못했습니다. 게임을 켜고 이 세이브를 불러오면 내 팀을 찾습니다.', saveName)
+      return fail(NO_TEAM_MESSAGE, saveName)
     }
     const roleWeights = this.deps.roleWeights()
     const norms = this.roleNorms() ?? {}
@@ -847,40 +920,41 @@ export class WorldService {
     }
   }
 
-  /** 고친 값을 켜져 있는 게임에 바로 넣는다. 선수마다 따로 넣고, 넣은 뒤 게임이 돌려준 값으로 확인한다. */
-  async applyEdits(edits: EditorEdit[]): Promise<EditorApplyResult> {
-    if (edits.length === 0) return { ok: false, message: '고친 값이 없습니다.' }
-    if (this.liveOff) return { ok: false, message: this.liveOff.replace(/세이브에 저장된 값을 보여 줍니다/, '값을 넣을 수 없습니다') }
-    for (const edit of edits) {
-      const problem = checkEdit(edit)
-      if (problem) return { ok: false, message: problem }
-    }
+  /**
+   * 고친 값을 켜져 있는 게임에 바로 넣는다. 선수마다 따로 넣고, 넣은 뒤 게임이 돌려준 값으로 항목마다 확인한다.
+   * 한 선수에서 막히면 거기서 멈추고, 선수·항목별로 들어간 것과 들어가지 않은 것을 돌려준다(A-15).
+   * (한 선수의 쓰기가 중간에 실패했을 때 게임 안에서 앞 값을 되돌리는 일은 플러그인이 맡는다.)
+   */
+  async applyEdits(edits: EditorEdit[]): Promise<EditorApplyReport> {
     const world = this.loaded?.world
     const nameOf = (uid: number): string => {
       const k = this.indexOf(uid)
       return k >= 0 && world ? world.names[k] : String(uid)
     }
-    const done: string[] = []
+    const nothing = (message: string): EditorApplyReport => ({
+      ok: false,
+      message,
+      players: edits.map((edit) => skippedResult(edit, nameOf(edit.uid)))
+    })
+    if (edits.length === 0) return { ok: false, message: '고친 값이 없습니다.', players: [] }
+    if (this.liveOff) return nothing(this.liveOff.replace(/세이브에 저장된 값을 보여 줍니다/, '값을 넣을 수 없습니다'))
     for (const edit of edits) {
-      const after = await liveSet(edit)
-      const stopped = done.length > 0 ? ` (${done.join(', ')}까지는 반영했습니다.)` : ''
-      if (after === null) return { ok: false, message: `게임에 연결하지 못했습니다. 게임이 켜져 있는지 확인해 주세요.${stopped}` }
-      if (after.found !== 1) return { ok: false, message: `켜져 있는 게임에서 ${nameOf(edit.uid)}의 기록을 찾지 못했습니다.${stopped}` }
-      const same = (a: number[] | undefined, b: number[] | undefined): boolean => !a || (b !== undefined && a.every((v, i) => v === b[i]))
-      const landed =
-        same(edit.positions, after.positions) &&
-        same(edit.attributes, after.attributes) &&
-        (edit.ca === undefined || edit.ca === after.ca) &&
-        (edit.pa === undefined || edit.pa === after.pa)
-      if (!landed) return { ok: false, message: `${nameOf(edit.uid)}의 값을 넣었지만 다시 읽은 값이 다릅니다.${stopped}` }
-      // 스쿼드와 영입 후보에도 바로 보이게 읽어 둔 값도 바꾼다
-      const k = this.indexOf(edit.uid)
-      if (k >= 0) this.store(k, after)
-      done.push(nameOf(edit.uid))
+      const problem = checkEdit(edit)
+      if (problem) return nothing(problem)
     }
-    return {
-      ok: true,
-      message: `${done.join(', ')}의 값을 게임에 반영했습니다. 게임에서 그 선수 화면을 다시 열면 보입니다. 게임에서 저장해야 세이브에도 남습니다.`
+    const results: EditorPlayerResult[] = []
+    for (const edit of edits) {
+      const name = nameOf(edit.uid)
+      const result = playerResult(edit, name, await liveSetOutcome(edit))
+      results.push(result)
+      // 스쿼드와 영입 후보에도 바로 보이게 읽어 둔 값도 바꾼다(들어간 선수만)
+      if (result.status === 'written') {
+        const k = this.indexOf(edit.uid)
+        if (k >= 0) this.store(k, edit)
+      }
+      if (result.status !== 'written') break
     }
+    for (const edit of edits.slice(results.length)) results.push(skippedResult(edit, nameOf(edit.uid)))
+    return reportOf(results)
   }
 }
