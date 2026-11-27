@@ -20,6 +20,7 @@ import { analyseTactic, slotBench } from '@shared/tactic'
 import {
   categoriesOf,
   checkEdit,
+  effectiveScore,
   SAVE_ATTRIBUTE_ORDER,
   shownValue,
   type CandidateBench,
@@ -431,7 +432,7 @@ export class WorldService {
     const scoreOf = (k: number): number => savedRoleScore(world.attributes, k * ATTRIBUTE_COUNT, prepared)
 
     // 내 팀(1군)의 주급·몸값 수준과, 이 역할을 뛸 수 있는 선수들
-    const mine: Array<{ k: number; score: number }> = []
+    const mine: Array<{ k: number; score: number; eff: number }> = []
     const myWages: number[] = []
     const myValues: number[] = []
     let myClub = -1
@@ -440,23 +441,29 @@ export class WorldService {
       if (world.club[k] >= 0) myClub = world.club[k]
       myWages.push(world.wage[k])
       myValues.push(world.value[k])
-      if (eligible(k)) mine.push({ k, score: scoreOf(k) })
+      if (eligible(k)) {
+        const score = scoreOf(k)
+        mine.push({ k, score, eff: effectiveScore(score, ratingOf(k), null, norm.sigma) })
+      }
     }
-    mine.sort((a, b) => b.score - a.score)
+    mine.sort((a, b) => b.eff - a.eff)
     const bench: CandidateBench =
       (analysis && slotFound ? slotBench(analysis, slotFound.slot.index) : null) ?? {
-        starter: mine[0] ? { name: world.names[mine[0].k], score: mine[0].score, ca: world.ca[mine[0].k], age: ageAt(world, mine[0].k) } : null,
-        backup: mine[1] ? { name: world.names[mine[1].k], score: mine[1].score } : null
+        starter: mine[0] ? { name: world.names[mine[0].k], score: mine[0].eff, shownScore: mine[0].score, ca: world.ca[mine[0].k], age: ageAt(world, mine[0].k) } : null,
+        backup: mine[1] ? { name: world.names[mine[1].k], score: mine[1].eff, shownScore: mine[1].score } : null
       }
     const money = squadMoney(myWages, myValues)
-    const need = slotFound ? slotFound.need : null
+    // 같은 포지션·역할의 자리는 한 그룹이라 필요도도 그룹 값(자리들 가운데 최대)이다
+    const group = slotFound ? slotFound.group : null
+    const need = group ? group.need : null
     const context: RecommendContext = {
       starter: bench.starter,
-      backup: bench.backup ? { score: bench.backup.score } : null,
+      backup: bench.backup ? { score: bench.backup.score, shownScore: bench.backup.shownScore } : null,
       today: world.gameDate ? { year: world.gameDate.year, day: world.gameDate.day } : null,
       money,
       need,
-      norm
+      norm,
+      groupSlots: group?.slots.length
     }
     const goalkeeper = role.positions.includes('GK')
     const traitAt = (id: TraitId): number => ATTRIBUTE_INDEX.get(id)!
@@ -507,7 +514,7 @@ export class WorldService {
       if (query.maxAge !== null && (age === null || age > query.maxAge)) continue
 
       const score = scoreOf(k)
-      const categories = categoriesOf({ score, age, ca: world.ca[k], pa: world.pa[k], hasClub: team !== NO_TEAM }, bench, norm, goalkeeper)
+      const categories = categoriesOf({ score, age, ca: world.ca[k], pa: world.pa[k], hasClub: team !== NO_TEAM, rating: ratingOf(k) }, bench, norm, goalkeeper)
       const qualified = categories.length > 0
       const inTab = query.category === 'all' ? qualified : categories.includes(query.category)
       const nameHit = !search || name.toLowerCase().includes(search)
@@ -542,13 +549,13 @@ export class WorldService {
       squadStatus: SQUAD_STATUS_LABEL[world.squadStatus[k]] ?? '',
       nation: this.names.nation(world.nationId[k]),
       score,
-      gap: bench.starter ? Math.round((score - bench.starter.score) * 10) / 10 : null,
+      gap: bench.starter ? Math.round((score - (bench.starter.shownScore ?? bench.starter.score)) * 10) / 10 : null,
       categories,
       recommend: recommend(inputOf(k, score, age), context),
       tier: (inTab ? tierOf(total) : 'outside') as RecommendTierId,
       attributes: [...world.attributes.subarray(k * ATTRIBUTE_COUNT, (k + 1) * ATTRIBUTE_COUNT)].map(shownValue)
     }))
-    return { ok: true, saveName, bench, counts, rows, matched: picked.length, ranked: qualifiedTotals.length, norm, need, baseline: money }
+    return { ok: true, saveName, bench, counts, rows, matched: picked.length, ranked: qualifiedTotals.length, norm, need, group: group ? { label: group.label, slots: group.slots.length } : null, baseline: money }
   }
 
   /**

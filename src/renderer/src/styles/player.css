@@ -5,10 +5,6 @@
 
 .player-drawer,
 .ed-card {
-  --pl-technical: #63d69d;
-  --pl-goalkeeping: #63d69d;
-  --pl-mental: #7fb8f5;
-  --pl-physical: #f2b15a;
   container-type: inline-size;
 }
 
@@ -31,9 +27,9 @@
 }
 .pl-source {
   padding: 8px 12px;
-  border-left: 3px solid var(--warn);
+  border: 1px solid rgba(245, 166, 76, 0.4);
   border-radius: var(--radius-s);
-  background: var(--raised);
+  background: var(--warn-soft);
   color: var(--text-2);
   font-size: 13.5px;
 }
@@ -62,9 +58,9 @@
 }
 .pl-orig {
   display: block;
-  color: var(--accent);
-  font-size: 11.5px;
-  font-weight: 600;
+  color: var(--gold);
+  font-size: var(--fs-micro);
+  font-weight: 700;
   line-height: 1.2;
 }
 
@@ -76,30 +72,30 @@
   grid-template-columns: 1fr 1fr;
   gap: 12px;
 }
+/* 전광판 숫자: 현재 능력은 분필, 잠재 능력은 노랑 */
 .pl-score {
   display: grid;
   gap: 4px;
-  padding: 12px 14px 14px;
-  border: 1px solid var(--line);
+  padding: 12px 16px 14px;
   border-radius: var(--radius-m);
   background: var(--raised);
   align-content: start;
 }
 .pl-score-label {
   color: var(--text-2);
-  font-size: 13.5px;
+  font-size: var(--fs-small);
   font-weight: 600;
 }
 .pl-score-num {
-  font-size: 46px;
+  font-size: var(--fs-score-xl);
   font-weight: 800;
-  line-height: 1.05;
-  letter-spacing: -0.02em;
+  line-height: 1.02;
+  letter-spacing: -0.03em;
   font-variant-numeric: tabular-nums;
   color: var(--text);
 }
 .pl-score.pot .pl-score-num {
-  color: var(--accent);
+  color: var(--gold);
 }
 .pl-bar {
   display: block;
@@ -116,7 +112,7 @@
   background: var(--text-2);
 }
 .pl-score.pot .pl-bar i {
-  background: var(--accent);
+  background: var(--gold);
 }
 .pl-scale {
   grid-column: 1 / -1;
@@ -127,6 +123,7 @@
   grid-column: 1 / -1;
   justify-self: start;
   padding: 3px 12px;
+  background: var(--good-soft);
   border: 1.5px solid var(--good);
   border-radius: 999px;
   color: var(--good);
@@ -144,7 +141,6 @@
   grid-template-columns: 1fr 1fr;
   gap: 1px;
   margin: 0;
-  border: 1px solid var(--line);
   border-radius: var(--radius-m);
   background: var(--line);
   overflow: hidden;
@@ -152,8 +148,8 @@
 .pl-info > div {
   display: grid;
   gap: 1px;
-  padding: 8px 12px;
-  background: var(--surface);
+  padding: 9px 14px;
+  background: var(--raised);
   min-width: 0;
 }
 .pl-info dt {
@@ -175,25 +171,17 @@
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 14px;
 }
+/* 세 줄은 제목으로만 나눈다. 색은 능력치 단계를 위해 비워 둔다 */
 .pl-col {
   min-width: 0;
-  padding: 10px 10px 8px;
-  border: 1px solid var(--line);
-  border-top: 3px solid var(--pl-technical);
-  border-radius: var(--radius-s);
+  padding: 10px 12px 8px;
+  border-radius: var(--radius-m);
   background: var(--raised);
-}
-.pl-col.goalkeeping {
-  border-top-color: var(--pl-goalkeeping);
-}
-.pl-col.mental {
-  border-top-color: var(--pl-mental);
-}
-.pl-col.physical {
-  border-top-color: var(--pl-physical);
 }
 .pl-col h4 {
   margin: 0 0 6px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--line-strong);
   color: var(--text);
   font-size: 14px;
   font-weight: 700;
@@ -255,8 +243,7 @@
   gap: 12px;
 }
 .pl-hidden li {
-  padding: 8px 12px;
-  border: 1px solid var(--line);
+  padding: 8px 14px;
   border-radius: var(--radius-s);
   background: var(--raised);
 }
@@ -301,12 +288,12 @@
   height: auto;
 }
 .pm-grass {
-  fill: #12261d;
-  stroke: var(--line-strong);
+  fill: var(--turf);
+  stroke: var(--turf-line);
   stroke-width: 1.5;
 }
 .pm-line {
-  stroke: var(--line-strong);
+  stroke: var(--turf-line);
   stroke-width: 1.2;
   fill: none;
 }
@@ -327,12 +314,12 @@
   font-weight: 800;
 }
 .pm-spot.main circle {
-  fill: var(--accent);
+  fill: var(--gold);
   stroke: #fff;
   stroke-width: 3;
 }
 .pm-spot.main text {
-  fill: var(--accent-ink);
+  fill: var(--gold-ink);
 }
 .pm-spot.good circle {
   fill: var(--good);
@@ -357,7 +344,7 @@
   fill: var(--text-3);
 }
 .pm-spot.changed circle {
-  stroke: var(--accent);
+  stroke: var(--gold);
   stroke-width: 3.5;
   stroke-dasharray: none;
 }
@@ -392,7 +379,7 @@
   border: 2px solid var(--line-strong);
 }
 .pm-swatch.main {
-  background: var(--accent);
+  background: var(--gold);
   border-color: #fff;
 }
 .pm-swatch.good {
@@ -429,8 +416,8 @@
   font-weight: 700;
 }
 .pm-tag.main {
-  background: var(--accent);
-  color: var(--accent-ink);
+  background: var(--gold);
+  color: var(--gold-ink);
 }
 .pm-tag.good {
   background: rgba(99, 214, 157, 0.2);
@@ -493,20 +480,20 @@
   font-weight: 800;
 }
 .pl-input.changed {
-  border: 2px solid var(--accent);
+  border: 2px solid var(--gold);
   font-weight: 800;
 }
 .pl-input.big {
   width: 100%;
-  height: 58px;
+  height: 64px;
   border-radius: var(--radius-s);
-  font-size: 34px;
+  font-size: var(--fs-score);
   font-weight: 800;
   text-align: left;
   padding: 0 10px;
 }
 .pl-input:disabled {
-  opacity: 0.7;
+  opacity: 0.85;
   cursor: not-allowed;
 }
 
@@ -525,16 +512,17 @@
 }
 .ed-portrait {
   border-width: 3px;
-  background: radial-gradient(circle at 50% 30%, var(--hover), var(--raised));
+  background: var(--raised);
 }
 .ed-name {
   flex: 1;
   min-width: 0;
 }
 .ed-name h2 {
-  font-size: 30px;
+  font-size: 32px;
   font-weight: 800;
-  letter-spacing: -0.01em;
+  line-height: 1.2;
+  letter-spacing: -0.025em;
 }
 .ed-top,
 .ed-bottom {
@@ -545,7 +533,7 @@
 }
 .ed-panel {
   min-width: 0;
-  padding: 16px 18px 18px;
+  padding: 18px 20px 20px;
   border: 1px solid var(--line);
   border-radius: var(--radius-m);
   background: var(--surface);

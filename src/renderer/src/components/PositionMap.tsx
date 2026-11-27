@@ -107,20 +107,20 @@ export function PositionMap(props: {
         ) : (
           <>
             <h4>뛸 수 있는 자리</h4>
-        {playable.length === 0 ? (
-          <p className="faint">어느 자리도 잘 소화하지 못합니다.</p>
-        ) : (
-          <ul className="pm-list">
-            {playable.map(({ key, rating }) => (
-              <li key={key}>
-                <span>{POSITION_NAME[key]}</span>
-                <span className={`pm-tag ${positionLevel(rating)}`}>
-                  {POSITION_LEVEL_LABEL[positionLevel(rating)]} {rating}
-                </span>
-              </li>
-            ))}
-          </ul>
-        )}
+            {playable.length === 0 ? (
+              <p className="faint">어느 자리도 잘 소화하지 못합니다.</p>
+            ) : (
+              <ul className="pm-list">
+                {playable.map(({ key, rating }) => (
+                  <li key={key}>
+                    <span>{POSITION_NAME[key]}</span>
+                    <span className={`pm-tag ${positionLevel(rating)}`}>
+                      {POSITION_LEVEL_LABEL[positionLevel(rating)]} {rating}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            )}
           </>
         )}
       </div>

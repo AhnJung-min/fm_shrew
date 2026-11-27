@@ -4,7 +4,7 @@ import type { BackupEntry, BackupList, Settings } from '@shared/types'
 import { api } from '@/api'
 import { formatBytes, formatTime } from '@/lib/format'
 
-const KEEP_CHOICES = [5, 10, 20, 30]
+const KEEP_CHOICES = [3, 5, 10, 20, 30]
 
 /** 세이브 자동 백업: 사본 목록, 차지한 용량, 복원 */
 export function Backups(props: { settings: Settings; onChange: (patch: Partial<Settings>) => Promise<void> }) {

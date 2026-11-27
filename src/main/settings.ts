@@ -24,7 +24,7 @@ export class SettingsStore {
       matchPairs: [],
       keepRunning: true,
       backupEnabled: true,
-      backupKeep: 10
+      backupKeep: 3
     }
     let saved: Partial<Settings> = {}
     if (existsSync(file)) {

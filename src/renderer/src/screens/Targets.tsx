@@ -8,6 +8,7 @@ import { analyseTactic } from '@shared/tactic'
 import type { LinkStatus } from '@shared/game'
 import type { CellValue, ColumnInfo, PlayerRow, Settings, SquadResult } from '@shared/types'
 import {
+  benchLine,
   CATEGORY_HELP,
   CATEGORY_LABEL,
   SAVE_ATTRIBUTE_ORDER,
@@ -38,13 +39,17 @@ const GAP = info('주전 대비', 'starterGap', '이 자리(역할) 내 주전�
 const AGE = info('나이', 'age', '나이', true)
 const POSITION = info('포지션', 'position', '포지션', false)
 const CLUB: ColumnInfo = { ...info('소속 구단', 'club', '소속 구단', false), width: 196 }
-const VALUE = info(
-  '몸값',
-  'value',
-  '게임이 보여 주는 몸값(스카우트하지 않은 선수는 범위가 넓다). 게임에 묻기 전이나 FM이 꺼져 있을 때는 세이브에 적힌 기준 몸값(파운드)',
-  true
-)
-const WAGE = info('주급', 'wage', '지금 받는 주급. 게임에 묻기 전이나 FM이 꺼져 있을 때는 세이브에 적힌 값(파운드)', true)
+// 너비를 고정한다: 열 너비는 앞쪽 줄의 글자 수로 어림하는데, 게임이 범위로 적어 주는 몸값("170억 원 - 185억 원")은 나중에 도착해 더 길어서 잘렸다
+const VALUE: ColumnInfo = {
+  ...info(
+    '몸값',
+    'value',
+    '게임이 보여 주는 몸값(스카우트하지 않은 선수는 범위가 넓다). 게임에 묻기 전이나 FM이 꺼져 있을 때는 세이브에 적힌 기준 몸값(파운드)',
+    true
+  ),
+  width: 156
+}
+const WAGE: ColumnInfo = { ...info('주급', 'wage', '지금 받는 주급. 게임에 묻기 전이나 FM이 꺼져 있을 때는 세이브에 적힌 값(파운드)', true), width: 116 }
 const STATUS = info('입지', 'squadStatus', '계약에 적힌 팀 내 입지(구단이 약속한 역할)', false)
 const CONTRACT = info('계약 만료', 'contractEnd', '계약이 끝나는 날', true)
 const NATION = info('국적', 'nation', '국적', false)
@@ -105,12 +110,6 @@ function toRow(row: CandidateRow, idx: number, market: PlayerMarket | undefined)
   return { idx, name: row.name, cells }
 }
 
-function benchLine(result: CandidateResult): string {
-  const { starter, backup } = result.bench
-  if (!starter) return '내 팀에 이 자리를 뛸 선수가 없어 비교 기준이 없습니다'
-  const second = backup ? `, 두 번째 ${backup.name} ${Math.round(backup.score)}점` : ''
-  return `내 팀 주전 ${starter.name} ${Math.round(starter.score)}점${second}`
-}
 
 /**
  * 세이브에 든 모든 구단의 선수를 고른 역할의 점수로 줄 세우고, 내 팀 주전과 견주어 유형별로 보여 준다.
@@ -183,16 +182,16 @@ export function Targets(props: {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [slotRequest?.at])
 
-  // 처음에는 보강이 가장 급한 자리로 연다
+  // 처음에는 보강이 가장 급한 자리로 연다. 같은 포지션·역할의 자리(중앙 수비 두 자리 등)는 한 그룹이라 칸 하나다
   const activeSlot = analysis
     ? slotChoice === 'manual'
       ? null
       : slotChoice === 'auto'
-        ? analysis.byNeed[0]
-        : (analysis.slots[slotChoice] ?? analysis.byNeed[0])
+        ? analysis.groupsByNeed[0]
+        : (analysis.groups.find((group) => group.slots.includes(slotChoice)) ?? analysis.groupsByNeed[0])
     : null
-  const queryRole = activeSlot ? activeSlot.slot.roleId : roleId
-  const slotIndex = activeSlot ? activeSlot.slot.index : -1
+  const queryRole = activeSlot ? activeSlot.roleId : roleId
+  const slotIndex = activeSlot ? activeSlot.slots[0] : -1
 
   const query: CandidateQuery = useMemo(
     () => ({
@@ -335,7 +334,7 @@ export function Targets(props: {
             : ''}
         </span>
         <div className="spacer" />
-        {result?.ok && <span className="page-sub num">{benchLine(result)}</span>}
+        {result?.ok && <span className="page-sub num">{benchLine(result.bench, result.group?.slots ?? 1)}</span>}
       </header>
 
       {analysis && (
@@ -343,17 +342,17 @@ export function Targets(props: {
           <div className="slot-bar-head">
             <strong>보강할 자리</strong>
             <span className="muted">
-              {analysis.formation.label} 전술에서 보강 필요도가 높은 자리부터 늘어놓았습니다. 자리를 고르면 그 자리의 주전과 두 번째 선수를 기준으로 후보를 찾습니다.
+              {analysis.formation.label} 전술에서 보강 필요도가 높은 자리부터 늘어놓았습니다. 자리를 고르면 그 자리의 주전과 두 번째 선수를 기준으로 후보를 찾고, 같은 포지션·역할의 자리가 여럿이면 가장 약한 주전을 기준으로 합니다.
             </span>
           </div>
           <div className="slot-picker" role="group" aria-label="보강할 자리">
-            {analysis.byNeed.map((each) => (
+            {analysis.groupsByNeed.map((each) => (
               <button
-                key={each.slot.index}
+                key={each.id}
                 className={`slot-chip ${each.level}`}
-                aria-pressed={activeSlot?.slot.index === each.slot.index}
+                aria-pressed={activeSlot?.id === each.id}
                 title={`${each.label}(${each.roleLabel}). ${TERM_HELP.need} ${each.reason}`}
-                onClick={() => setSlotChoice(each.slot.index)}
+                onClick={() => setSlotChoice(each.slots[0])}
               >
                 <span className="slot-chip-name">{each.label}</span>
                 <span className="slot-chip-need">
@@ -372,7 +371,7 @@ export function Targets(props: {
           </div>
           {activeSlot && (
             <p className="slot-line">
-              {activeSlot.label}({activeSlot.roleLabel}): {activeSlot.reason} 역할은 스쿼드 전술판에서 바꿀 수 있습니다.
+              {activeSlot.label} · {activeSlot.roleLabel}: {activeSlot.reason} 역할은 스쿼드 전술판에서 바꿀 수 있습니다.
             </p>
           )}
         </div>
@@ -390,7 +389,7 @@ export function Targets(props: {
             </select>
           </label>
         )}
-        {activeSlot && <span className="page-sub">역할: {ROLE_BY_ID[activeSlot.slot.roleId]?.label}</span>}
+        {activeSlot && <span className="page-sub">역할: {ROLE_BY_ID[activeSlot.roleId]?.label}</span>}
         <div className="chips" role="group" aria-label="유형">
           {CATEGORIES.map((each) => (
             <button

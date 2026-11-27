@@ -40,6 +40,8 @@ export interface PlayerRow {
   name: string
   /** 열 이름(header) → 값 */
   cells: Record<string, CellValue>
+  /** 포지션 숙련도 15개(1~20), positions.ts의 POSITION_KEYS 순서. 적합도에서 숙련 감점을 계산하는 데 쓴다. 모르면 없다 */
+  ratings?: number[]
 }
 
 /** 내 팀 선수 표 */

@@ -7,13 +7,13 @@ import {
   fitWageModel,
   NO_DASHBOARD,
   overpaidPlayers,
+  recommendSlotOf,
   surplusReport,
   WAGE_MODEL_MIN_SAMPLE,
   type ClubTeam,
   type DashboardData,
   type LoanEntry,
   type RecommendRow,
-  type RecommendSlot,
   type WageModelInfo
 } from '@shared/dashboard'
 import { positionsLabel } from '@shared/positions'
@@ -211,20 +211,9 @@ export class DashboardService {
 
     // 영입 추천: 가장 보강이 급한 자리의 즉시 전력 후보(영입 후보 화면의 첫 화면과 같은 조건)
     const need = analysis?.byNeed[0] ?? null
+    const slot = analysis && need ? recommendSlotOf(analysis.formation.id, need) : null
     let recommend: DashboardData['recommend'] = { ok: false, message: '전술을 분석하지 못해 영입 후보를 고르지 못했습니다.', slot: null, rows: [], matched: 0 }
-    if (analysis && need) {
-      const slot: RecommendSlot = {
-        formation: analysis.formation.id,
-        index: need.slot.index,
-        label: need.label,
-        roleLabel: need.roleLabel,
-        need: need.need,
-        levelLabel: need.levelLabel,
-        level: need.level,
-        reason: need.reason,
-        starter: need.slot.starter ? { name: need.slot.starter.name, score: need.slot.starter.score } : null,
-        backup: need.slot.backups[0] ? { name: need.slot.backups[0].name, score: need.slot.backups[0].score } : null
-      }
+    if (analysis && need && slot) {
       const found = this.deps.world.candidates({
         roleId: need.slot.roleId,
         category: 'starter',
@@ -262,8 +251,8 @@ export class DashboardService {
       table,
       recent: season.recent,
       next: season.upcoming[0] ?? null,
-      need: need
-        ? { label: need.label, roleLabel: need.roleLabel, need: need.need, level: need.level, levelLabel: need.levelLabel, reason: need.reason, formation: analysis!.formation.label }
+      need: slot
+        ? { label: slot.label, roleLabel: slot.roleLabel, need: slot.need, level: slot.level, levelLabel: slot.levelLabel, reason: slot.reason, formation: analysis!.formation.label }
         : null,
       expiring: contracts.known > 0 ? { known: contracts.known, count: contracts.within1y.length, names: contracts.within1y.map((row) => row.name) } : null
     })

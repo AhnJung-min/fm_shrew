@@ -1,6 +1,6 @@
-import { normOf, zOf, type RoleNorms } from './norms'
-import { parsePositions } from './positions'
-import { attributesOf, DEFAULT_ROLE, effectiveWeights, ROLE_BY_ID, scoreRole, type PositionKey, type RoleScore } from './roles'
+import { FALLBACK_NORM, normOf, zOf, type RoleNorms } from './norms'
+import { parsePositions, posPenaltySigma, ratingAt, RATING_UNKNOWN_ASSUMED } from './positions'
+import { attributesOf, DEFAULT_ROLE, effectiveWeights, ROLE_BY_ID, scoreRole, type AttributeValue, type PositionKey, type RoleScore } from './roles'
 import type { ColumnInfo, PlayerRow } from './types'
 
 export interface Formation {
@@ -23,9 +23,14 @@ export const FORMATION_BY_ID: Record<string, Formation> = Object.fromEntries(FOR
 export interface DepthPlayer {
   idx: number
   name: string
+  /** 화면에 보이는 적합도(0~100) */
   score: number
+  /** 포지션 숙련 감점을 뺀 적합도. 주전 배정, 후보 순서, 보강 필요도, 영입 후보 비교는 모두 이 값으로 한다(숙련 20이면 score와 같다) */
+  effScore: number
+  /** 그 자리의 포지션 숙련(1~20). 숙련 숫자를 모르면 RATING_UNKNOWN_ASSUMED */
+  rating: number
   uncertain: boolean
-  /** 그 자리 역할의 기준에서 평균보다 표준편차의 몇 배 위인가(기준 분포가 없으면 null) */
+  /** 그 자리 역할의 기준에서 effScore가 평균보다 표준편차의 몇 배 위인가(z_eff. 기준 분포가 없으면 null) */
   z: number | null
 }
 
@@ -38,7 +43,7 @@ export interface DepthSlot {
   starter: DepthPlayer | null
   /** 주전을 뺀 다음 순위들 */
   backups: DepthPlayer[]
-  /** 주전이 다른 자리 주전들보다 뚜렷이 약하다(기준 분포가 있으면 z가 평균보다 1.2 이상 낮고, 없으면 점수가 5점 이상 낮다) */
+  /** 주전이 다른 자리 주전들보다 뚜렷이 약하다(기준 분포가 있으면 z_eff가 평균보다 1.2 이상 낮고, 없으면 점수가 5점 이상 낮다) */
   weak: boolean
   /** 주전 말고 뛸 선수가 없다 */
   thin: boolean
@@ -124,10 +129,11 @@ export function assignMaximum(weight: number[][]): Array<number | null> {
 
 /**
  * 포메이션의 자리마다 주전과 후보를 정한다.
- * 주전은 "그 자리를 뛸 수 있는(숙련 15 이상) 선수"끼리만 짝지어, 자리별 z 점수(그 역할 기준에서 평균보다 표준편차의 몇 배 위인가)의
- * 합이 가장 커지는 배정이다(헝가리안 방법). 한 선수는 한 자리다. 기준 분포(norms)가 없으면 z 대신 점수 그대로 합한다.
+ * 주전은 "그 자리를 뛸 수 있는(숙련 15 이상) 선수"끼리만 짝지어, 자리별 z_eff(숙련 감점을 뺀 적합도가 그 역할 기준에서
+ * 평균보다 표준편차의 몇 배 위인가)의 합이 가장 커지는 배정이다(헝가리안 방법). 한 선수는 한 자리다.
+ * 기준 분포(norms)가 없으면 z 대신 숙련 감점을 뺀 점수 그대로 합한다.
  * 뛸 선수가 없는 자리는 비운다. 같은 입력이면 늘 같은 결과이고, 동점이면 선수 idx와 자리 순번이 작은 쪽이 먼저다.
- * 후보는 주전으로 뽑히지 않은 선수 가운데 그 자리에서 점수가 높은 순이다.
+ * 후보는 주전으로 뽑히지 않은 선수 가운데 그 자리에서 숙련 감점을 뺀 점수가 높은 순이다.
  */
 export function buildDepth(
   rows: PlayerRow[],
@@ -157,17 +163,21 @@ export function buildDepth(
     }
   })
 
-  // 자리별 후보와 점수
-  const zOfScore = (roleId: string, score: number): number | null => (norms?.[roleId] ? zOf(normOf(norms, roleId), score) : null)
+  // 자리별 후보와 점수. 포지션 숙련이 20보다 낮으면 그 역할 σ의 배수만큼 적합도에서 뺀다(effScore)
   const candidates = slots.map((slot) => {
     const weights = effectiveWeights(slot.roleId, weightOverrides)
-    const list: Array<{ player: (typeof players)[number]; result: RoleScore; z: number | null }> = []
+    const known = norms?.[slot.roleId] ? normOf(norms, slot.roleId) : null
+    const sigma = (known ?? FALLBACK_NORM).sigma
+    const list: Entry[] = []
     for (const player of players) {
       if (!canPlay(player.positions, slot.position)) continue
       const result = scoreRole(player.attrs, weights)
-      if (result) list.push({ player, result, z: zOfScore(slot.roleId, result.score) })
+      if (!result) continue
+      const rating = ratingAt(player.row.ratings, slot.position) ?? RATING_UNKNOWN_ASSUMED
+      const effScore = result.score - sigma * posPenaltySigma(rating)
+      list.push({ player, result, rating, effScore, z: known ? zOf(known, effScore) : null })
     }
-    return list.sort((a, b) => b.result.score - a.result.score || a.player.row.idx - b.player.row.idx)
+    return list.sort((a, b) => b.effScore - a.effScore || b.result.score - a.result.score || a.player.row.idx - b.player.row.idx)
   })
 
   // 주전 배정: 자리별 z(또는 점수)의 합이 최대가 되는 매칭
@@ -176,7 +186,7 @@ export function buildDepth(
   candidates.forEach((list, slotIndex) => {
     for (const entry of list) {
       const rank = playerRank.get(entry.player.row.idx)!
-      const value = entry.z ?? entry.result.score
+      const value = entry.z ?? entry.effScore
       weight[slotIndex][rank] = PLAYABLE_BONUS + value - TIE_BREAK * (rank + 1) * (slots.length - slotIndex)
     }
   })
@@ -201,7 +211,7 @@ export function buildDepth(
   const starters = slots.filter((slot) => slot.starter)
   if (starters.length >= 3) {
     const useZ = starters.every((slot) => slot.starter!.z !== null)
-    const valueOf = (player: DepthPlayer): number => (useZ ? player.z! : player.score)
+    const valueOf = (player: DepthPlayer): number => (useZ ? player.z! : player.effScore)
     const average = starters.reduce((sum, slot) => sum + valueOf(slot.starter!), 0) / starters.length
     const gap = useZ ? WEAK_GAP_SIGMAS : WEAK_GAP
     for (const slot of slots) slot.weak = slot.starter === null || valueOf(slot.starter) <= average - gap
@@ -209,11 +219,21 @@ export function buildDepth(
   return slots
 }
 
-function toDepthPlayer(entry: { player: { row: PlayerRow }; result: RoleScore; z: number | null }): DepthPlayer {
+interface Entry {
+  player: { row: PlayerRow; positions: string[]; attrs: Record<string, AttributeValue> }
+  result: RoleScore
+  rating: number
+  effScore: number
+  z: number | null
+}
+
+function toDepthPlayer(entry: Entry): DepthPlayer {
   return {
     idx: entry.player.row.idx,
     name: entry.player.row.name,
     score: entry.result.score,
+    effScore: entry.effScore,
+    rating: entry.rating,
     uncertain: entry.result.uncertain,
     z: entry.z
   }

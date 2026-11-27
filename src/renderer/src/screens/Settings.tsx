@@ -64,8 +64,8 @@ export function Settings(props: {
               <p className="muted" style={{ marginBottom: 8 }}>
                 설정과 세이브 사본은 이 PC의 아래 폴더에만 저장됩니다.
               </p>
-              <div className="folder-list">
-                <li style={{ listStyle: 'none', display: 'flex', gap: 8 }}>
+              <ul className="folder-list">
+                <li>
                   <span className="path">{status?.dataDir}</span>
                   <button
                     className="btn ghost icon"
@@ -76,8 +76,8 @@ export function Settings(props: {
                     <FolderOpen size={16} />
                   </button>
                 </li>
-              </div>
-              <p className="faint num" style={{ marginTop: 12, fontSize: 12 }}>
+              </ul>
+              <p className="faint num" style={{ marginTop: 12 }}>
                 FM 보좌관 {status?.version}
               </p>
             </div>

@@ -14,7 +14,9 @@ import {
   type TacticInput
 } from '../src/shared/tactic'
 import type { CellValue, ColumnInfo, PlayerRow } from '../src/shared/types'
-import { SAVE_ATTRIBUTE_ORDER, shownValue } from '../src/shared/world'
+import { POSITION_KEYS } from '../src/shared/positions'
+import { benchLine, SAVE_ATTRIBUTE_ORDER, shownValue } from '../src/shared/world'
+import { recommendSlotOf } from '../src/shared/dashboard'
 
 const ATTRS = FIELDS.filter((field) => field.isAttr)
 const info = (header: string, field: string): ColumnInfo => ({ header, field, group: 'info', short: header, label: header, isAttr: false, numeric: field !== 'name' && field !== 'position' })
@@ -39,6 +41,8 @@ interface Spec {
   ca?: number
   pa?: number
   end?: number
+  /** 포지션 숙련 {자리: 값}. 적은 자리 말고는 1이다. 안 적으면 숙련 숫자가 없는 행이다 */
+  ratings?: Partial<Record<(typeof POSITION_KEYS)[number], number>>
 }
 
 let counter = 1
@@ -52,7 +56,8 @@ function player(spec: Spec): PlayerRow {
   }
   cells['계약 만료'] = spec.end ? num(spec.end) : { raw: '', num: null }
   for (const field of ATTRS) cells[field.label] = num(spec.level)
-  return { idx: counter++, name: spec.name, cells }
+  const ratings = spec.ratings ? POSITION_KEYS.map((key) => spec.ratings![key] ?? 1) : undefined
+  return { idx: counter++, name: spec.name, cells, ratings }
 }
 
 const today = { year: 2026, month: 7, day: 1 }
@@ -211,7 +216,7 @@ describe('전술 분석', () => {
     expect(analysis.fitAverage).not.toBeNull()
     expect(analysis.strongest).not.toBeNull()
     expect(analysis.weakest).not.toBeNull()
-    expect(analysis.strongest!.fitAverage!).toBeGreaterThanOrEqual(analysis.weakest!.fitAverage!)
+    expect(analysis.strongest!.zAverage!).toBeGreaterThanOrEqual(analysis.weakest!.zAverage!)
   })
 
   it('자리 기준 비교값(주전·두 번째)을 준다', () => {
@@ -495,5 +500,103 @@ describe('주전 배정(헝가리안)', () => {
     const slots = buildDepth(squad(), COLUMNS, FORMATION_BY_ID['4-4-2'], {}, {}, 2, norms)
     // 풀백 기준만 높아 풀백 자리(DL, DR)가 약하다
     expect(slots.filter((slot) => slot.weak).map((slot) => slot.position).sort()).toEqual(['DL', 'DR'])
+  })
+})
+
+describe('2회차: 숙련 감점, 같은 자리 그룹, 줄 요약', () => {
+  const norms = (patch: Record<string, number> = {}): Record<string, RoleNorm> =>
+    Object.fromEntries(ROLES.map((role) => [role.id, { mu: patch[role.id] ?? 60, sigma: 3, beta: 0.28, n: 100, caRef: 150 }]))
+  const find = (analysis: NonNullable<ReturnType<typeof analyseTactic>>, position: string) => analysis.slots.find((each) => each.slot.position === position)!
+  const twoBacks = (): PlayerRow[] => [
+    // 같은 능력이어도 왼쪽 수비 숙련 16이면 적합도에서 0.32σ를 뺀다
+    player({ name: '숙련16', position: 'D (L)', level: 14, ratings: { DL: 16 } }),
+    player({ name: '숙련20', position: 'D (L)', level: 13, ratings: { DL: 20 } })
+  ]
+
+  it('주전 배정과 필요도는 숙련 감점을 뺀 적합도(z_eff)로 한다', () => {
+    const formation = { id: 't', label: 't', rows: [['DL']] as never }
+    const slots = buildDepth(twoBacks(), COLUMNS, formation, {}, {}, 2, norms())
+    const plain = analyseTactic(base(twoBacks(), { formation: '4-4-2', norms: norms() }))!
+    // 능력치 한 단계(5점)가 숙련 16의 감점(0.96점)보다 커서 숙련 16이 이긴다
+    expect(slots[0].starter!.name).toBe('숙련16')
+    expect(slots[0].starter!.effScore).toBeCloseTo(slots[0].starter!.score - 3 * 0.32, 5)
+    expect(slots[0].starter!.rating).toBe(16)
+    expect(slots[0].starter!.z).toBeCloseTo((slots[0].starter!.effScore - 60) / 3, 5)
+    const left = find(plain, 'DL')
+    expect(left.starterEff).toBeCloseTo(left.starterScore! - 3 * 0.32, 5)
+    expect(left.starterZ).toBeCloseTo((left.starterEff! - 60) / 3, 5)
+  })
+
+  it('숙련 감점 때문에 능력치가 조금 낮은 자연 포지션 선수가 주전이 된다', () => {
+    const rows = [
+      player({ name: '숙련12', position: 'D (L)', level: 14, ratings: { DL: 16 } }),
+      player({ name: '자연', position: 'D (L)', level: 14, ratings: { DL: 20 } })
+    ]
+    const formation = { id: 't', label: 't', rows: [['DL']] as never }
+    expect(buildDepth(rows, COLUMNS, formation, {}, {}, 2, norms())[0].starter!.name).toBe('자연')
+  })
+
+  it('같은 포지션·역할의 자리는 한 그룹이고 어느 자리를 골라도 같은 기준이다', () => {
+    const rows = [...squad(), player({ name: '노장센터백', position: 'D (C)', level: 15, age: 35, end: 20290630 })]
+    for (const formation of ['4-4-2', '3-5-2']) {
+      const analysis = analyseTactic(base(rows, { formation, norms: norms() }))!
+      const centre = analysis.groups.filter((group) => group.position === 'DC')
+      expect(centre).toHaveLength(1)
+      expect(centre[0].slots.length).toBe(formation === '4-4-2' ? 2 : 3)
+      expect(centre[0].label).toContain(centre[0].slots.length + '자리')
+      const benches = centre[0].slots.map((index) => slotBench(analysis, index))
+      for (const bench of benches) expect(bench).toEqual(benches[0])
+      for (const index of centre[0].slots) expect(analysis.slots[index].group.need).toBe(centre[0].need)
+    }
+  })
+
+  it('그룹의 비교 주전은 나이 하락까지 반영한 가장 약한 주전이고, 필요도는 자리들의 최대다', () => {
+    const rows = [
+      player({ name: '노장', position: 'D (C)', level: 16, age: 35, ca: 150 }),
+      player({ name: '젊은이', position: 'D (C)', level: 15, age: 26, ca: 140 }),
+      player({ name: '후보', position: 'D (C)', level: 12, age: 25 })
+    ]
+    const formation = { id: 't', label: 't', rows: [['DC', 'DC']] as never }
+    const slots = buildDepth(rows, COLUMNS, formation, {}, {}, 2, norms())
+    expect(slots.map((slot) => slot.starter?.name).sort()).toEqual(['노장', '젊은이'])
+    const analysis = analyseTactic(base(rows, { formation: '4-4-2', norms: norms() }))!
+    const group = analysis.groups.find((each) => each.position === 'DC')!
+    // 노장(적합 높음, 35세라 4점 하락)과 젊은이 가운데 하락 반영 값이 낮은 쪽이 기준이다
+    const old = analysis.slots.find((each) => each.slot.starter?.name === '노장')!
+    const young = analysis.slots.find((each) => each.slot.starter?.name === '젊은이')!
+    const weakest = old.starterEff! - 4 < young.starterEff! ? old : young
+    expect(group.bench.starter!.name).toBe(weakest.slot.starter!.name)
+    expect(group.need).toBe(Math.max(old.need, young.need))
+  })
+
+  it('줄 요약에서 가장 강한·약한 줄은 적합도 평균이 아니라 z_eff 평균으로 고른다', () => {
+    // 수비수는 적합도 평균이 낮아도 그 역할 기준이 낮아 z가 높다
+    const analysis = analyseTactic(base(squad(), { norms: norms({ cb: 50, fb: 50, st: 75, tm: 75 }) }))!
+    const line = (id: string) => analysis.lines.find((each) => each.id === id)!
+    expect(line('defence').zAverage!).toBeGreaterThan(line('attack').zAverage!)
+    expect(analysis.strongest!.id).toBe('defence')
+  })
+
+  it('이유 문장은 앞 절을 잇는 꼴로 쓴다(쉼표 뒤에 맺는 꼴을 두 번 쓰지 않는다)', () => {
+    const rows = [
+      player({ name: '노장 수비수', position: 'D (C)', level: 15, age: 34, end: 20290630 }),
+      player({ name: '어린 수비수', position: 'D (C)', level: 13, age: 20, end: 20290630 })
+    ]
+    const analysis = analyseTactic(base(rows, { formation: '3-4-3', norms: norms() }))!
+    const reasons = analysis.slots.map((each) => each.reason)
+    expect(reasons.some((reason) => /고, 주전 노장 수비수가 34세입니다.$/.test(reason))).toBe(true)
+    for (const reason of reasons) expect(reason).not.toMatch(/(입니다|습니다), /)
+  })
+
+  it('대시보드 영입 추천도 같은 그룹 기준을 쓴다(위에 적힌 주전과 카드의 차이가 맞는다)', () => {
+    const rows = [...squad(), player({ name: '노장센터백', position: 'D (C)', level: 15, age: 35, end: 20290630 })]
+    const analysis = analyseTactic(base(rows, { formation: '4-4-2', norms: norms() }))!
+    const centre = analysis.slots.find((each) => each.slot.position === 'DC')!
+    const slot = recommendSlotOf(analysis.formation.id, centre)
+    expect(slot.label).toBe('중앙 수비 2자리')
+    expect(slot.groupSlots).toBe(2)
+    expect(slot.need).toBe(centre.group.need)
+    expect(slot.bench).toEqual(slotBench(analysis, centre.slot.index))
+    expect(benchLine(slot.bench, slot.groupSlots)).toContain('가장 약한 주전 ' + slot.bench.starter!.name)
   })
 })

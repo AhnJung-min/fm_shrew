@@ -7,6 +7,7 @@ import type { PlayerProfile, SaveAttributeId } from '@shared/world'
 import { api } from '@/api'
 import { AttributeColumns } from '@/components/AttributeColumns'
 import { ClubLogo } from '@/components/ClubLogo'
+import { MetaLine } from '@/components/MetaLine'
 import { PlayerFace } from '@/components/PlayerFace'
 import { PositionMap } from '@/components/PositionMap'
 import { attrBand, attrText, attrTitle, plainText } from '@/lib/format'
@@ -70,8 +71,17 @@ export function PlayerDrawer(props: {
   const ranged = columns.some((col) => col.isAttr && row.cells[col.header]?.range)
 
   const headline = profile
-    ? [profile.position, profile.age !== null && `${profile.age}세`, profile.club].filter(Boolean).join(' · ')
-    : [byField('position'), byField('age') && `${byField('age')}세`, byField('nationality')].filter(Boolean).join(', ')
+    ? [
+        profile.position,
+        profile.age !== null && `${profile.age}세`,
+        profile.club && (
+          <span key="club" className="with-logo">
+            <ClubLogo uid={profile.clubUid} size={18} />
+            {profile.club}
+          </span>
+        )
+      ]
+    : [byField('position'), byField('age') && `${byField('age')}세`, byField('nationality')]
 
   return (
     <aside className="drawer player-drawer" aria-label={`${row.name} 상세`}>
@@ -79,12 +89,9 @@ export function PlayerDrawer(props: {
         <PlayerFace uid={uid} name={row.name} size={56} />
         <div style={{ flex: 1, minWidth: 0 }}>
           <h2>{profile?.name ?? row.name}</h2>
-          {headline && (
-            <p className="muted with-logo">
-              <ClubLogo uid={profile?.clubUid} size={18} />
-              {headline}
-            </p>
-          )}
+          <p className="muted">
+            <MetaLine items={headline} />
+          </p>
         </div>
         <button className="btn ghost icon" onClick={onClose} aria-label="상세 닫기" title="닫기">
           <X size={18} />
@@ -93,7 +100,11 @@ export function PlayerDrawer(props: {
 
       <div className="drawer-body pl-body">
         {waiting && <p className="faint pl-wait">선수 정보를 불러오는 중입니다.</p>}
-        {profile ? <Profile profile={profile} rangeOf={(id) => (cellOf(id)?.range ? cellOf(id) : undefined)} /> : !waiting && <Basic columns={columns} row={row} />}
+        {profile ? (
+          <Profile profile={profile} rangeOf={(id) => (cellOf(id)?.range ? cellOf(id) : undefined)} />
+        ) : (
+          !waiting && <Basic columns={columns} row={row} />
+        )}
         {ranged && <p className="faint pl-note">점선 밑줄이 있는 값은 스카우트 정보가 부족해 범위로 나온 능력치입니다.</p>}
       </div>
 
@@ -184,7 +195,9 @@ function Profile(props: { profile: PlayerProfile; rangeOf: (id: string) => CellV
           ))}
         </dl>
         <p className="pl-note">
-          {profile.moneyFrom === 'game' ? '몸값과 주급은 게임이 보여 주는 금액입니다.' : '몸값과 주급은 세이브에 적힌 기준 금액(파운드)입니다.'}
+          {profile.moneyFrom === 'game'
+            ? '몸값과 주급은 게임이 보여 주는 금액입니다.'
+            : '몸값과 주급은 세이브에 적힌 기준 금액(파운드)입니다.'}
         </p>
       </section>
 

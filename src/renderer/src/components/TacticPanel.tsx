@@ -34,9 +34,10 @@ function SlotDetail(props: {
       <p className="slot-reason">{slot.reason}</p>
       <p className="muted slot-facts">
         {slot.starterScore !== null
-          ? `주전 적합도 ${slot.starterScore}점(${slot.normSource === 'world' ? '같은 역할 상위권 평균' : '팀 주전 평균'} ${Math.round(slot.norm.mu * 10) / 10}점)`
+          ? `주전 적합도 ${slot.starterScore}점${slot.starterEff !== null && slot.starterScore - slot.starterEff > 0.05 ? `(포지션 숙련 ${slot.starterRating}이라 ${Math.round((slot.starterScore - slot.starterEff) * 10) / 10}점 빼면 ${Math.round(slot.starterEff * 10) / 10}점)` : ''}, ${slot.normSource === 'world' ? '같은 역할 상위권 평균' : '팀 주전 평균'} ${Math.round(slot.norm.mu * 10) / 10}점`
           : '주전 없음'}
         {slot.backupScore !== null ? ` · 첫 후보 ${slot.backupScore}점` : ''} · 이 자리를 뛸 수 있는 선수 {slot.eligible}명
+        {slot.group.slots.length > 1 ? ` · 같은 포지션·역할의 자리 ${slot.group.slots.length}곳(영입 후보는 그 가운데 가장 약한 주전을 기준으로 찾습니다)` : ''}
       </p>
 
       <h4>보강 필요도는 이렇게 나왔습니다</h4>
@@ -119,13 +120,14 @@ export function TacticPanel(props: {
             <li key={line.id}>
               <span>{line.label}</span>
               <b className="num">{line.fitAverage ?? '–'}</b>
+              <span className="muted">{line.zAverage === null ? '' : `상위권 평균 대비 ${line.zAverage >= 0 ? '+' : ''}${line.zAverage.toFixed(1)} 표준편차`}</span>
               <span className="muted">보강 필요도 평균 {Math.round(line.needAverage)}</span>
             </li>
           ))}
         </ul>
         {strongest && weakest && strongest.id !== weakest.id && (
           <p className="muted">
-            가장 강한 줄은 {strongest.label}(평균 {strongest.fitAverage}점), 가장 약한 줄은 {weakest.label}(평균 {weakest.fitAverage}점)입니다.
+            역할마다 점수 눈금이 달라, 줄은 같은 역할 상위권 평균과 견준 표준편차로 비교했습니다. 가장 강한 줄은 {strongest.label}(상위권 평균 대비 {strongest.zAverage!.toFixed(1)} 표준편차, 적합도 평균 {strongest.fitAverage}점), 가장 약한 줄은 {weakest.label}({weakest.zAverage!.toFixed(1)} 표준편차, 적합도 평균 {weakest.fitAverage}점)입니다.
           </p>
         )}
       </div>

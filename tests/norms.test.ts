@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { assignMaximum } from '../src/shared/depth'
-import { hasBatchim, josa, withJosa } from '../src/shared/korean'
+import { hasBatchim, joinClauses, josa, linkForm, withJosa } from '../src/shared/korean'
 import {
   betaFromScores,
   DEFAULT_BETA,
@@ -179,17 +179,28 @@ describe('영입 유형 판정', () => {
     const lbBench: CandidateBench = { starter: { name: '주전', score: 73.3, ca: 153, age: 25 }, backup: { name: '후보', score: 71.1 } }
     const a = categoriesOf({ score: 66.9, age: 17, ca: 120, pa: 168, hasClub: true }, lbBench, lb)
     expect(a).toEqual(['prospect'])
-    expect(projectedScore(66.9, 17, 120, 168, 0.283)).toBeCloseTo(77.1, 1)
+    // 17세의 실현률 ρ = 0.80 - 0.03 × 7 = 0.59
+    expect(projectedScore(66.9, 17, 120, 168, 0.283)).toBeCloseTo(66.9 + 0.283 * 0.59 * 48, 5)
     expect(categoriesOf({ score: 50.6, age: 16, ca: 86, pa: 175, hasClub: true }, lbBench, lb)).toEqual([])
-    expect(projectedScore(50.6, 16, 86, 175, 0.283)).toBeCloseTo(69.5, 1)
+    expect(projectedScore(50.6, 16, 86, 175, 0.283)).toBeCloseTo(50.6 + 0.283 * 0.56 * 89, 5)
   })
-  it('유망주는 21세 이하이고 잠재 여지가 10 이상이어야 한다', () => {
+  it('유망주는 23세 이하이고 잠재 여지가 10 이상이어야 한다', () => {
     const lb: RoleNorm = { mu: 70, sigma: 3, beta: 0.283, n: 100, caRef: 150 }
     const lbBench: CandidateBench = { starter: { name: '주전', score: 60, ca: 153, age: 25 }, backup: null }
-    expect(categoriesOf({ score: 70, age: 22, ca: 120, pa: 168, hasClub: true }, lbBench, lb)).not.toContain('prospect')
+    expect(categoriesOf({ score: 70, age: 23, ca: 120, pa: 168, hasClub: true }, lbBench, lb)).toContain('prospect')
+    expect(categoriesOf({ score: 70, age: 24, ca: 120, pa: 168, hasClub: true }, lbBench, lb)).not.toContain('prospect')
     expect(categoriesOf({ score: 70, age: 20, ca: 160, pa: 165, hasClub: true }, lbBench, lb)).not.toContain('prospect')
     expect(categoriesOf({ score: 70, age: 20, ca: 120, pa: 135, hasClub: true }, lbBench, lb)).toContain('prospect')
     expect(categoriesOf({ score: 70, age: null, ca: 120, pa: 168, hasClub: true }, lbBench, lb)).not.toContain('prospect')
+  })
+  it('후보도 포지션 숙련과 나이 하락을 뺀 적합도로 견준다(f_eff)', () => {
+    // 숙련 16이면 0.32σ = 1.15점, 33세 필드 선수는 2점을 뺀다
+    expect(categoriesOf(player({ score: 84, rating: 16 }), bench, norm)).toContain('starter')
+    expect(categoriesOf(player({ score: 83.6, rating: 16 }), bench, norm)).not.toContain('starter')
+    expect(categoriesOf(player({ score: 84.6, age: 33 }), bench, norm)).not.toContain('starter')
+    expect(categoriesOf(player({ score: 84.8, age: 33 }), bench, norm)).toContain('starter')
+    // 골키퍼는 34세까지는 빼지 않는다
+    expect(categoriesOf(player({ score: 83.8, age: 33 }), bench, norm, true)).toContain('starter')
   })
   it('주전이 없으면 이 역할 상위권 평균(mu)을 기준으로, CA 문턱은 0.85 × 기준 능력이다', () => {
     const none: CandidateBench = { starter: null, backup: null }
@@ -205,5 +216,35 @@ describe('영입 유형 판정', () => {
   it('기준 분포를 못 받아도(옛 호출) 계산이 깨지지 않는다', () => {
     expect(categoriesOf(player({ score: 84 }), bench)).toContain('starter')
     expect(Number.isFinite(FALLBACK_NORM.sigma)).toBe(true)
+  })
+})
+
+describe('기준 분포의 안정성(검토 2회차 4.1-10)', () => {
+  it('내 선수 가운데 CA 1위를 빼도 평균 μ가 0.1σ(약 0.3점) 안에서만 움직인다', () => {
+    // 모집단: CA 60~190이 고르게 있고 적합도 = 0.3·CA + 40 + 흔들림
+    const abilities: number[] = []
+    const scores: number[] = []
+    for (let i = 0; i < 4000; i++) {
+      const ca = 60 + (i % 131)
+      abilities.push(ca)
+      scores.push(0.3 * ca + 40 + (((i * 7919) % 61) - 30) / 10)
+    }
+    const squad = [175, 170, 165, 162, 160, 158, 157, 155, 153, 150, 148, 145, 140]
+    const withTop = normFromScores(scores, abilities, referenceCa(squad))
+    const withoutTop = normFromScores(scores, abilities, referenceCa(squad.slice(1)))
+    expect(Math.abs(withTop.mu - withoutTop.mu)).toBeLessThanOrEqual(0.1 * withTop.sigma + 0.3)
+    expect(Math.abs((withTop.mu - withoutTop.mu) / withTop.sigma)).toBeLessThan(0.15)
+  })
+})
+
+describe('절 잇기', () => {
+  it('앞 절은 잇는 꼴로, 마지막 절만 맺는다', () => {
+    expect(linkForm('주전 A가 34세입니다')).toBe('주전 A가 34세이고')
+    expect(linkForm('후보가 B 한 명뿐입니다')).toBe('후보가 B 한 명뿐이고')
+    expect(linkForm('크게 낮습니다')).toBe('크게 낮고')
+    expect(linkForm('그 밖의 꼴')).toBe('그 밖의 꼴')
+    expect(joinClauses(['주전 A가 34세입니다', '후보가 B 한 명뿐입니다'])).toBe('주전 A가 34세이고, 후보가 B 한 명뿐입니다.')
+    expect(joinClauses(['후보가 없습니다'])).toBe('후보가 없습니다.')
+    expect(joinClauses([])).toBe('')
   })
 })

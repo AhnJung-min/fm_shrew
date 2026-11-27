@@ -1,42 +1,85 @@
 /*
-  FM 보좌관 디자인 토큰.
-  방향: 조명 켜진 밤 경기장. 녹색 기가 도는 짙은 바탕 위에서 글자는 분필처럼 또렷하게 읽혀야 한다.
-  조명 노랑은 지금 가장 중요한 한 가지(선택된 메뉴, 주 버튼, 고친 값)에만 쓴다.
-  능력치는 게임과 같은 네 단계(1~5, 6~10, 11~15, 16~20)를 색 칩으로 보여 준다. 색만이 아니라 굵기도 함께 바뀐다.
-  글자 대비: 본문 15:1, 보조 12:1, 흐린 글자 7.5:1 이상(바탕 #101714 기준).
+  FM 보좌관 디자인 토큰. 기준 문서: docs/design.md
+  방향: 경기장의 밤, 분필과 전광판. 바탕은 잔디색을 머금은 어두운 초록, 화면의 뼈대(선택·주 단추·링크)는 분필 흰색,
+  색은 뜻이 있을 때만 쓴다(초록 좋음, 노랑 주목, 주황 주의, 빨강 위험). 핵심 숫자는 전광판처럼 크고 굵게.
+  글자 대비(WCAG, 계산한 값): 본문 16:1, 보조 12:1, 흐린 글자 바탕 8:1 · 가장 밝은 단추 위 6:1 이상,
+  노랑·초록·주황·빨강 글자는 어느 바탕에서도 5.7:1 이상, 능력치 칩 글자는 어느 바탕에서도 4.9:1 이상.
+  입력·단추 테두리는 바탕과 3.3:1 이상.
 */
 :root {
-  --bg: #101714;
-  --surface: #17211d;
-  --raised: #1f2b26;
-  --hover: #26342e;
-  --zebra: rgba(255, 255, 255, 0.022);
-  --line: #2a3833;
-  --line-strong: #3f514a;
+  color-scheme: dark;
 
-  --text: #f3f6f2;
-  --text-2: #cfd8d2;
-  --text-3: #a3b1a9;
+  /* 면: 야간 잔디 < 경기장 벽 < 벤치 */
+  --bg: #0c1a15;
+  --surface: #132620;
+  --raised: #1a332b;
+  --hover: #234038;
+  --zebra: rgba(255, 255, 255, 0.024);
+  --line: #2a4439;
+  --line-strong: #557a6c;
 
-  --accent: #f5d061;
-  --accent-ink: #1d1a08;
-  --accent-soft: rgba(245, 208, 97, 0.14);
-  --good: #63d69d;
-  --warn: #f2b15a;
-  --bad: #f2867a;
+  /* 글자: 분필 */
+  --text: #eff5ed;
+  --text-2: #cbd9d1;
+  --text-3: #9db4a8;
 
-  /* 능력치 네 단계: 칩 바탕과 글자 */
-  --a1-bg: rgba(242, 134, 122, 0.16);
-  --a1-ink: #f7aa9f;
-  --a2-bg: rgba(207, 216, 210, 0.08);
-  --a2-ink: #d7dfda;
-  --a3-bg: rgba(99, 214, 157, 0.17);
-  --a3-ink: #93ebbf;
-  --a4-bg: rgba(245, 208, 97, 0.24);
-  --a4-ink: #ffe08f;
+  /* 화면의 뼈대는 분필색(선택, 주 단추, 링크). 노랑은 --gold로 따로 둔다 */
+  --accent: #eff5ed;
+  --accent-ink: #0c1a15;
+  --accent-soft: rgba(239, 245, 237, 0.12);
+  --gold: #f7d65a;
+  --gold-ink: #241d02;
+  --gold-soft: rgba(247, 214, 90, 0.16);
+  --good: #5fdca0;
+  --warn: #f5a64c;
+  --bad: #f58a7c;
+  --good-soft: rgba(95, 220, 160, 0.14);
+  --warn-soft: rgba(245, 166, 76, 0.14);
+  --bad-soft: rgba(245, 138, 124, 0.14);
+  --info-soft: rgba(203, 217, 209, 0.1);
+  --focus: #7cc7ff;
 
+  /* 능력치 네 단계: 칩 바탕과 글자(게임과 같은 1~5, 6~10, 11~15, 16~20) */
+  --a1-bg: rgba(245, 138, 124, 0.18);
+  --a1-ink: #ffb3a8;
+  --a1-edge: rgba(245, 138, 124, 0.45);
+  --a2-bg: rgba(203, 217, 209, 0.1);
+  --a2-ink: #dbe6df;
+  --a2-edge: rgba(203, 217, 209, 0.22);
+  --a3-bg: rgba(95, 220, 160, 0.18);
+  --a3-ink: #9cf0c6;
+  --a3-edge: rgba(95, 220, 160, 0.5);
+  --a4-bg: rgba(247, 214, 90, 0.26);
+  --a4-ink: #ffe58a;
+  --a4-edge: rgba(247, 214, 90, 0.75);
+
+  /* 경기장 그림(전술판, 포지션 그림) */
+  --turf: #0f2b20;
+  --turf-line: #3c6254;
+
+  /* 둥글기: 위계가 다르면 둥글기도 다르게 */
+  --radius-xs: 4px;
   --radius-s: 6px;
   --radius-m: 10px;
+  --radius-l: 14px;
+
+  /* 간격(4 단위) */
+  --sp-1: 4px;
+  --sp-2: 8px;
+  --sp-3: 12px;
+  --sp-4: 16px;
+  --sp-5: 24px;
+  --sp-6: 32px;
+
+  /* 글자 크기 */
+  --fs-micro: 12.5px;
+  --fs-small: 13.5px;
+  --fs-body: 15px;
+  --fs-h3: 16px;
+  --fs-h2: 19px;
+  --fs-h1: 26px;
+  --fs-score: 34px;
+  --fs-score-xl: 56px;
 
   --row-h: 36px;
   --font: 'Pretendard Variable', Pretendard, 'Malgun Gothic', system-ui, sans-serif;
@@ -84,8 +127,18 @@ textarea {
 }
 
 :focus-visible {
-  outline: 2px solid var(--accent);
+  outline: 2px solid var(--focus);
   outline-offset: 2px;
+}
+/* 값이 들어 있는 칸은 윤곽을 안쪽으로 그려 이웃 칸을 가리지 않는다 */
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible {
+  outline-offset: 0;
+}
+
+::selection {
+  background: rgba(124, 199, 255, 0.35);
 }
 
 ::-webkit-scrollbar {
@@ -114,25 +167,27 @@ textarea {
   display: flex;
   flex-direction: column;
   gap: 4px;
-  padding: 16px 10px 12px;
+  padding: 18px 10px 12px;
   background: var(--surface);
   border-right: 1px solid var(--line);
   min-width: 0;
+  min-height: 0;
+  overflow-y: auto;
 }
 
 .brand {
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 4px 10px 18px;
-  font-size: 17px;
-  font-weight: 700;
-  letter-spacing: -0.01em;
+  padding: 2px 10px 18px;
+  font-size: 18px;
+  font-weight: 800;
+  letter-spacing: -0.02em;
 }
 
 .brand svg {
   flex: none;
-  color: var(--accent);
+  color: var(--text);
 }
 
 .sidebar-club {
@@ -141,9 +196,9 @@ textarea {
   gap: 10px;
   margin: -6px 0 14px;
   padding: 8px 10px;
-  border-radius: 10px;
+  border-radius: var(--radius-m);
   background: var(--raised);
-  font-weight: 600;
+  font-weight: 700;
   font-size: 14px;
 }
 
@@ -161,6 +216,7 @@ textarea {
 }
 
 .nav-item {
+  position: relative;
   display: flex;
   align-items: center;
   gap: 12px;
@@ -185,13 +241,23 @@ textarea {
   color: var(--text);
 }
 
+/* 지금 보는 화면: 분필 막대 + 밝은 글자 + 굵은 이름(색이 아니라 모양으로도 구분) */
 .nav-item[aria-current='page'] {
-  background: var(--accent-soft);
-  color: var(--accent);
-  box-shadow: inset 3px 0 0 var(--accent);
+  background: var(--raised);
+  color: var(--text);
+}
+.nav-item[aria-current='page']::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 10px;
+  bottom: 10px;
+  width: 4px;
+  border-radius: 0 3px 3px 0;
+  background: var(--accent);
 }
 .nav-item[aria-current='page'] .nav-label {
-  font-weight: 700;
+  font-weight: 800;
 }
 .nav-item[aria-current='page'] .nav-hint {
   color: var(--text-2);
@@ -214,7 +280,7 @@ textarea {
 }
 
 .nav-hint {
-  font-size: 12.5px;
+  font-size: var(--fs-micro);
   line-height: 1.35;
   color: var(--text-3);
   overflow: hidden;
@@ -223,7 +289,7 @@ textarea {
 }
 
 .nav-later {
-  font-size: 11px;
+  font-size: var(--fs-micro);
   color: var(--text-3);
 }
 
@@ -242,7 +308,7 @@ textarea {
   border-radius: var(--radius-m);
   background: var(--bg);
   color: var(--text-2);
-  font-size: 13px;
+  font-size: var(--fs-small);
   line-height: 1.45;
   text-align: left;
   cursor: pointer;
@@ -270,14 +336,15 @@ textarea {
 .status-sub {
   display: block;
   color: var(--text-3);
-  font-size: 12.5px;
+  font-size: var(--fs-micro);
 }
 
+/* 연결 상태 점: 색과 함께 옆의 글자가 같은 뜻을 적는다 */
 .dot {
   flex: none;
-  width: 8px;
-  height: 8px;
-  margin-top: 5px;
+  width: 9px;
+  height: 9px;
+  margin-top: 6px;
   border-radius: 50%;
   background: var(--text-3);
 }
@@ -301,21 +368,23 @@ textarea {
 .page-head {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: var(--sp-1) var(--sp-4);
   flex-wrap: wrap;
   padding: 20px 28px 16px;
   border-bottom: 1px solid var(--line);
 }
 
 .page-head h1 {
-  font-size: 23px;
-  font-weight: 700;
-  letter-spacing: -0.02em;
+  font-size: var(--fs-h1);
+  font-weight: 800;
+  line-height: 1.25;
+  letter-spacing: -0.025em;
 }
 
 .page-sub {
   color: var(--text-2);
   font-size: 14px;
+  max-width: 68ch;
 }
 
 .page-body {
@@ -331,6 +400,7 @@ textarea {
 
 /* ---------- 공통 부품 ---------- */
 
+/* 단추: 한 화면에 주 단추(분필)는 하나, 보조는 테두리, 약한 것은 ghost */
 .btn {
   display: inline-flex;
   align-items: center;
@@ -341,36 +411,54 @@ textarea {
   border-radius: var(--radius-s);
   background: var(--raised);
   color: var(--text);
+  font-weight: 500;
   cursor: pointer;
   white-space: nowrap;
+  transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease;
 }
-.btn:hover {
+.btn:hover:not(:disabled) {
   background: var(--hover);
+  border-color: var(--text-3);
+}
+.btn:disabled {
+  color: var(--text-3);
+  border-color: var(--line);
+  cursor: not-allowed;
 }
 .btn.primary {
   border-color: var(--accent);
   background: var(--accent);
   color: var(--accent-ink);
-  font-weight: 600;
+  font-weight: 700;
 }
-.btn.primary:hover {
-  filter: brightness(1.06);
+.btn.primary:hover:not(:disabled) {
+  background: #ffffff;
+  border-color: #ffffff;
+}
+.btn.primary:disabled {
+  border-color: var(--line);
+  background: var(--raised);
+  color: var(--text-3);
 }
 .btn.ghost {
   border-color: transparent;
   background: transparent;
   color: var(--text-2);
 }
-.btn.ghost:hover {
+.btn.ghost:hover:not(:disabled) {
   background: var(--hover);
+  border-color: transparent;
   color: var(--text);
+}
+.btn.ghost:disabled {
+  border-color: transparent;
 }
 .btn.icon {
   width: 36px;
   padding: 0;
   justify-content: center;
 }
-.btn.danger:hover {
+.btn.danger:hover:not(:disabled) {
   color: var(--bad);
 }
 
@@ -383,12 +471,24 @@ textarea {
   color: var(--text);
   min-width: 0;
 }
+.field:hover {
+  border-color: var(--text-3);
+}
 .field::placeholder {
   color: var(--text-3);
 }
 
 select.field {
   padding-right: 6px;
+}
+
+input[type='checkbox'],
+input[type='radio'] {
+  width: 18px;
+  height: 18px;
+  margin: 0;
+  accent-color: var(--accent);
+  cursor: pointer;
 }
 
 .search-box {
@@ -427,8 +527,8 @@ select.field {
 .chip[aria-pressed='true'] {
   border-color: var(--accent);
   background: var(--accent-soft);
-  color: var(--accent);
-  font-weight: 600;
+  color: var(--text);
+  font-weight: 700;
 }
 .chip:hover {
   color: var(--text);
@@ -454,31 +554,43 @@ select.field {
   font-size: 14px;
   cursor: pointer;
 }
+.segmented button:hover {
+  background: var(--hover);
+  color: var(--text);
+}
 .segmented button + button {
   border-left: 1px solid var(--line-strong);
 }
 .segmented button[aria-pressed='true'] {
-  background: var(--raised);
-  color: var(--text);
-  font-weight: 600;
+  background: var(--accent);
+  color: var(--accent-ink);
+  font-weight: 700;
 }
 
 .tag {
   display: inline-flex;
   align-items: center;
-  height: 20px;
-  padding: 0 7px;
-  border-radius: 4px;
+  height: 22px;
+  padding: 0 8px;
+  border-radius: var(--radius-xs);
   background: var(--raised);
   color: var(--text-2);
-  font-size: 12px;
+  font-size: var(--fs-micro);
+  font-weight: 500;
   white-space: nowrap;
 }
 .tag.squad {
   background: var(--accent-soft);
-  color: var(--accent);
+  color: var(--text);
+  font-weight: 600;
+}
+.tag.edited {
+  background: var(--gold-soft);
+  color: var(--gold);
+  font-weight: 700;
 }
 
+/* 패널: 구역 하나. 그림자 없이 테두리만 */
 .panel {
   border: 1px solid var(--line);
   border-radius: var(--radius-m);
@@ -493,8 +605,9 @@ select.field {
 }
 
 .panel-head h2 {
-  font-size: 17px;
+  font-size: var(--fs-h2);
   font-weight: 700;
+  letter-spacing: -0.015em;
 }
 
 .panel-body {
@@ -511,9 +624,32 @@ select.field {
   font-variant-numeric: tabular-nums;
 }
 .path {
-  font-size: 13px;
+  font-size: var(--fs-small);
   color: var(--text-2);
   word-break: break-all;
+}
+
+/* 전광판 숫자: 핵심 숫자는 같은 모양으로 크고 굵게, 자릿수를 맞춘다 */
+.score {
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.03em;
+  line-height: 1.05;
+}
+
+/* 한 줄 요약(나이, 포지션, 구단)은 가운뎃점 대신 간격으로 나눈다. 줄이 바뀌어도 앞에 구분선이 남지 않는다 */
+.meta {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  min-width: 0;
+  gap: 2px 16px;
+}
+.meta > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
 }
 
 kbd {
@@ -522,10 +658,10 @@ kbd {
   padding: 0 6px;
   border: 1px solid var(--line-strong);
   border-bottom-width: 2px;
-  border-radius: 4px;
+  border-radius: var(--radius-xs);
   background: var(--raised);
   font: inherit;
-  font-size: 12px;
+  font-size: var(--fs-micro);
   font-weight: 600;
   line-height: 18px;
   text-align: center;
@@ -547,6 +683,7 @@ kbd {
   flex: 1;
 }
 
+/* 빈 화면: 무엇을 하면 되는지 알려 준다 */
 .empty {
   padding: 48px 16px;
   color: var(--text-2);
@@ -556,7 +693,8 @@ kbd {
   display: block;
   margin-bottom: 6px;
   color: var(--text);
-  font-size: 18px;
+  font-size: 19px;
+  font-weight: 700;
 }
 
 /* ---------- 스쿼드 표 ---------- */
@@ -634,12 +772,15 @@ kbd {
   user-select: none;
 }
 .ptable .heads th:hover {
-  color: var(--accent);
+  color: var(--text);
+  background: var(--raised);
 }
+/* 정렬 중인 열: 굵은 글자와 밑줄(화살표 아이콘과 함께) */
 .ptable .heads th[aria-sort='ascending'],
 .ptable .heads th[aria-sort='descending'] {
-  color: var(--accent);
-  font-weight: 600;
+  color: var(--text);
+  font-weight: 800;
+  box-shadow: inset 0 -2px 0 var(--accent);
 }
 
 .th-inner {
@@ -690,7 +831,7 @@ kbd {
   background: var(--accent-soft);
 }
 .ptable tbody tr.row.selected td.sticky-col {
-  background: #2c2f22;
+  background: #264136;
   box-shadow: inset 3px 0 0 var(--accent);
 }
 .ptable tbody tr.row:focus-visible td {
@@ -709,7 +850,7 @@ kbd {
   border: 0;
 }
 
-/* 능력치 칩: 게임과 같은 네 단계. 색과 함께 굵기도 올라가서 색을 구분하기 어려워도 읽힌다. */
+/* 능력치 칩: 게임과 같은 네 단계. 색과 함께 굵기와 윤곽이 올라가서, 색을 구분하기 어려워도 읽힌다. */
 .attr-chip {
   display: inline-flex;
   align-items: center;
@@ -717,7 +858,7 @@ kbd {
   min-width: 32px;
   height: 26px;
   padding: 0 6px;
-  border-radius: 6px;
+  border-radius: var(--radius-xs);
   font-variant-numeric: tabular-nums;
   line-height: 1;
 }
@@ -735,18 +876,20 @@ kbd {
   background: var(--a3-bg);
   color: var(--a3-ink);
   font-weight: 650;
+  box-shadow: inset 0 0 0 1px var(--a3-edge);
 }
 .attr-chip.a4 {
   background: var(--a4-bg);
   color: var(--a4-ink);
   font-weight: 800;
+  box-shadow: inset 0 0 0 1.5px var(--a4-edge);
 }
 :root[data-density='comfortable'] .attr-chip {
   height: 30px;
   min-width: 36px;
 }
 .ranged {
-  font-size: 11.5px;
+  font-size: var(--fs-micro);
   text-decoration: underline dotted;
   text-underline-offset: 3px;
 }
@@ -755,7 +898,7 @@ kbd {
   display: flex;
   align-items: center;
   gap: 6px;
-  font-size: 13px;
+  font-size: var(--fs-small);
   color: var(--text-3);
 }
 .legend .attr-chip {
@@ -795,7 +938,7 @@ kbd {
   padding: 18px 16px;
   border: 1px solid var(--line-strong);
   border-radius: var(--radius-m);
-  background: var(--surface);
+  background: var(--turf);
   min-width: 720px;
 }
 .pitch::before {
@@ -848,10 +991,10 @@ kbd {
 .depth-pos {
   flex: 1;
   color: var(--text-2);
-  font-size: 12px;
+  font-size: 12.5px;
 }
 .depth-note {
-  font-size: 12px;
+  font-size: 12.5px;
   color: var(--text-2);
 }
 .depth-note.bad {
@@ -901,7 +1044,7 @@ kbd {
   flex: none;
   width: 12px;
   color: var(--text-3);
-  font-size: 11px;
+  font-size: 12.5px;
   font-weight: 400;
 }
 .depth-name {
@@ -920,7 +1063,7 @@ kbd {
 .depth-empty {
   padding: 4px;
   color: var(--text-3);
-  font-size: 12px;
+  font-size: 12.5px;
 }
 
 /* ---------- 선수 비교 ---------- */
@@ -945,7 +1088,7 @@ kbd {
   display: inline-flex;
   align-items: center;
   gap: 8px;
-  font-size: 13px;
+  font-size: 14px;
 }
 
 .compare {
@@ -987,7 +1130,7 @@ kbd {
 }
 .compare-note {
   margin-top: 10px;
-  font-size: 12px;
+  font-size: 12.5px;
 }
 
 .radar svg {
@@ -1013,7 +1156,7 @@ kbd {
 }
 .radar-tick {
   fill: var(--text-3);
-  font-size: 10px;
+  font-size: 11px;
 }
 .radar-label {
   fill: var(--text-2);
@@ -1237,8 +1380,8 @@ a {
 }
 .weights label.changed span::after {
   content: ' (바꿈)';
-  color: var(--accent);
-  font-size: 11px;
+  color: var(--gold);
+  font-size: 12.5px;
 }
 .weights input {
   width: 52px;
@@ -1249,7 +1392,7 @@ a {
 .weights-group {
   margin: 14px 0 0;
   color: var(--text-3);
-  font-size: 12px;
+  font-size: 12.5px;
   font-weight: 600;
 }
 
@@ -1304,7 +1447,7 @@ a {
   padding-bottom: 4px;
   border-bottom: 1px solid var(--line);
   color: var(--text-2);
-  font-size: 12px;
+  font-size: 12.5px;
   font-weight: 600;
 }
 .attr-list {
@@ -1392,10 +1535,10 @@ a {
 
 .backup-notice {
   margin: 12px 0;
-  padding: 10px 12px;
-  border-left: 3px solid var(--good);
-  background: var(--surface);
+  padding: 10px 14px;
+  border: 1px solid rgba(95, 220, 160, 0.4);
   border-radius: var(--radius-s);
+  background: var(--good-soft);
 }
 
 .backup-table {
@@ -1405,15 +1548,16 @@ a {
 }
 
 .backup-table th {
-  padding: 8px 14px;
+  padding: 10px 20px;
   text-align: left;
-  font-weight: 500;
-  color: var(--text-3);
-  border-bottom: 1px solid var(--line);
+  font-size: var(--fs-small);
+  font-weight: 600;
+  color: var(--text-2);
+  border-bottom: 1px solid var(--line-strong);
 }
 
 .backup-table td {
-  padding: 8px 14px;
+  padding: 10px 20px;
   border-bottom: 1px solid var(--line);
   vertical-align: middle;
 }
@@ -1431,9 +1575,11 @@ a {
 }
 
 .backup-table .actions {
-  display: flex;
-  justify-content: flex-end;
-  gap: 6px;
+  text-align: right;
+  white-space: nowrap;
+}
+.backup-table .actions .btn + .btn {
+  margin-left: 6px;
 }
 
 /* ---------- 에디터 ---------- */
@@ -1585,7 +1731,7 @@ a {
 }
 .edit-cell.changed input,
 .edit-cell.changed.banded input {
-  border: 2px solid var(--accent);
+  border: 2px solid var(--gold);
   font-weight: 800;
 }
 
@@ -1604,7 +1750,7 @@ a {
 
 .start {
   display: grid;
-  gap: 16px;
+  gap: 14px;
   max-width: 860px;
 }
 .start-line {
@@ -1614,7 +1760,7 @@ a {
 }
 .start .panel-body > .faint {
   margin-top: 6px;
-  font-size: 12px;
+  font-size: 12.5px;
 }
 .save-list {
   margin: 0;
@@ -1626,9 +1772,9 @@ a {
 .save-row {
   display: flex;
   align-items: center;
-  gap: 10px;
-  min-height: 38px;
-  padding: 0 12px;
+  gap: 12px;
+  min-height: 44px;
+  padding: 0 14px;
   border: 1px solid var(--line);
   border-radius: var(--radius-s);
   cursor: pointer;
@@ -1639,6 +1785,7 @@ a {
 .save-row.on {
   border-color: var(--accent);
   background: var(--accent-soft);
+  box-shadow: inset 3px 0 0 var(--accent);
 }
 .save-row .save-name {
   font-weight: 600;
@@ -1711,8 +1858,8 @@ a {
   border-radius: 50%;
   background: var(--raised);
   color: var(--text);
-  font-size: 13px;
-  font-weight: 700;
+  font-size: var(--fs-small);
+  font-weight: 800;
 }
 
 .list-empty {
@@ -1722,23 +1869,43 @@ a {
   padding: 8px 4px;
 }
 
-/* 홈의 단계 표시: 끝난 단계는 초록 */
+/* 시작 화면: 패스 길처럼 점선으로 이어진 세 단계. 끝난 단계는 초록 + 체크 아이콘 */
+.start-step {
+  position: relative;
+  display: grid;
+  grid-template-columns: 34px minmax(0, 1fr);
+  gap: 0 16px;
+  align-items: start;
+}
+.start-step:not(:last-child)::before {
+  content: '';
+  position: absolute;
+  left: 16px;
+  top: 40px;
+  bottom: -14px;
+  border-left: 2px dashed var(--line-strong);
+}
+.start-step.done:not(:last-child)::before {
+  border-left-color: var(--good);
+}
 .step {
   display: grid;
   place-items: center;
   flex: none;
-  width: 28px;
-  height: 28px;
+  width: 34px;
+  height: 34px;
+  margin-top: 14px;
   border: 2px solid var(--line-strong);
   border-radius: 50%;
+  background: var(--surface);
   color: var(--text-2);
-  font-size: 14px;
+  font-size: 15px;
   font-weight: 800;
   font-variant-numeric: tabular-nums;
 }
 .step.done {
   border-color: var(--good);
-  background: rgba(99, 214, 157, 0.16);
+  background: var(--good-soft);
   color: var(--good);
 }
 

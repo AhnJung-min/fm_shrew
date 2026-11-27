@@ -6,6 +6,7 @@ import {
   fitWageModel,
   NO_DASHBOARD,
   overpaidPlayers,
+  recommendSlotOf,
   surplusReport,
   type DashboardData,
   type LoanEntry
@@ -22,6 +23,7 @@ import type { SeasonMatch, SeasonResult, SeasonTableRow } from '@shared/season'
 import type { ColumnInfo, SquadResult } from '@shared/types'
 import {
   categoriesOf,
+  effectiveScore,
   SAVE_ATTRIBUTE_ORDER,
   shownValue,
   type CandidateBench,
@@ -104,26 +106,32 @@ export function mockCandidates(query: CandidateQuery, empty: boolean): Candidate
   const scoreOf = (player: MockPlayer): number =>
     Math.round((weights.reduce((sum, [id, weight]) => sum + shownValue(player.attributes[ATTRIBUTE_INDEX.get(id)!]) * weight, 0) / total / 20) * 1000) / 10
 
+  const ratingOf = (player: MockPlayer): number => Math.max(...slots.map((slot) => player.positions[slot]))
   const mine = PLAYERS.filter((player) => player.mine && eligible(player))
-    .map((player) => ({ player, score: scoreOf(player) }))
-    .sort((a, b) => b.score - a.score)
+    .map((player) => {
+      const score = scoreOf(player)
+      return { player, score, eff: effectiveScore(score, ratingOf(player), null, FALLBACK_NORM.sigma) }
+    })
+    .sort((a, b) => b.eff - a.eff)
   const bench: CandidateBench =
     (analysis && slotFound ? slotBench(analysis, slotFound.slot.index) : null) ?? {
-      starter: mine[0] ? { name: mine[0].player.name, score: mine[0].score, ca: mine[0].player.ca, age: mine[0].player.age } : null,
-      backup: mine[1] ? { name: mine[1].player.name, score: mine[1].score } : null
+      starter: mine[0] ? { name: mine[0].player.name, score: mine[0].eff, shownScore: mine[0].score, ca: mine[0].player.ca, age: mine[0].player.age } : null,
+      backup: mine[1] ? { name: mine[1].player.name, score: mine[1].eff, shownScore: mine[1].score } : null
     }
   const mineAll = PLAYERS.filter((player) => player.mine)
   const money = squadMoney(
     mineAll.map((player) => player.ca * 900),
     mineAll.map((player) => Math.round(player.ca ** 3 * 2.2))
   )
-  const need = slotFound ? slotFound.need : null
+  const group = slotFound ? slotFound.group : null
+  const need = group ? group.need : null
   const context: RecommendContext = {
     starter: bench.starter,
-    backup: bench.backup ? { score: bench.backup.score } : null,
+    backup: bench.backup ? { score: bench.backup.score, shownScore: bench.backup.shownScore } : null,
     today: { year: 2026, day: 182 },
     money,
-    need
+    need,
+    groupSlots: group?.slots.length
   }
   // 미리보기에는 세이브 전체가 없어 기준 분포를 구하지 못한다: 대신하는 값으로 같은 식을 돌린다
   const norm = FALLBACK_NORM
@@ -137,7 +145,7 @@ export function mockCandidates(query: CandidateQuery, empty: boolean): Candidate
       category: query.category,
       goalkeeper,
       roleScore: score,
-      roleRating: Math.max(...slots.map((slot) => player.positions[slot])),
+      roleRating: ratingOf(player),
       age: player.age,
       ca: player.ca,
       pa: player.pa,
@@ -156,7 +164,7 @@ export function mockCandidates(query: CandidateQuery, empty: boolean): Candidate
     .filter((player) => !search || player.name.includes(search))
     .map((player) => {
       const score = scoreOf(player)
-      const categories = categoriesOf({ score, age: player.age, ca: player.ca, pa: player.pa, hasClub: player.club !== '자유 계약' }, bench, norm, goalkeeper)
+      const categories = categoriesOf({ score, age: player.age, ca: player.ca, pa: player.pa, hasClub: player.club !== '자유 계약', rating: ratingOf(player) }, bench, norm, goalkeeper)
       if (categories.length > 0) counts.all++
       for (const category of categories) counts[category]++
       return { player, score, categories }
@@ -175,6 +183,7 @@ export function mockCandidates(query: CandidateQuery, empty: boolean): Candidate
     ranked: picked.length,
     norm,
     need,
+    group: group ? { label: group.label, slots: group.slots.length } : null,
     baseline: money,
     rows: picked.map(({ player, score, categories, recommend: recommendation }) => ({
       uid: player.uid,
@@ -192,7 +201,7 @@ export function mockCandidates(query: CandidateQuery, empty: boolean): Candidate
       ca: player.ca,
       pa: player.pa,
       score,
-      gap: bench.starter ? Math.round((score - bench.starter.score) * 10) / 10 : null,
+      gap: bench.starter ? Math.round((score - (bench.starter.shownScore ?? bench.starter.score)) * 10) / 10 : null,
       categories,
       tier: tierOf(recommendation.total),
       attributes: player.attributes.map(shownValue)
@@ -286,6 +295,7 @@ export function mockSquad(empty: boolean): SquadResult {
     return {
       idx: player.uid,
       name: player.name,
+      ratings: player.positions,
       cells: {
         이름: text(player.name),
         포지션: text(player.position),
@@ -386,6 +396,7 @@ export function mockDashboard(empty: boolean, settings: { formation: string; slo
   const analysis = analyseTactic({ rows: squad.rows, columns: squad.columns, today: squad.today, formation: settings.formation, slotRoles: settings.slotRoles, roleWeights: {} })!
   const contracts = contractWindows(players, squad.today)
   const need = analysis.byNeed[0]
+  const slot = recommendSlotOf(analysis.formation.id, need)
 
   // 지어낸 주급 기준선: 선수마다 주급이 능력의 지수 함수에 가깝게 흩어지도록 만든 표본
   const points = Array.from({ length: 400 }, (_, i) => {
@@ -414,7 +425,7 @@ export function mockDashboard(empty: boolean, settings: { formation: string; slo
       table: season.table ?? null,
       recent: season.recent,
       next: season.upcoming[0] ?? null,
-      need: { label: need.label, roleLabel: need.roleLabel, need: need.need, level: need.level, levelLabel: need.levelLabel, reason: need.reason, formation: analysis.formation.label },
+      need: { label: slot.label, roleLabel: slot.roleLabel, need: slot.need, level: slot.level, levelLabel: slot.levelLabel, reason: slot.reason, formation: analysis.formation.label },
       expiring: { known: contracts.known, count: contracts.within1y.length, names: contracts.within1y.map((row) => row.name) }
     }),
     squad: {
@@ -433,18 +444,7 @@ export function mockDashboard(empty: boolean, settings: { formation: string; slo
     recommend: {
       ok: true,
       matched: candidates.matched,
-      slot: {
-        formation: analysis.formation.id,
-        index: need.slot.index,
-        label: need.label,
-        roleLabel: need.roleLabel,
-        need: need.need,
-        levelLabel: need.levelLabel,
-        level: need.level,
-        reason: need.reason,
-        starter: need.slot.starter ? { name: need.slot.starter.name, score: need.slot.starter.score } : null,
-        backup: need.slot.backups[0] ? { name: need.slot.backups[0].name, score: need.slot.backups[0].score } : null
-      },
+      slot,
       rows: candidates.rows.slice(0, 3).map((row) => ({
         uid: row.uid, name: row.name, age: row.age, position: row.position, club: row.club, clubUid: null, ca: row.ca, pa: row.pa, total: row.recommend.total, tier: row.tier, score: row.score, gap: row.gap
       }))

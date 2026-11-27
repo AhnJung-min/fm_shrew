@@ -4,6 +4,58 @@ export const POSITION_KEYS = ['GK', 'SW', 'DL', 'DC', 'DR', 'DM', 'ML', 'MC', 'M
 /** 이 값 이상이면 그 자리에서 뛸 수 있는 것으로 본다(게임의 "능숙" 이상) */
 export const PLAYABLE_RATING = 15
 
+/** 이 숙련이면 자연스러운 자리다(감점 없음) */
+export const POSITION_NATURAL = 20
+/**
+ * 숙련을 모르는 선수(숙련 숫자가 없는 옛 기록·미리보기)를 그 자리에서 뛸 수 있다고 적힌 경우에 보는 값.
+ * 감점하지 않는 쪽으로 본다(모르는 값으로 선수를 깎지 않는다).
+ */
+export const RATING_UNKNOWN_ASSUMED = POSITION_NATURAL
+
+/**
+ * 포지션 숙련 r에 따른 적합도 감점(그 역할 표준편차 σ의 배수). 곱셈 보정으로 총점을 막지 않고 적합도에서 뺀다(검토 2회차).
+ *   r ≥ 20            0
+ *   15 ≤ r < 20       0.08 · (20 - r)              (15에서 0.40σ)
+ *   10 ≤ r < 15       0.40 + 0.30 · (15 - r)       (10에서 1.90σ)
+ *   r < 10            1.90 + 0.50 · (10 - r)       (1에서 6.40σ)
+ * 계수 0.08, 0.30, 0.50은 추정이다(게임에서 숙련 15~19와 20의 실제 차이를 아직 대조하지 못했다).
+ */
+export const PENALTY_ACCOMPLISHED_PER_POINT = 0.08
+export const PENALTY_AWKWARD_BASE = 0.4
+export const PENALTY_AWKWARD_PER_POINT = 0.3
+export const PENALTY_AWKWARD_FROM = 10
+export const PENALTY_POOR_BASE = 1.9
+export const PENALTY_POOR_PER_POINT = 0.5
+
+export function posPenaltySigma(rating: number): number {
+  const r = Math.max(0, rating)
+  if (r >= POSITION_NATURAL) return 0
+  if (r >= PLAYABLE_RATING) return PENALTY_ACCOMPLISHED_PER_POINT * (POSITION_NATURAL - r)
+  if (r >= PENALTY_AWKWARD_FROM) return PENALTY_AWKWARD_BASE + PENALTY_AWKWARD_PER_POINT * (PLAYABLE_RATING - r)
+  return PENALTY_POOR_BASE + PENALTY_POOR_PER_POINT * (PENALTY_AWKWARD_FROM - r)
+}
+
+/**
+ * 숙련이 10 미만이면 총점에 곱하는 보정: 0.10 + 0.10 · (r - 1) (1에서 0.10, 9에서 0.90). 10 이상이면 1.
+ * 적합도에서 빼는 것만으로는 "뛸 수 없는 자리의 선수가 다른 항목 점수로 위에 오르는 것"을 막지 못해서 남겨 둔 안전장치다. 추정.
+ */
+export const LOW_GATE_BELOW = 10
+export const LOW_GATE_BASE = 0.1
+export const LOW_GATE_STEP = 0.1
+
+export function lowGate(rating: number): number {
+  if (rating >= LOW_GATE_BELOW) return 1
+  return Math.max(0, LOW_GATE_BASE + LOW_GATE_STEP * (rating - 1))
+}
+
+/** 숙련 15개(POSITION_KEYS 순서)에서 한 자리의 숙련. 숫자가 없으면 null */
+export function ratingAt(ratings: readonly number[] | undefined, position: string): number | null {
+  if (!ratings) return null
+  const at = (POSITION_KEYS as readonly string[]).indexOf(position)
+  const value = at < 0 ? undefined : ratings[at]
+  return value === undefined ? null : value
+}
+
 type Side = 'R' | 'L' | 'C'
 
 /** 줄(D, WB, M, AM)마다 어느 숙련도가 어느 쪽인지 */

@@ -1,10 +1,10 @@
-import { buildDepth, FORMATION_BY_ID, FORMATIONS, type DepthSlot, type Formation } from './depth'
-import { withJosa } from './korean'
+import { buildDepth, FORMATION_BY_ID, FORMATIONS, type DepthPlayer, type DepthSlot, type Formation } from './depth'
+import { joinClauses, withJosa } from './korean'
 import { FALLBACK_NORM, normOf, zOf, zWords, type RoleNorm, type RoleNorms } from './norms'
-import { parsePositions } from './positions'
+import { parsePositions, posPenaltySigma, ratingAt, RATING_UNKNOWN_ASSUMED } from './positions'
 import { attributesOf, effectiveWeights, ROLE_BY_ID, scoreRole, type AttributeValue, type PositionKey } from './roles'
 import type { ColumnInfo, PlayerRow } from './types'
-import { AGING_START_AGE, AGING_START_AGE_GOALKEEPER } from './world'
+import { agingDrop, AGING_START_AGE, AGING_START_AGE_GOALKEEPER, type CandidateBench } from './world'
 
 /**
  * 전술 분석: 고른 포메이션과 자리별 역할(settings.formation, settings.slotRoles)을 기준으로
@@ -65,13 +65,13 @@ export const NEED_FACTOR_LABEL: Record<NeedFactorId, string> = {
 }
 
 export const NEED_FACTOR_HELP: Record<NeedFactorId, string> = {
-  quality: '주전의 적합도가 같은 역할의 상위권 선수들(평균 μ점)에 견줘 얼마나 낮은가. 역할마다 점수 눈금이 달라 표준편차로 잽니다.',
+  quality: '주전의 적합도가 같은 역할의 상위권 선수들(평균 μ점)에 견줘 얼마나 낮은가. 역할마다 점수 눈금이 달라 표준편차로 재고, 주전의 포지션 숙련이 20보다 낮으면 그만큼 뺀 점수로 봅니다.',
   depth: '이 자리를 뛸 수 있는 후보가 몇 명이고, 첫 후보가 주전과 얼마나 차이 나는가.',
   age: '주전이 31세 이상(골키퍼는 34세 이상)이면 곧 내려갈 것으로 봅니다.',
   contract: '주전의 계약이 12개월 안에 끝나는가. 가까울수록 위험합니다.'
 }
 
-/** 주전 전력 위험 = clamp01((1 - z) / 3): z +1 이상이면 0, 0이면 0.33, -1이면 0.67, -2 이하면 1 */
+/** 주전 전력 위험 = clamp01((1 - z_eff) / 3): z_eff +1 이상이면 0, 0이면 0.33, -1이면 0.67, -2 이하면 1 (z_eff = 포지션 숙련 감점을 뺀 적합도의 z) */
 export const QUALITY_Z_GOOD = 1
 export const QUALITY_Z_SPAN = 3
 /** 후보가 없으면 1, 한 명이면 0.5, 두 명 이상이면 0 */
@@ -134,7 +134,7 @@ export interface NeedFactor {
 export interface SquadOption {
   idx: number
   name: string
-  /** 이 자리 역할의 적합도 */
+  /** 이 자리 역할의 적합도(화면에 보이는 값) */
   score: number
   uncertain: boolean
   age: number | null
@@ -149,14 +149,46 @@ export interface SquadOption {
   note: string
 }
 
+/**
+ * 같은 포지션·같은 역할의 자리들(예: 4-2-3-1의 중앙 수비 두 자리). 영입이 바꾸는 것은 그 가운데 가장 약한 주전이라,
+ * 영입 후보는 자리 번호가 아니라 그룹 기준으로 판정한다(어느 자리를 골라도 같은 결과).
+ */
+export interface SlotGroup {
+  id: string
+  position: PositionKey
+  roleId: string
+  roleLabel: string
+  /** "중앙 수비 (2자리)". 같은 포지션에 역할이 다른 그룹이 있으면 "최전방(타깃맨)"처럼 역할을 붙인다 */
+  label: string
+  /** 그룹에 든 자리의 순번들(포메이션 순서) */
+  slots: number[]
+  /** 자리들의 보강 필요도 가운데 최대(0~100) */
+  need: number
+  level: NeedLevelId
+  levelLabel: string
+  /** 필요도가 가장 큰 자리의 이유 */
+  reason: string
+  /**
+   * 영입 후보가 견주는 기준. starter는 그룹 주전들 가운데 (숙련 감점과 나이 하락을 반영한) 적합도가 가장 낮은 선수이고,
+   * 그룹에 주전이 없는 자리가 하나라도 있으면 null이다. backup은 그룹 자리들의 첫 후보 가운데 (숙련 감점을 뺀) 적합도가 가장 높은 선수.
+   */
+  bench: CandidateBench
+}
+
 export interface SlotAnalysis {
   slot: DepthSlot
   /** "중앙 수비 1"처럼 같은 자리가 둘 이상이면 번호를 붙인 이름 */
   label: string
   positionLabel: string
   roleLabel: string
+  /** 같은 포지션·같은 역할의 자리들 */
+  group: SlotGroup
   starterScore: number | null
-  /** 주전 적합도가 이 역할 기준에서 평균보다 표준편차의 몇 배 위인가 */
+  /** 주전의 포지션 숙련 감점을 뺀 적합도(숙련 20이면 starterScore와 같다) */
+  starterEff: number | null
+  /** 주전의 그 자리 포지션 숙련(1~20) */
+  starterRating: number | null
+  /** 주전 적합도(숙련 감점을 뺀 값, z_eff)가 이 역할 기준에서 평균보다 표준편차의 몇 배 위인가 */
   starterZ: number | null
   /** 주전의 현재 능력(1~200) */
   starterCa: number | null
@@ -167,6 +199,8 @@ export interface SlotAnalysis {
   /** 기준 분포가 실제 세이브에서 구한 것인지(world), 구하지 못해 대신한 값인지(fallback) */
   normSource: 'world' | 'fallback'
   backupScore: number | null
+  /** 첫 후보의 숙련 감점을 뺀 적합도 */
+  backupEff: number | null
   /** 이 자리를 뛸 수 있는 내 선수 수(주전 포함) */
   eligible: number
   need: number
@@ -185,8 +219,10 @@ export interface LineSummary {
   id: LineId
   label: string
   slots: number
-  /** 주전 적합도 평균. 주전이 없으면 null */
+  /** 주전 적합도 평균(화면의 점수). 역할마다 눈금이 달라 줄끼리 견주는 데는 쓰지 않고 참고로만 보여 준다. 주전이 없으면 null */
   fitAverage: number | null
+  /** 주전 z_eff의 평균: 줄의 주전이 각자 역할의 상위권 평균보다 표준편차의 몇 배 위인가. 줄끼리의 비교(가장 강한·약한 줄)는 이 값으로 한다. 주전이 없으면 null */
+  zAverage: number | null
   needAverage: number
 }
 
@@ -196,11 +232,15 @@ export interface TacticAnalysis {
   slots: SlotAnalysis[]
   /** 보강 필요도가 높은 순 */
   byNeed: SlotAnalysis[]
+  /** 같은 포지션·같은 역할의 자리 묶음(포메이션 순서) */
+  groups: SlotGroup[]
+  /** 그룹을 보강 필요도(그룹 최대)가 높은 순으로 */
+  groupsByNeed: SlotGroup[]
   lines: LineSummary[]
   /** 주전들의 적합도 평균. 주전이 하나도 없으면 null */
   fitAverage: number | null
   needAverage: number
-  /** 수비·미드필더·공격 가운데 가장 강한 줄과 가장 약한 줄(줄이 둘 미만이면 null) */
+  /** 수비·미드필더·공격 가운데 가장 강한 줄과 가장 약한 줄(주전 z_eff 평균 기준, 줄이 둘 미만이면 null) */
   strongest: LineSummary | null
   weakest: LineSummary | null
 }
@@ -233,6 +273,7 @@ export interface TacticInput {
 
 interface Person {
   row: PlayerRow
+  ratings: number[] | undefined
   positions: string[]
   attrs: Record<string, AttributeValue>
   age: number | null
@@ -255,6 +296,7 @@ export function analyseTactic(input: TacticInput): TacticAnalysis | null {
 
   const people: Person[] = rows.map((row) => ({
     row,
+    ratings: row.ratings,
     positions: parsePositions(row.cells[positionHeader]?.raw ?? ''),
     attrs: attributesOf(row, columns),
     age: ageHeader ? (row.cells[ageHeader]?.num ?? null) : null,
@@ -281,6 +323,9 @@ export function analyseTactic(input: TacticInput): TacticAnalysis | null {
     const positionLabel = POSITION_LABEL[slot.position]
     const label = (count.get(slot.position) ?? 1) > 1 ? `${positionLabel} ${nth}` : positionLabel
     const weights = effectiveWeights(slot.roleId, roleWeights)
+    const known = input.norms?.[slot.roleId]
+    const norm = known ? normOf(input.norms, slot.roleId) : fallbackNorm
+    const normSource = known ? 'world' : 'fallback'
 
     // 내 선수 모두의 이 역할 적합도
     const scored: Array<{ person: Person; score: number; uncertain: boolean }> = []
@@ -316,23 +361,20 @@ export function analyseTactic(input: TacticInput): TacticAnalysis | null {
       }
     })
 
-    const known = input.norms?.[slot.roleId]
-    const norm = known ? normOf(input.norms, slot.roleId) : fallbackNorm
-    const normSource = known ? 'world' : 'fallback'
+    // 후계자: 23세 이하이고 이 자리를 뛸 수 있는 내 선수 가운데, 숙련 감점을 뺀 적합도가 주전(같은 방식으로 뺀 값)에 크게 뒤지지 않는 선수
+    const successor = starter
+      ? scored.find(({ person, score }) => {
+          if (person.row.idx === starter.idx || person.age === null || person.age > SUCCESSOR_MAX_AGE || !person.positions.includes(slot.position)) return false
+          const rating = ratingAt(person.ratings, slot.position) ?? RATING_UNKNOWN_ASSUMED
+          return score - norm.sigma * posPenaltySigma(rating) >= starter.effScore - SUCCESSOR_MAX_GAP_SIGMAS * norm.sigma
+        })
+      : undefined
     const { need, factors, reason } = needOf({
       slot,
       norm,
       normSource,
       starterPerson: starter ? personOf.get(starter.idx) : undefined,
-      successor: scored.find(
-        ({ person, score }) =>
-          person.row.idx !== starter?.idx &&
-          person.age !== null &&
-          person.age <= SUCCESSOR_MAX_AGE &&
-          person.positions.includes(slot.position) &&
-          starter !== null &&
-          score >= starter.score - SUCCESSOR_MAX_GAP_SIGMAS * norm.sigma
-      ),
+      successor,
       today
     })
     const level = needLevel(need)
@@ -341,13 +383,18 @@ export function analyseTactic(input: TacticInput): TacticAnalysis | null {
       label,
       positionLabel,
       roleLabel: ROLE_BY_ID[slot.roleId]?.label ?? slot.roleId,
+      // group은 아래에서 자리들을 묶은 뒤 채운다
+      group: undefined as unknown as SlotGroup,
       starterScore: starter?.score ?? null,
-      starterZ: starter ? zOf(norm, starter.score) : null,
+      starterEff: starter?.effScore ?? null,
+      starterRating: starter?.rating ?? null,
+      starterZ: starter ? zOf(norm, starter.effScore) : null,
       starterAge: starter ? (personOf.get(starter.idx)?.age ?? null) : null,
       norm,
       normSource,
       starterCa: starter ? (personOf.get(starter.idx)?.ca ?? null) : null,
       backupScore: slot.backups[0]?.score ?? null,
+      backupEff: slot.backups[0]?.effScore ?? null,
       eligible,
       need,
       level: level.id,
@@ -358,32 +405,109 @@ export function analyseTactic(input: TacticInput): TacticAnalysis | null {
     }
   })
 
+  const groups = buildGroups(analysed)
+  for (const each of analysed) each.group = groups.find((group) => group.slots.includes(each.slot.index))!
+
   const byNeed = [...analysed].sort((a, b) => b.need - a.need || a.slot.index - b.slot.index)
+  const groupsByNeed = [...groups].sort((a, b) => b.need - a.need || a.slots[0] - b.slots[0])
   const lines = LINE_ORDER.map((id): LineSummary | null => {
     const inLine = analysed.filter((each) => LINE_OF[each.slot.position] === id)
     if (inLine.length === 0) return null
     const scores = inLine.filter((each) => each.starterScore !== null).map((each) => each.starterScore!)
+    const zs = inLine.filter((each) => each.starterZ !== null).map((each) => each.starterZ!)
     return {
       id,
       label: LINE_LABEL[id],
       slots: inLine.length,
       fitAverage: scores.length > 0 ? round1(scores.reduce((a, b) => a + b, 0) / scores.length) : null,
+      zAverage: zs.length > 0 ? zs.reduce((a, b) => a + b, 0) / zs.length : null,
       needAverage: round1(inLine.reduce((sum, each) => sum + each.need, 0) / inLine.length)
     }
   }).filter((line): line is LineSummary => line !== null)
 
-  const field = lines.filter((line) => line.id !== 'goalkeeper' && line.fitAverage !== null)
-  const ranked = [...field].sort((a, b) => b.fitAverage! - a.fitAverage!)
+  // 가장 강한·약한 줄은 역할 눈금이 다른 점수 평균이 아니라 z_eff 평균으로 고른다(검토 2회차)
+  const field = lines.filter((line) => line.id !== 'goalkeeper' && line.zAverage !== null)
+  const ranked = [...field].sort((a, b) => b.zAverage! - a.zAverage!)
   return {
     formation,
     slots: analysed,
     byNeed,
+    groups,
+    groupsByNeed,
     lines,
     fitAverage,
     needAverage: round1(analysed.reduce((sum, each) => sum + each.need, 0) / Math.max(1, analysed.length)),
     strongest: ranked.length >= 2 ? ranked[0] : null,
     weakest: ranked.length >= 2 ? ranked[ranked.length - 1] : null
   }
+}
+
+/**
+ * 같은 포지션·같은 역할의 자리들을 한 그룹으로 묶는다(포메이션 순서). 영입이 바꾸는 것은 그룹의 가장 약한 주전이라,
+ *   a_i      = f_eff,i - 나이 하락(i)                  (i = 그룹의 주전. 하락은 31세부터, 골키퍼 34세부터 해마다 1점)
+ *   anchor_G = min a_i → 그 주전이 비교 기준 주전(CA 문턱도 그 주전의 CA)
+ *   backup_G = 그룹 자리들의 첫 후보 가운데 f_eff가 가장 높은 선수
+ *   need_G   = 그룹 자리들의 보강 필요도 가운데 최대
+ * 그룹의 자리 하나라도 주전이 없으면 비교 기준 주전은 없다(null: 그 자리는 누가 와도 채워진다).
+ */
+function buildGroups(analysed: SlotAnalysis[]): SlotGroup[] {
+  const byKey = new Map<string, SlotAnalysis[]>()
+  for (const each of analysed) {
+    const key = `${each.slot.position}:${each.slot.roleId}`
+    byKey.set(key, [...(byKey.get(key) ?? []), each])
+  }
+  const groupsOfPosition = new Map<PositionKey, number>()
+  for (const members of byKey.values()) {
+    const position = members[0].slot.position
+    groupsOfPosition.set(position, (groupsOfPosition.get(position) ?? 0) + 1)
+  }
+  return [...byKey.entries()]
+    .map(([id, members]): SlotGroup => {
+      const first = members[0]
+      const { position, roleId } = first.slot
+      const goalkeeper = position === 'GK'
+      const mostNeeded = members.reduce((best, each) => (each.need > best.need ? each : best), first)
+      const level = needLevel(mostNeeded.need)
+      const emptySlot = members.some((each) => !each.slot.starter)
+      let weakest: SlotAnalysis | null = null
+      if (!emptySlot) {
+        let weakestValue = Infinity
+        for (const each of members) {
+          const value = each.starterEff! - agingDrop(each.starterAge, goalkeeper)
+          if (value < weakestValue) {
+            weakestValue = value
+            weakest = each
+          }
+        }
+      }
+      let backup: DepthPlayer | null = null
+      for (const each of members) {
+        const next = each.slot.backups[0]
+        if (next && (!backup || next.effScore > backup.effScore)) backup = next
+      }
+      const bench: CandidateBench = {
+        starter: weakest
+          ? { name: weakest.slot.starter!.name, score: weakest.starterEff!, ca: weakest.starterCa ?? 0, age: weakest.starterAge, shownScore: weakest.starterScore! }
+          : null,
+        backup: backup ? { name: backup.name, score: backup.effScore, shownScore: backup.score } : null
+      }
+      const roleLabel = first.roleLabel
+      const base = (groupsOfPosition.get(position) ?? 1) > 1 ? `${first.positionLabel}(${roleLabel})` : first.positionLabel
+      return {
+        id,
+        position,
+        roleId,
+        roleLabel,
+        label: members.length > 1 ? `${base} (${members.length}자리)` : base,
+        slots: members.map((each) => each.slot.index),
+        need: mostNeeded.need,
+        level: level.id,
+        levelLabel: level.label,
+        reason: mostNeeded.reason,
+        bench
+      }
+    })
+    .sort((a, b) => a.slots[0] - b.slots[0])
 }
 
 function optionNote(
@@ -441,16 +565,18 @@ function needOf(args: {
   const unknownNote = '알 수 없어 보통 수준으로 보았습니다.'
 
   // 주전 전력: z가 낮을수록 위험
-  const z = zOf(norm, starter.score)
+  const eff = starter.effScore
+  const z = zOf(norm, eff)
   risks.quality.risk = clamp01((QUALITY_Z_GOOD - z) / QUALITY_Z_SPAN)
   const base = normSource === 'world' ? '같은 역할 상위권 선수들의 평균' : '우리 팀 주전들의 평균'
-  risks.quality.note = `주전 ${name}의 적합도 ${starter.score}점은 ${base}(${round1(norm.mu)}점)보다 ${Math.abs(round1(starter.score - norm.mu))}점 ${starter.score >= norm.mu ? '높고' : '낮고'}, 이 역할의 보통 점수 차이(표준편차 ${round1(norm.sigma)}점)로 보면 ${zWords(z)}.`
-  risks.quality.phrase = `주전 ${name}의 적합도(${starter.score}점)는 ${normSource === 'world' ? '이 역할 상위권' : '팀 주전'} 평균(${round1(norm.mu)}점)보다 ${starter.score >= norm.mu ? '조금 높은 수준입니다' : z >= -1 ? '조금 낮습니다' : '크게 낮습니다'}`
+  const penalty = starter.score - eff > 0.05 ? ` 포지션 숙련이 ${starter.rating}이라 적합도 ${starter.score}점에서 ${round1(starter.score - eff)}점(${round1(posPenaltySigma(starter.rating) * 100) / 100} 표준편차) 빼고 견주었습니다.` : ''
+  risks.quality.note = `주전 ${name}의 적합도 ${round1(eff)}점은 ${base}(${round1(norm.mu)}점)보다 ${Math.abs(round1(eff - norm.mu))}점 ${eff >= norm.mu ? '높고' : '낮고'}, 이 역할의 보통 점수 차이(표준편차 ${round1(norm.sigma)}점)로 보면 ${zWords(z)}.${penalty}`
+  risks.quality.phrase = `주전 ${name}의 적합도(${round1(eff)}점)는 ${normSource === 'world' ? '이 역할 상위권' : '팀 주전'} 평균(${round1(norm.mu)}점)보다 ${eff >= norm.mu ? '조금 높은 수준입니다' : z >= -1 ? '조금 낮습니다' : '크게 낮습니다'}`
 
   // 후보 두께
   const backups = slot.backups.length
   const countRisk = DEPTH_COUNT_RISK[Math.min(backups, DEPTH_COUNT_RISK.length - 1)]
-  const gap = backups > 0 ? starter.score - slot.backups[0].score : 0
+  const gap = backups > 0 ? starter.effScore - slot.backups[0].effScore : 0
   const gapRisk = backups > 0 ? DEPTH_GAP_MAX * clamp01((gap / norm.sigma - DEPTH_GAP_FREE_SIGMAS) / DEPTH_GAP_SPAN_SIGMAS) : 0
   risks.depth.risk = Math.max(countRisk, gapRisk)
   risks.depth.note =
@@ -512,23 +638,14 @@ function needOf(args: {
     .filter((each) => each.points >= REASON_MIN_POINTS && each.phrase && !each.assumed)
     .sort((a, b) => b.points - a.points)
     .slice(0, 2)
-  const reason = top.length > 0 ? `${top.map((each) => each.phrase).join(', ')}.` : '눈에 띄는 문제가 없습니다.'
+  const reason = top.length > 0 ? joinClauses(top.map((each) => each.phrase)) : '눈에 띄는 문제가 없습니다.'
   return { need, factors, reason }
 }
 
 /** 이름 뒤에 붙는 조사만 */
 const josaOf = (word: string, pair: '이/가'): string => withJosa(word, pair).slice(word.length)
 
-/** 고른 자리의 비교 기준(영입 후보가 주전·두 번째 선수와 견주는 값) */
-export function slotBench(
-  analysis: TacticAnalysis,
-  slotIndex: number
-): { starter: { name: string; score: number; ca: number; age: number | null } | null; backup: { name: string; score: number } | null } | null {
-  const found = analysis.slots[slotIndex]
-  if (!found) return null
-  const { starter, backups } = found.slot
-  return {
-    starter: starter ? { name: starter.name, score: starter.score, ca: found.starterCa ?? 0, age: found.starterAge } : null,
-    backup: backups[0] ? { name: backups[0].name, score: backups[0].score } : null
-  }
+/** 고른 자리의 비교 기준(영입 후보가 주전·두 번째 선수와 견주는 값). 같은 포지션·역할의 자리는 같은 그룹 값이다 */
+export function slotBench(analysis: TacticAnalysis, slotIndex: number): CandidateBench | null {
+  return analysis.slots[slotIndex]?.group.bench ?? null
 }

@@ -30,8 +30,9 @@ function Explainer(props: { category: CandidateCategory; baseline: SquadMoney | 
       <div className="reco-explain-body">
         <p>{TERM_HELP.recommend}</p>
         <p>
-          지금 고른 유형은 “{CATEGORY_LABEL[category]}”이고, 항목별 최고 점수(가중치)는 아래와 같습니다. 합하면 100점이고, 여기에 포지션 보정(0~1)을 곱한 것이
-          추천 점수입니다. 값을 알 수 없는 항목은 빼지 않고 보통(0.5)으로 보며, 설명에 그렇게 적습니다.
+          지금 고른 유형은 “{CATEGORY_LABEL[category]}”이고, 항목별 최고 점수(가중치)는 아래와 같습니다. 합하면 100점이 추천 점수입니다. 포지션 숙련이 20보다 낮거나 31세를 넘는
+          선수는 항목을 매기기 전에 적합도에서 그만큼 빼고(숙련이 10 미만이면 총점에도 한 번 더 곱합니다), 값을 알 수 없는 항목은 빼지 않고 보통(0.5)으로 보며 설명에 그렇게 적습니다.
+          “전체”와 “즉시 전력” 탭의 순위는 대부분 즉시 전력이 가르고, 나머지 항목은 비슷한 선수끼리 순서를 정합니다.
         </p>
         <table className="reco-weights">
           <thead>
@@ -60,7 +61,7 @@ function Explainer(props: { category: CandidateCategory; baseline: SquadMoney | 
         <p>
           등급은 점수의 절대값이 아니라, 같은 유형의 자격을 갖춘 선수 전체 안에서의 순위로 매깁니다: 상위 {percent(TIER_CUMULATIVE_SHARE[0])}%는 강력 추천, 다음{' '}
           {percent(TIER_CUMULATIVE_SHARE[1] - TIER_CUMULATIVE_SHARE[0])}%는 추천, 다음 {percent(TIER_CUMULATIVE_SHARE[2] - TIER_CUMULATIVE_SHARE[1])}%는 고려, 나머지는 보류입니다.
-          점수가 {TIER_MIN_TOTAL}점 미만이면 순위와 상관없이 보류입니다.
+          후보 수가 적어도 모든 등급이 나오도록 인원은 올림해서 셉니다. 점수가 {TIER_MIN_TOTAL}점 미만이면 순위와 상관없이 보류입니다.
         </p>
         <p className="muted">
           {baseline
@@ -114,9 +115,17 @@ export function RecommendPanel(props: {
           {row && reco && (
             <>
               <p className="reco-sum">
-                항목 점수의 합 <b className="num">{reco.base}</b> × 포지션 보정 <b className="num">{Math.round(reco.gate * 1000) / 1000}</b> = 추천 점수{' '}
-                <b className="num">{reco.total}</b>
-                <span className="muted"> · {reco.gateNote}</span>
+                항목 점수의 합 <b className="num">{reco.base}</b>
+                {reco.gate < 1 && (
+                  <>
+                    {' '}
+                    × 숙련 낮은 자리 보정 <b className="num">{Math.round(reco.gate * 100) / 100}</b>
+                  </>
+                )}{' '}
+                = 추천 점수 <b className="num">{reco.total}</b>
+              </p>
+              <p className="muted reco-tier-line">
+                {reco.fitNote} {reco.gateNote}
               </p>
               <p className="muted reco-tier-line">
                 {row.tier === 'outside'

@@ -4,8 +4,9 @@ import { parsePositions } from './positions'
 import type { RecommendTierId } from './recommend'
 import { attributesOf, effectiveWeights, scoreRole } from './roles'
 import type { SeasonMatch, SeasonTableRow } from './season'
-import { dateFromNumber, daysBetween, type TacticAnalysis, type Ymd } from './tactic'
+import { dateFromNumber, daysBetween, type SlotAnalysis, type TacticAnalysis, type Ymd } from './tactic'
 import type { ColumnInfo, PlayerRow } from './types'
+import type { CandidateBench } from './world'
 
 /**
  * 대시보드의 자료 모양과 순수 계산.
@@ -119,14 +120,38 @@ export interface OverpaidRow extends DashPlayer {
 export interface RecommendSlot {
   formation: string
   index: number
+  /** "중앙 수비 2자리"처럼 같은 포지션·역할의 자리 수까지 붙인 이름 */
   label: string
   roleLabel: string
   need: number
   levelLabel: string
   level: 'urgent' | 'recommended' | 'normal' | 'fine'
   reason: string
-  starter: { name: string; score: number } | null
-  backup: { name: string; score: number } | null
+  /** 같은 포지션·역할의 자리 수 */
+  groupSlots: number
+  /** 영입 후보 화면과 같은 비교 기준(자리가 여럿이면 가장 약한 주전과, 그 자리들의 첫 후보 가운데 가장 높은 선수) */
+  bench: CandidateBench
+}
+
+/**
+ * 가장 급한 자리를 대시보드 영입 추천의 기준으로 바꾼다. 영입 후보 화면처럼 같은 포지션·역할의 자리를 한 그룹으로 보고
+ * 그 그룹의 비교 기준을 쓴다(그래야 카드의 "주전과 적합도 +5.3"이 위에 적힌 주전과 맞는다).
+ */
+export function recommendSlotOf(formation: string, need: SlotAnalysis): RecommendSlot {
+  const { group } = need
+  const count = group.slots.length
+  return {
+    formation,
+    index: need.slot.index,
+    label: count > 1 ? `${need.positionLabel} ${count}자리` : need.label,
+    roleLabel: need.roleLabel,
+    need: group.need,
+    levelLabel: group.levelLabel,
+    level: group.level,
+    reason: group.reason,
+    groupSlots: count,
+    bench: group.bench
+  }
 }
 
 export interface RecommendRow {

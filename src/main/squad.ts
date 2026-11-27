@@ -73,7 +73,8 @@ export function squadTable(world: SaveWorld): SquadTable {
     return {
       idx: world.uids[k],
       name: world.names[k],
-      cells: Object.fromEntries(COLUMN_IDS.map((id) => [FIELD_BY_ID[id].label, values[id]]))
+      cells: Object.fromEntries(COLUMN_IDS.map((id) => [FIELD_BY_ID[id].label, values[id]])),
+      ratings: positionsOf(k)
     }
   })
   const first = mine.find((k) => world.club[k] >= 0)

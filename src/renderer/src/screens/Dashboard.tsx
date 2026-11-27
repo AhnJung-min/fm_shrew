@@ -1,4 +1,4 @@
-import { CircleAlert } from 'lucide-react'
+import { CircleAlert, CircleCheck, Info, OctagonAlert, TriangleAlert, type LucideIcon } from 'lucide-react'
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import {
   AGE_RISK_FROM,
@@ -25,9 +25,11 @@ import { formatPounds } from '@shared/playerView'
 import { RECOMMEND_TIER_LABEL, TIER_MEANING } from '@shared/recommend'
 import type { SeasonResult } from '@shared/season'
 import type { Settings, SquadResult } from '@shared/types'
+import { benchLine } from '@shared/world'
 import { api } from '@/api'
 import { ClubLogo } from '@/components/ClubLogo'
 import { GameCards } from '@/components/GameCards'
+import { MetaLine } from '@/components/MetaLine'
 import { PlayerDrawer } from '@/components/PlayerDrawer'
 import { PlayerFace } from '@/components/PlayerFace'
 import { SeasonCenter } from '@/components/SeasonCenter'
@@ -36,6 +38,8 @@ import '@/styles/season.css'
 import '@/styles/dashboard.css'
 
 const TONE_WORD: Record<Tone, string> = { good: '좋음', warn: '주의', bad: '위험', info: '참고' }
+/** 톤은 색만이 아니라 아이콘과 글자로도 알린다 */
+const TONE_ICON: Record<Tone, LucideIcon> = { good: CircleCheck, warn: TriangleAlert, bad: OctagonAlert, info: Info }
 
 const dateText = (date: DashDate): string => `${date.year}.${date.month}.${date.day}`
 const isoDate = (date: DashDate): string => `${date.year}-${String(date.month).padStart(2, '0')}-${String(date.day).padStart(2, '0')}`
@@ -48,10 +52,23 @@ function monthsLeft(days: number): string {
 }
 
 /** 카드 하나: 제목, 한 줄 설명, 내용, 그리고 값을 어디서 읽었는지 */
-function Card(props: { id?: string; title: string; hint: string; source: string; wide?: boolean; action?: ReactNode; children: ReactNode }) {
-  const { id, title, hint, source, wide, action, children } = props
+function Card(props: {
+  id?: string
+  title: string
+  hint: string
+  source: string
+  wide?: boolean
+  hero?: boolean
+  action?: ReactNode
+  children: ReactNode
+}) {
+  const { id, title, hint, source, wide, hero, action, children } = props
   return (
-    <section className={wide ? 'dash-card wide' : 'dash-card'} aria-labelledby={id ? `${id}-title` : undefined} id={id}>
+    <section
+      className={['dash-card', wide ? 'wide' : '', hero ? 'hero' : ''].filter(Boolean).join(' ')}
+      aria-labelledby={id ? `${id}-title` : undefined}
+      id={id}
+    >
       <header className="dash-card-head">
         <div>
           <h2 id={id ? `${id}-title` : undefined}>{title}</h2>
@@ -85,7 +102,7 @@ function sourceOf(save: string, ability: string, saveWhat = '', abilityWhat = ''
   return `${save}${saveWhat ? `(${saveWhat})` : ''}, ${ability}${abilityWhat ? `(${abilityWhat})` : ''}`
 }
 
-const meta = (player: DashPlayer): string => [player.age !== null ? `${player.age}세` : '', player.position].filter(Boolean).join(' · ')
+const metaItems = (player: DashPlayer): string[] => [player.age !== null ? `${player.age}세` : '', player.position]
 
 export function Dashboard(props: {
   dataKey: string
@@ -156,8 +173,7 @@ export function Dashboard(props: {
 
   const info = data?.meta
   const saveSource = info?.gameDate ? `세이브 기준 ${isoDate(info.gameDate)}` : '세이브 기준'
-  const abilitySource =
-    info?.abilitySource === 'game' && info.liveAt ? `게임 지금 값(${formatTime(info.liveAt)}에 받음)` : saveSource
+  const abilitySource = info?.abilitySource === 'game' && info.liveAt ? `게임 지금 값(${formatTime(info.liveAt)}에 받음)` : saveSource
   const selected = opened !== null && squad?.ok ? squad.rows.find((row) => row.idx === opened) : undefined
 
   let body: ReactNode
@@ -171,19 +187,31 @@ export function Dashboard(props: {
       </p>
     )
   } else {
-    body = <Cards data={data} link={link} season={season} saveSource={saveSource} abilitySource={abilitySource} loading={loading}
-      onOpen={setOpened} onGoSquad={onGoSquad} onFindTargets={onFindTargets} seasonRef={seasonRef} />
+    body = (
+      <Cards
+        data={data}
+        link={link}
+        season={season}
+        saveSource={saveSource}
+        abilitySource={abilitySource}
+        loading={loading}
+        onOpen={setOpened}
+        onGoSquad={onGoSquad}
+        onFindTargets={onFindTargets}
+        seasonRef={seasonRef}
+      />
+    )
   }
 
   return (
     <>
       <header className="page-head">
         <h1>대시보드</h1>
-        <span className="page-sub">{info ? `${info.club} · 구단 현황과 할 일을 한눈에 봅니다.` : '구단 현황과 할 일을 한눈에 봅니다.'}</span>
+        <span className="page-sub">구단 현황과 할 일을 한눈에 봅니다.</span>
         <div className="spacer" />
         {info && (
           <span className="faint num">
-            {info.saveName} · {saveSource}
+            <MetaLine items={[info.club, info.saveName, saveSource]} />
           </span>
         )}
       </header>
@@ -226,7 +254,9 @@ function Cards(props: {
           {list.map((entry) => (
             <li key={`${entry.uid}-${entry.name}`}>
               <Who player={entry} onOpen={onOpen} />
-              <span className="faint">{meta(entry)}</span>
+              <span className="faint">
+                <MetaLine items={metaItems(entry)} />
+              </span>
               <span className="dash-grow" />
               <span className="dash-inline">
                 <ClubLogo uid={entry.otherClubUid} size={18} />
@@ -267,6 +297,7 @@ function Cards(props: {
     <>
       <Card
         wide
+        hero
         id="dash-brief"
         title="오늘의 브리핑"
         hint="세이브에서 확인된 사실만 짧게 요약합니다. 자료가 없는 항목은 건너뜁니다."
@@ -281,12 +312,18 @@ function Cards(props: {
           <Empty>이 세이브에서 요약할 만한 경기·계약 자료를 찾지 못했습니다.</Empty>
         ) : (
           <ul className="brief">
-            {brief.map((line) => (
-              <li key={line.id} className={`brief-${line.tone}`}>
-                <span className="brief-tone">{TONE_WORD[line.tone]}</span>
-                <span>{line.text}</span>
-              </li>
-            ))}
+            {brief.map((line) => {
+              const ToneIcon = TONE_ICON[line.tone]
+              return (
+                <li key={line.id} className={`brief-${line.tone}`}>
+                  <span className="brief-tone">
+                    <ToneIcon size={15} aria-hidden="true" />
+                    {TONE_WORD[line.tone]}
+                  </span>
+                  <span>{line.text}</span>
+                </li>
+              )
+            })}
           </ul>
         )}
       </Card>
@@ -335,7 +372,9 @@ function Cards(props: {
           <>
             {loanList('임대 영입 선수', loans.in, '다른 구단에서 빌려 온 선수가 없습니다.')}
             {loanList('임대 방출 선수', loans.out, '다른 구단에 빌려 준 선수가 없습니다.')}
-            <p className="dash-note">임대는 계약 기록에서 읽었습니다: 원 소속과 맺은 계약과, 임대받은 팀과 맺은 기간 없는 기록이 함께 있는 선수입니다.</p>
+            <p className="dash-note">
+              임대는 계약 기록에서 읽었습니다: 원 소속과 맺은 계약과, 임대받은 팀과 맺은 기간 없는 기록이 함께 있는 선수입니다.
+            </p>
           </>
         ) : (
           <p className="dash-note">{squad.loanNote ?? '임대 선수는 확인 못 함'}</p>
@@ -381,7 +420,7 @@ function Cards(props: {
               ))}
             </div>
             <p className="dash-note num">
-              평균 {squad.ages.average}세 · 나이를 아는 선수 {squad.ages.known}명 기준
+              <MetaLine items={[`평균 ${squad.ages.average}세`, `나이를 아는 선수 ${squad.ages.known}명 기준`]} />
             </p>
           </>
         )}
@@ -429,7 +468,9 @@ function Cards(props: {
               <li key={row.uid}>
                 <div className="rank-head">
                   <Who player={row} onOpen={onOpen} />
-                  <span className="faint">{meta(row)}</span>
+                  <span className="faint">
+                    <MetaLine items={metaItems(row)} />
+                  </span>
                   <span className="dash-grow" />
                   <span className="rank-score num" title="정리 후보 점수(0~100). 높을수록 정리할 만합니다">
                     {Math.round(row.score)}
@@ -438,8 +479,14 @@ function Cards(props: {
                 </div>
                 <p>{row.reason}</p>
                 <p className="faint num">
-                  점수 구성: 적합도 차이 {row.parts.fit}점 · 주급 {row.parts.wage}점{row.unknown.includes('wage') ? '(확인 못 함, 보통으로 봄)' : ''} · 나이와 정체{' '}
-                  {row.parts.age}점{row.unknown.includes('age') ? '(확인 못 함, 보통으로 봄)' : ''}
+                  <MetaLine
+                    items={[
+                      '점수 구성',
+                      `적합도 차이 ${row.parts.fit}점`,
+                      `주급 ${row.parts.wage}점${row.unknown.includes('wage') ? '(확인 못 함, 보통으로 봄)' : ''}`,
+                      `나이와 정체 ${row.parts.age}점${row.unknown.includes('age') ? '(확인 못 함, 보통으로 봄)' : ''}`
+                    ]}
+                  />
                 </p>
               </li>
             ))}
@@ -453,7 +500,9 @@ function Cards(props: {
                 <li key={row.uid}>
                   <div className="rank-head">
                     <Who player={row} onOpen={onOpen} />
-                    <span className="faint">{meta(row)}</span>
+                    <span className="faint">
+                      <MetaLine items={metaItems(row)} />
+                    </span>
                     <span className="dash-grow" />
                     <span className="num">
                       현재 {row.ca} → 잠재 {row.pa}
@@ -470,14 +519,24 @@ function Cards(props: {
             <span>점수를 어떻게 매겼나</span>
           </summary>
           <p>
-            적합도 차이 {SURPLUS_WEIGHTS.fit}% + 주급 부담 {SURPLUS_WEIGHTS.wage}% + 나이·정체 {SURPLUS_WEIGHTS.age}%를 0~100점으로 합칩니다(주급이나 나이를 모르면 보통 {UNKNOWN_RISK}으로 봅니다).
+            적합도 차이 {SURPLUS_WEIGHTS.fit}% + 주급 부담 {SURPLUS_WEIGHTS.wage}% + 나이·정체 {SURPLUS_WEIGHTS.age}%를 0~100점으로
+            합칩니다(주급이나 나이를 모르면 보통 {UNKNOWN_RISK}으로 봅니다).
           </p>
           <ul>
-            <li>적합도 차이: 현재 전술에서 뛸 수 있는 자리 가운데 첫 후보와 가장 가까운 자리의 점수 차이를 그 자리 역할의 표준편차(σ)로 잰 뒤 {FIT_GAP_SIGMAS}σ로 나눕니다. 뛸 자리가 없으면 최대.</li>
-            <li>주급 부담: 주급이 1군 중간값의 {WAGE_RATIO_ZERO}배 이하면 0, {WAGE_RATIO_FULL}배 이상이면 최대.</li>
-            <li>나이·정체: {AGE_RISK_FROM}세 이하 0에서 {AGE_RISK_FULL}세 이상 최대까지의 나이, 잠재가 현재보다 20 이상 높으면 0인 성장 여지를 6 대 4로 섞습니다.</li>
             <li>
-              뺀 선수: 선발과 첫 후보, 능력이 높은 골키퍼 {GOALKEEPERS_KEPT}명, 그리고 {PROSPECT_MAX_AGE}세 이하이면서 잠재가 현재보다 {PROSPECT_MIN_ROOM} 이상 높은 유망주(따로 보여 줍니다).
+              적합도 차이: 현재 전술에서 뛸 수 있는 자리 가운데 첫 후보와 가장 가까운 자리의 점수 차이를 그 자리 역할의 표준편차(σ)로 잰 뒤{' '}
+              {FIT_GAP_SIGMAS}σ로 나눕니다. 뛸 자리가 없으면 최대.
+            </li>
+            <li>
+              주급 부담: 주급이 1군 중간값의 {WAGE_RATIO_ZERO}배 이하면 0, {WAGE_RATIO_FULL}배 이상이면 최대.
+            </li>
+            <li>
+              나이·정체: {AGE_RISK_FROM}세 이하 0에서 {AGE_RISK_FULL}세 이상 최대까지의 나이, 잠재가 현재보다 20 이상 높으면 0인 성장 여지를
+              6 대 4로 섞습니다.
+            </li>
+            <li>
+              뺀 선수: 선발과 첫 후보, 능력이 높은 골키퍼 {GOALKEEPERS_KEPT}명, 그리고 {PROSPECT_MAX_AGE}세 이하이면서 잠재가 현재보다{' '}
+              {PROSPECT_MIN_ROOM} 이상 높은 유망주(따로 보여 줍니다).
             </li>
             <li>전술은 스쿼드 전술판과 같은 포메이션({surplus.formation})과 역할 설정을 씁니다.</li>
           </ul>
@@ -505,7 +564,9 @@ function Cards(props: {
               <li key={row.uid}>
                 <div className="rank-head">
                   <Who player={row} onOpen={onOpen} />
-                  <span className="faint">{meta(row)}</span>
+                  <span className="faint">
+                    <MetaLine items={metaItems(row)} />
+                  </span>
                   <span className="dash-grow" />
                   <span className="rank-score num" title="주급 ÷ 기대 주급">
                     {row.ratio.toFixed(1)}
@@ -513,7 +574,8 @@ function Cards(props: {
                   </span>
                 </div>
                 <p className="num">
-                  주급 {pounds(row.wage)}로 기대치보다 {pounds(row.excess)} 많습니다. 같은 리그에서 현재 능력 {row.ca}인 선수의 보통 주급은 약 {pounds(row.expected)}입니다.
+                  주급 {pounds(row.wage)}로 기대치보다 {pounds(row.excess)} 많습니다. 같은 리그에서 현재 능력 {row.ca}인 선수의 보통 주급은
+                  약 {pounds(row.expected)}입니다.
                 </p>
               </li>
             ))}
@@ -521,7 +583,8 @@ function Cards(props: {
         )}
         {overpaid.model && (
           <p className="dash-note num">
-            기준선: 주급의 로그 = {overpaid.model.a.toFixed(2)} + {overpaid.model.b.toFixed(3)} × 현재 능력 (설명력 R² {overpaid.model.r2.toFixed(2)}).
+            기준선: 주급의 로그 = {overpaid.model.a.toFixed(2)} + {overpaid.model.b.toFixed(3)} × 현재 능력 (설명력 R²{' '}
+            {overpaid.model.r2.toFixed(2)}).
             {overpaid.model.scope === 'league'
               ? ` 내 리그 ${overpaid.model.teams}개 팀의 선수 ${overpaid.model.n.toLocaleString()}명 기준.`
               : ` 순위표를 읽지 못해 구단이 있는 모든 남자 선수 ${overpaid.model.n.toLocaleString()}명 기준.`}
@@ -546,18 +609,22 @@ function Cards(props: {
       >
         {recommend.slot && (
           <p className="rec-slot">
-            <strong>
-              {recommend.slot.label} ({recommend.slot.roleLabel})
-            </strong>{' '}
-            · 보강 필요도 <span className="num">{recommend.slot.need}</span>점({recommend.slot.levelLabel})
-            <span className="faint"> · 등급: {TIER_MEANING.starter}</span>
-            {recommend.slot.starter && (
-              <span className="faint num">
-                {' '}
-                · 지금 주전 {recommend.slot.starter.name} {Math.round(recommend.slot.starter.score)}점
-                {recommend.slot.backup ? `, 첫 후보 ${recommend.slot.backup.name} ${Math.round(recommend.slot.backup.score)}점` : ', 후보 없음'}
-              </span>
-            )}
+            <MetaLine
+              items={[
+                <strong key="slot">
+                  {recommend.slot.label} ({recommend.slot.roleLabel})
+                </strong>,
+                <span key="need">
+                  보강 필요도 <span className="num">{recommend.slot.need}</span>점({recommend.slot.levelLabel})
+                </span>,
+                <span key="tier" className="faint">
+                  등급: {TIER_MEANING.starter}
+                </span>,
+                <span key="now" className="faint num">
+                  {benchLine(recommend.slot.bench, recommend.slot.groupSlots)}
+                </span>
+              ]}
+            />
           </p>
         )}
         {!recommend.ok || recommend.rows.length === 0 ? (
@@ -571,7 +638,9 @@ function Cards(props: {
                     <PlayerFace uid={row.uid} name={row.name} size={44} />
                     <div className="rec-who">
                       <strong>{row.name}</strong>
-                      <span className="faint">{[row.age !== null ? `${row.age}세` : '', row.position].filter(Boolean).join(' · ')}</span>
+                      <span className="faint">
+                        <MetaLine items={[row.age !== null ? `${row.age}세` : '', row.position]} />
+                      </span>
                     </div>
                     <div className="rec-total">
                       <strong className="num">{Math.round(row.total)}</strong>
@@ -583,8 +652,13 @@ function Cards(props: {
                     <span>{row.club || '소속 확인 못 함'}</span>
                   </div>
                   <p className="faint num">
-                    현재 능력 {row.ca} · 잠재 {row.pa}
-                    {row.gap !== null && ` · 주전과 적합도 ${row.gap > 0 ? '+' : ''}${row.gap.toFixed(1)}`}
+                    <MetaLine
+                      items={[
+                        `현재 능력 ${row.ca}`,
+                        `잠재 ${row.pa}`,
+                        row.gap !== null && `주전과 적합도 ${row.gap > 0 ? '+' : ''}${row.gap.toFixed(1)}`
+                      ]}
+                    />
                   </p>
                 </li>
               )

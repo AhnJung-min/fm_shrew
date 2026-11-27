@@ -34,13 +34,23 @@ const ENTRIES: NavEntry[] = [
   { id: 'backups', label: '백업', hint: '세이브 사본과 되돌리기', icon: Archive }
 ]
 
-/** 경기장 센터 서클을 딴 표식 */
-function BrandMark() {
+/**
+ * 로고: 전술판의 한 수. 선수(O)에서 출발한 패스(노란 화살표)가 공격수(X)에게 닿는다.
+ * 분필 선만 쓰고 패스 화살표만 노랑이다. 구단이나 FM의 상표를 쓰지 않는다. 24px 이상에서 쓴다.
+ */
+export function BrandMark(props: { size?: number }) {
+  const size = props.size ?? 32
   return (
-    <svg width="26" height="26" viewBox="0 0 26 26" fill="none" aria-hidden="true">
-      <rect x="1.5" y="3.5" width="23" height="19" rx="2.5" stroke="currentColor" strokeWidth="1.6" />
-      <line x1="13" y1="3.5" x2="13" y2="22.5" stroke="currentColor" strokeWidth="1.6" />
-      <circle cx="13" cy="13" r="4.2" stroke="currentColor" strokeWidth="1.6" />
+    <svg width={size} height={size} viewBox="0 0 256 256" fill="none" aria-hidden="true">
+      <rect width="256" height="256" rx="56" fill="var(--raised)" />
+      <g transform="translate(37 34) scale(0.72)" strokeLinecap="round" strokeLinejoin="round">
+        <g stroke="currentColor" strokeWidth="26">
+          <circle cx="58" cy="198" r="30" />
+          <path d="M172 32L224 84M224 32L172 84" />
+        </g>
+        <path d="M97 160Q138 154 144 132" stroke="var(--gold)" strokeWidth="22" />
+        <path d="M154 102L128 130L160 140Z" fill="var(--gold)" stroke="var(--gold)" strokeWidth="5" />
+      </g>
     </svg>
   )
 }
@@ -59,7 +69,7 @@ export function Sidebar(props: { route: Route; onNavigate: (route: Route) => voi
   return (
     <aside className="sidebar">
       <div className="brand">
-        <BrandMark />
+        <BrandMark size={34} />
         <span>FM 보좌관</span>
       </div>
       {data.club && (

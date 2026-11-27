@@ -10,17 +10,17 @@
 }
 
 /* 다음 경기 */
+/* 다음 경기: 이 패널에서 가장 먼저 읽을 것이라 한 단계 밝은 덩어리 */
 .next-match {
   display: grid;
   gap: 6px;
-  padding: 16px 18px;
-  border: 1px solid var(--accent);
+  padding: 16px 20px;
   border-radius: var(--radius-m);
-  background: var(--accent-soft);
+  background: var(--raised);
 }
 .next-label {
-  color: var(--accent);
-  font-size: 13px;
+  color: var(--text-2);
+  font-size: var(--fs-small);
   font-weight: 700;
 }
 .next-main {
@@ -30,8 +30,9 @@
   min-width: 0;
 }
 .next-opponent {
-  font-size: 22px;
+  font-size: 26px;
   font-weight: 800;
+  letter-spacing: -0.02em;
   line-height: 1.25;
   min-width: 0;
   overflow-wrap: anywhere;
@@ -84,16 +85,16 @@
 }
 .match-row {
   display: grid;
-  grid-template-columns: 32px 128px 48px minmax(0, 1fr) 76px 120px;
+  grid-template-columns: 32px 172px 52px minmax(0, 1fr) 76px 120px;
   align-items: center;
   gap: 10px;
-  min-height: 40px;
+  min-height: 42px;
   padding: 0 12px;
-  border: 1px solid var(--line);
   border-radius: var(--radius-s);
+  background: var(--raised);
 }
 .match-row.upcoming {
-  grid-template-columns: 128px 48px 48px minmax(0, 1fr) 120px;
+  grid-template-columns: 128px 56px 52px minmax(0, 1fr) 120px;
 }
 .match-date {
   color: var(--text-2);
@@ -117,7 +118,7 @@
 }
 .match-comp {
   color: var(--text-3);
-  font-size: 13px;
+  font-size: var(--fs-small);
   text-align: right;
   white-space: nowrap;
 }

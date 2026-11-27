@@ -32,3 +32,23 @@ export function josa(word: string, pair: JosaPair): string {
 export function withJosa(word: string, pair: JosaPair): string {
   return `${word}${josa(word, pair)}`
 }
+
+/**
+ * 문장을 맺는 꼴("~입니다", "~낮습니다", "~남았습니다")을 뒤에 다른 절이 이어지는 꼴("~이고", "~낮고", "~남았고")로 바꾼다.
+ * 알아보는 맺음은 "입니다"와 "습니다"뿐이다. 그 밖의 맺음은 그대로 둔다.
+ */
+export function linkForm(clause: string): string {
+  if (clause.endsWith('입니다')) return `${clause.slice(0, -3)}이고`
+  if (clause.endsWith('습니다')) return `${clause.slice(0, -3)}고`
+  return clause
+}
+
+/**
+ * 맺는 꼴로 쓴 절들을 한 문장으로 잇는다. 마지막만 맺고 앞의 절은 잇는 꼴로 바꾼다
+ * (쉼표를 두고 "~입니다, ~입니다"처럼 맺는 꼴을 두 번 쓰지 않는다).
+ * 예: ['주전 A가 34세입니다', '후보가 B 한 명뿐입니다'] → "주전 A가 34세이고, 후보가 B 한 명뿐입니다."
+ */
+export function joinClauses(clauses: string[]): string {
+  if (clauses.length === 0) return ''
+  return `${[...clauses.slice(0, -1).map(linkForm), clauses[clauses.length - 1]].join(', ')}.`
+}

@@ -29,7 +29,7 @@ function createMockApi(): Api {
     matchPairs: [],
     keepRunning: true,
     backupEnabled: true,
-    backupKeep: 10
+    backupKeep: 3
   }
   const params = new URLSearchParams(location.search)
   const gameOff = params.has('off')

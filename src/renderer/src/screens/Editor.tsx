@@ -27,6 +27,7 @@ import { api } from '@/api'
 import { AttributeColumns } from '@/components/AttributeColumns'
 import { EditNumber } from '@/components/EditNumber'
 import { ClubLogo } from '@/components/ClubLogo'
+import { MetaLine } from '@/components/MetaLine'
 import { PlayerFace } from '@/components/PlayerFace'
 import { PositionMap } from '@/components/PositionMap'
 import { RadarChart } from '@/components/RadarChart'
@@ -53,7 +54,12 @@ const draftOf = (player: EditorPlayer): Draft => ({
 const sameList = (a: number[], b: number[]): boolean => a.length === b.length && a.every((value, i) => value === b[i])
 
 function isChanged(player: EditorPlayer, draft: Draft): boolean {
-  return draft.ca !== player.ca || draft.pa !== player.pa || !sameList(draft.positions, player.positions) || !sameList(draft.attributes, player.attributes)
+  return (
+    draft.ca !== player.ca ||
+    draft.pa !== player.pa ||
+    !sameList(draft.positions, player.positions) ||
+    !sameList(draft.attributes, player.attributes)
+  )
 }
 
 function toEdit(player: EditorPlayer, draft: Draft): EditorEdit {
@@ -148,14 +154,23 @@ function PlayerCard(props: {
         <PlayerFace uid={player.uid} name={player.name} size={112} className="ed-portrait" />
         <div className="ed-name">
           <h2>{player.name}</h2>
-          <p className="muted with-logo">
-            <ClubLogo uid={player.clubUid} size={20} />
-            {[player.position, player.age !== null && `${player.age}세`, player.club].filter(Boolean).join(' · ')}
+          <p className="muted">
+            <MetaLine
+              items={[
+                player.position,
+                player.age !== null && `${player.age}세`,
+                player.club && (
+                  <span key="club" className="with-logo">
+                    <ClubLogo uid={player.clubUid} size={20} />
+                    {player.club}
+                  </span>
+                )
+              ]}
+            />
           </p>
         </div>
         <button className="btn ghost" disabled={!changed} onClick={onRevert}>
-          <RotateCcw size={15} />
-          이 선수 되돌리기
+          <RotateCcw size={15} />이 선수 되돌리기
         </button>
       </header>
 
@@ -189,7 +204,16 @@ function PlayerCard(props: {
           <div className="ed-ability">
             <label className={`pl-score ${draft.ca !== player.ca ? 'changed' : ''}`}>
               <span className="pl-score-label">현재 능력</span>
-              <EditNumber label="현재 능력" value={draft.ca} original={player.ca} min={1} max={200} big disabled={!editable} onChange={(value) => update((d) => (d.ca = value))} />
+              <EditNumber
+                label="현재 능력"
+                value={draft.ca}
+                original={player.ca}
+                min={1}
+                max={200}
+                big
+                disabled={!editable}
+                onChange={(value) => update((d) => (d.ca = value))}
+              />
               <span className="pl-bar" aria-hidden="true">
                 <i style={{ width: `${(draft.ca / 200) * 100}%` }} />
               </span>
@@ -197,7 +221,16 @@ function PlayerCard(props: {
             </label>
             <label className={`pl-score pot ${draft.pa !== player.pa ? 'changed' : ''}`}>
               <span className="pl-score-label">잠재 능력</span>
-              <EditNumber label="잠재 능력" value={draft.pa} original={player.pa} min={1} max={200} big disabled={!editable} onChange={(value) => update((d) => (d.pa = value))} />
+              <EditNumber
+                label="잠재 능력"
+                value={draft.pa}
+                original={player.pa}
+                min={1}
+                max={200}
+                big
+                disabled={!editable}
+                onChange={(value) => update((d) => (d.pa = value))}
+              />
               <span className="pl-bar" aria-hidden="true">
                 <i style={{ width: `${(draft.pa / 200) * 100}%` }} />
               </span>
@@ -206,8 +239,8 @@ function PlayerCard(props: {
           </div>
           {room !== null && <p className="pl-room">성장 여지 +{room}</p>}
           <p className="pl-note">
-            두 값 모두 1~200입니다. 게임은 시간이 지나면 능력치를 현재 능력에 맞춰 다시 조정하므로, 능력치를 크게 올렸다면 현재
-            능력도 함께 올려야 오래 유지됩니다.
+            두 값 모두 1~200입니다. 게임은 시간이 지나면 능력치를 현재 능력에 맞춰 다시 조정하므로, 능력치를 크게 올렸다면 현재 능력도 함께
+            올려야 오래 유지됩니다.
           </p>
           {caProblem && (
             <p className="chat-caution" role="alert">
@@ -239,7 +272,16 @@ function PlayerCard(props: {
                 <small className="faint"> {abilityWord(value)}</small>
                 {value !== original && <small className="pl-orig">원래 값 {original}</small>}
               </span>
-              <EditNumber label={label} value={value} original={original} min={1} max={20} band={attrBand(value)} disabled={!editable} onChange={(next) => setAttribute(id, next)} />
+              <EditNumber
+                label={label}
+                value={value}
+                original={original}
+                min={1}
+                max={20}
+                band={attrBand(value)}
+                disabled={!editable}
+                onChange={(next) => setAttribute(id, next)}
+              />
             </label>
           ))}
         </div>
@@ -254,7 +296,9 @@ function PlayerCard(props: {
 
       <section className="ed-panel" aria-label="숨은 능력치">
         <h3 className="pl-h">숨은 능력치</h3>
-        <p className="pl-note first">게임 화면에는 나오지 않지만 선수의 활약과 부상에 영향을 주는 값입니다. 부상 빈도와 비매너 플레이는 낮을수록 좋습니다.</p>
+        <p className="pl-note first">
+          게임 화면에는 나오지 않지만 선수의 활약과 부상에 영향을 주는 값입니다. 부상 빈도와 비매너 플레이는 낮을수록 좋습니다.
+        </p>
         <ul className="pl-hidden">
           {hidden.map((each) => {
             const help = HIDDEN_HELP[each.id as keyof typeof HIDDEN_HELP]
@@ -287,10 +331,16 @@ function PlayerCard(props: {
       <div className="ed-bottom">
         <section className="ed-panel" aria-label="포지션">
           <h3 className="pl-h">포지션 숙련도</h3>
-          <p className="pl-note first">1~20. 15 이상이면 그 자리에서 능숙하게 뛰고, 20이면 주 포지션입니다. 그림의 자리를 누르면 그 칸으로 이동합니다.</p>
+          <p className="pl-note first">
+            1~20. 15 이상이면 그 자리에서 능숙하게 뛰고, 20이면 주 포지션입니다. 그림의 자리를 누르면 그 칸으로 이동합니다.
+          </p>
           <PositionMap
             ratings={draft.positions}
-            edit={{ original: player.positions, disabled: !editable, onChange: (index, value) => update((d) => (d.positions[index] = value)) }}
+            edit={{
+              original: player.positions,
+              disabled: !editable,
+              onChange: (index, value) => update((d) => (d.positions[index] = value))
+            }}
           />
         </section>
         <section className="ed-panel" aria-label="성향 그림">
@@ -407,7 +457,8 @@ export function Editor(props: {
     if (player) await open(player.uid)
   }
 
-  const caProblem = draft && draft.ca > draft.pa ? '현재 능력이 잠재 능력보다 큽니다. 저장하려면 잠재 능력을 올리거나 현재 능력을 낮춰 주세요.' : null
+  const caProblem =
+    draft && draft.ca > draft.pa ? '현재 능력이 잠재 능력보다 큽니다. 저장하려면 잠재 능력을 올리거나 현재 능력을 낮춰 주세요.' : null
   const anyProblem = [...pending.values()].some((each) => each.draft.ca > each.draft.pa)
 
   return (
@@ -447,10 +498,12 @@ export function Editor(props: {
               <p className="muted">세이브를 읽는 중입니다.</p>
             ) : items.length === 0 ? (
               <div className="list-empty">
-                <p className="muted">{problem ?? (search.trim() ? '그런 이름의 선수가 없습니다.' : '내 팀을 찾지 못했습니다. 이름으로 찾아 주세요.')}</p>
+                <p className="muted">
+                  {problem ?? (search.trim() ? '그런 이름의 선수가 없습니다.' : '내 팀을 찾지 못했습니다. 이름으로 찾아 주세요.')}
+                </p>
                 {problem && !saveName && (
                   <button className="btn primary" onClick={onGoHome}>
-                    홈에서 세이브 고르기
+                    시작 화면에서 세이브 고르기
                   </button>
                 )}
               </div>
@@ -465,10 +518,10 @@ export function Editor(props: {
                   <strong>
                     <PlayerFace uid={item.uid} name={item.name} size={26} className="small" />
                     {item.name}
-                    {pending.has(item.uid) && <span className="tag squad">고침</span>}
+                    {pending.has(item.uid) && <span className="tag edited">고침</span>}
                   </strong>
                   <span className="muted">
-                    {[item.position, item.age !== null && `${item.age}세`, item.club].filter(Boolean).join(' · ')}
+                    <MetaLine items={[item.position, item.age !== null && `${item.age}세`, item.club]} />
                   </span>
                 </button>
               ))

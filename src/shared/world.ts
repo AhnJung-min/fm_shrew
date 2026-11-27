@@ -1,4 +1,5 @@
 import { FALLBACK_NORM, type RoleNorm } from './norms'
+import { posPenaltySigma } from './positions'
 import type { Recommendation, RecommendTierId, SquadMoney } from './recommend'
 
 /** 세이브 전체(모든 구단의 선수)를 놓고 하는 일: 영입 후보 찾기와 능력치 수정 */
@@ -45,25 +46,30 @@ export const CATEGORY_HELP: Record<CandidateCategory, string> = {
   all: '즉시 전력·로테이션·유망주에 드는 선수 모두',
   starter: '이 자리(역할)의 적합도가 내 주전 수준이거나 그 이상인 선수',
   rotation: '주전에는 못 미치지만 내 첫 후보보다는 나은, 번갈아 쓸 만한 선수',
-  prospect: '21세 이하이고, 앞으로 크면 내 주전 수준이 될 것으로 보이는 선수',
+  prospect: '23세 이하이고, 앞으로 크면 내 주전 수준이 될 것으로 보이는 선수',
   free: '소속이 없는 선수 가운데 위 유형에 드는 선수'
 }
 
 // ---------- 유형 판정 ----------
 
-/** 유망주로 보는 나이와 성장 여지 */
-export const PROSPECT_MAX_AGE = 21
+/** 유망주로 보는 나이와 성장 여지(1회차 21세 → 2회차 23세: 22~23세 고잠재 선수가 어느 탭에도 못 드는 것을 막는다) */
+export const PROSPECT_MAX_AGE = 23
 export const PROSPECT_MIN_ROOM = 10
 /**
- * 성장 예측: 예상 적합도 = 지금 적합도 + beta × 실현률 × R(나이) × (PA - CA).
- * beta는 역할별 기준 분포(norms.ts)의 "현재 능력 1점당 적합도". 실현률은 남은 성장 여지(PA - CA) 가운데 실제로 이루어지는 몫이다.
- * 추정: 두 날짜의 세이브 사본으로 아직 검증하지 못했다(검토 1회차 검증 계획 3번).
+ * 성숙 시 전력: 성숙 시 적합도 proj = f_eff + beta × ρ(나이) × R(나이) × (PA - CA)   (f_eff는 숙련 감점·나이 하락을 뺀 지금 적합도).
+ * beta는 역할별 기준 분포(norms.ts)의 "현재 능력 1점당 적합도". R은 성장이 끝나기까지 남은 기간, ρ는 남은 성장 여지(PA - CA) 가운데 실제로 이루어지는 몫이다.
+ * 추정: ρ와 R은 두 날짜의 세이브 사본으로 아직 검증하지 못했다(검토 1회차 검증 계획 3번, 2회차 검증 계획 4번).
+ *
+ * ρ(나이) = 0.80 - 0.03 × max(0, 24 - 나이): 24세 이상 0.80, 21세 0.71, 18세 0.62, 16세 0.56.
+ * 어릴수록 잠재에 이르기까지 8년 가까이 걸려 불확실하므로 낮춘다(2회차. 1회차는 나이와 상관없이 0.75였다).
  */
-export const GROWTH_REALIZATION = 0.75
-/** R(나이) = clamp01((27 - 나이) / 6): 21세 이하 1, 27세 이상 0 */
+export const GROWTH_REALIZATION = 0.8
+export const GROWTH_REALIZATION_PER_YEAR = 0.03
+export const GROWTH_REALIZATION_FULL_AGE = 24
+/** R(나이) = clamp01((27 - 나이) / 6): 21세 이하 1, 27세 이상 0 (추정) */
 export const GROWTH_END_AGE = 27
 export const GROWTH_SPAN_YEARS = 6
-/** 주전이 이 나이를 넘으면 한 해마다 AGING_DROP_PER_YEAR점씩 내려갈 것으로 보고 기준을 낮춘다(골키퍼는 늦게 내려간다) */
+/** 이 나이를 넘으면 한 해마다 AGING_DROP_PER_YEAR점씩 내려갈 것으로 보고 적합도를 낮춘다(주전과 영입 후보에 똑같이 적용. 골키퍼는 늦게 내려간다) */
 export const AGING_START_AGE = 31
 export const AGING_START_AGE_GOALKEEPER = 34
 /** 추정: 하락 속도는 단면 자료(세이브 하나)로 구할 수 없어 한 해 1점으로 어림했다 */
@@ -75,11 +81,31 @@ export const ROTATION_REACH_SIGMAS = 1.5
 /** 주전·로테이션 후보의 현재 능력은 내 주전의 이 비율 이상이어야 한다(적합도만 높고 전체 실력이 낮은 선수를 거른다) */
 export const CA_GATE = 0.85
 
+/** 비교 기준으로 쓰는 내 주전. score는 포지션 숙련을 반영한 적합도(f_eff)이고, 나이 하락은 benchmarkOf가 더 뺀다 */
+export interface BenchStarter {
+  name?: string
+  /** 포지션 숙련을 반영한 적합도(주전의 나이 하락은 아직 반영 전) */
+  score: number
+  ca: number
+  age?: number | null
+  /** 화면에 보이는 적합도(숙련 반영 전). 없으면 score와 같다 */
+  shownScore?: number
+}
+
 export interface CandidateBench {
-  /** 내 팀에서 이 역할 점수가 가장 높은 선수 */
-  starter: { name?: string; score: number; ca: number; age?: number | null } | null
-  /** 두 번째 */
-  backup: { name: string; score: number } | null
+  /** 비교 기준 주전. 같은 포지션·같은 역할 자리가 여럿이면 그 가운데 가장 약한 주전(나이 하락까지 반영해서) */
+  starter: BenchStarter | null
+  /** 두 번째. 같은 포지션·같은 역할 자리가 여럿이면 그 자리들의 첫 후보 가운데 가장 높은 선수 */
+  backup: { name: string; score: number; shownScore?: number } | null
+}
+
+/** "내 팀 가장 약한 주전 ○○ 76점, 두 번째 ○○ 73점". 영입 후보 화면과 대시보드 영입 추천이 같은 문장을 쓴다 */
+export function benchLine(bench: CandidateBench, groupSlots: number): string {
+  const { starter, backup } = bench
+  if (!starter) return '내 팀에 이 자리를 뛸 선수가 없어 비교 기준이 없습니다'
+  const second = backup ? `, 두 번째 ${backup.name} ${Math.round(backup.shownScore ?? backup.score)}점` : ''
+  const weakest = groupSlots > 1 ? '가장 약한 주전' : '주전'
+  return `내 팀 ${weakest} ${starter.name} ${Math.round(starter.shownScore ?? starter.score)}점${second}`
 }
 
 /** 어린 선수의 성장 인정 비율 R(나이): 21세 이하 1, 27세 이상 0, 그 사이는 직선 */
@@ -87,10 +113,56 @@ export function growthRatio(age: number): number {
   return Math.min(1, Math.max(0, (GROWTH_END_AGE - age) / GROWTH_SPAN_YEARS))
 }
 
-/** 성장을 반영한 예상 적합도 */
+/** 성장 실현률 ρ(나이): 24세 이상 0.80, 한 살 어릴 때마다 0.03씩 낮다 */
+export function realizationOf(age: number): number {
+  return GROWTH_REALIZATION - GROWTH_REALIZATION_PER_YEAR * Math.max(0, GROWTH_REALIZATION_FULL_AGE - age)
+}
+
+/** 성숙 시 예상 적합도(proj). 27세 이상이거나 나이를 모르면 지금 적합도 그대로다 */
 export function projectedScore(score: number, age: number | null, ca: number, pa: number, beta: number): number {
   if (age === null) return score
-  return score + beta * GROWTH_REALIZATION * growthRatio(age) * Math.max(0, pa - ca)
+  return score + beta * realizationOf(age) * growthRatio(age) * Math.max(0, pa - ca)
+}
+
+/** 나이 하락으로 내년까지 깎아 보는 적합도(점). 시작 나이(필드 31, 골키퍼 34)를 넘은 해마다 AGING_DROP_PER_YEAR */
+export function agingDrop(age: number | null | undefined, goalkeeper = false): number {
+  if (age === null || age === undefined) return 0
+  const start = goalkeeper ? AGING_START_AGE_GOALKEEPER : AGING_START_AGE
+  return AGING_DROP_PER_YEAR * Math.max(0, age - start)
+}
+
+/** f_eff = f - σ·posPenaltySigma(r) - 나이 하락. 숙련을 모르면(null) 숙련 감점은 없다(많은 선수를 도는 곳에서 쓰는 숫자만 돌려주는 꼴) */
+export function effectiveScore(score: number, rating: number | null | undefined, age: number | null | undefined, sigma: number, goalkeeper = false): number {
+  const position = rating === null || rating === undefined ? 0 : sigma * posPenaltySigma(rating)
+  return score - position - agingDrop(age, goalkeeper)
+}
+
+/** 적합도에서 무엇을 얼마나 뺐는가(포지션 숙련, 나이 하락). 화면에 보이는 적합도는 그대로이고, 비교에만 반영한 값이 effective다 */
+export interface FitAdjust {
+  /** 화면에 보이는 적합도 */
+  shown: number
+  /** 비교에 쓰는 적합도: shown - 숙련 감점 - 나이 하락 */
+  effective: number
+  /** 포지션 숙련 감점(점) */
+  positionPoints: number
+  /** 포지션 숙련 감점(표준편차의 배수) */
+  positionSigma: number
+  /** 나이 하락(점) */
+  agePoints: number
+}
+
+/** f_eff = f - σ·posPenaltySigma(r) - 나이 하락. 숙련을 모르면(null) 숙련 감점은 없다 */
+export function effectiveFit(
+  score: number,
+  rating: number | null | undefined,
+  age: number | null | undefined,
+  norm: RoleNorm = FALLBACK_NORM,
+  goalkeeper = false
+): FitAdjust {
+  const positionSigma = rating === null || rating === undefined ? 0 : posPenaltySigma(rating)
+  const positionPoints = norm.sigma * positionSigma
+  const agePoints = agingDrop(age, goalkeeper)
+  return { shown: score, effective: effectiveScore(score, rating, age, norm.sigma, goalkeeper), positionPoints, positionSigma, agePoints }
 }
 
 /** 비교 기준: 주전의 하락을 감안한 적합도(기준점), 그만큼 낮춘 점수, 현재 능력 문턱 */
@@ -106,8 +178,7 @@ export interface Benchmark {
 
 export function benchmarkOf(starter: CandidateBench['starter'], norm: RoleNorm = FALLBACK_NORM, goalkeeper = false): Benchmark {
   if (!starter) return { anchor: norm.mu, drop: 0, caGate: CA_GATE * norm.caRef, hasStarter: false }
-  const start = goalkeeper ? AGING_START_AGE_GOALKEEPER : AGING_START_AGE
-  const drop = starter.age === null || starter.age === undefined ? 0 : AGING_DROP_PER_YEAR * Math.max(0, starter.age - start)
+  const drop = agingDrop(starter.age, goalkeeper)
   return { anchor: starter.score - drop, drop, caGate: CA_GATE * starter.ca, hasStarter: true }
 }
 
@@ -115,14 +186,16 @@ export function benchmarkOf(starter: CandidateBench['starter'], norm: RoleNorm =
  * 한 선수가 어느 유형에 드는지. 여러 유형에 들 수 있고, 아무 유형에도 들지 않으면 빈 목록이다.
  * 소속이 없는 선수는 위 유형에 하나라도 들 때만 free가 붙는다(free는 별도 유형이 아니라 "소속 없음" 조건이다).
  *
- * f 후보 적합도, anchor 주전 점수(나이 하락 반영), f_b 첫 후보, σ 이 역할의 표준편차.
- *   starter : f ≥ anchor - 0.25σ ∧ CA ≥ 0.85·내 주전 CA
- *   rotation: f < anchor - 0.25σ ∧ f ≥ max(f_b, anchor - 1.5σ) - 0.25σ ∧ CA 문턱 (후보가 없으면 f_b = -∞)
- *   prospect: 나이 ≤ 21 ∧ PA - CA ≥ 10 ∧ 예상 적합도 ≥ anchor - 0.25σ
+ * f_eff 후보의 반영한 적합도(숙련 감점·나이 하락을 뺀 것), anchor 기준 주전의 적합도(같은 방식으로 반영, 나이 하락 포함),
+ * f_b 첫 후보, σ 이 역할의 표준편차.
+ *   starter : f_eff ≥ anchor - 0.25σ ∧ CA ≥ 0.85·기준 주전 CA
+ *   rotation: f_eff < anchor - 0.25σ ∧ f_eff ≥ max(f_b, anchor - 1.5σ) - 0.25σ ∧ CA 문턱 (후보가 없으면 f_b = -∞)
+ *   prospect: 나이 ≤ 23 ∧ PA - CA ≥ 10 ∧ 성숙 시 적합도(proj_eff) ≥ anchor - 0.25σ
  * 주전이 없으면 anchor 대신 이 역할 상위권 평균(mu), CA 문턱은 0.85 × 기준 능력(caRef).
+ * 같은 포지션·같은 역할 자리가 여럿이면 bench가 그 그룹의 값이다(shared/tactic.ts의 slotBench).
  */
 export function categoriesOf(
-  player: { score: number; age: number | null; ca: number; pa: number; hasClub: boolean },
+  player: { score: number; age: number | null; ca: number; pa: number; hasClub: boolean; rating?: number | null },
   bench: CandidateBench,
   norm: RoleNorm = FALLBACK_NORM,
   goalkeeper = false
@@ -131,18 +204,19 @@ export function categoriesOf(
   const { anchor, caGate } = benchmarkOf(bench.starter, norm, goalkeeper)
   const tolerance = STARTER_TOLERANCE_SIGMAS * norm.sigma
   const line = anchor - tolerance
+  const fit = effectiveScore(player.score, player.rating, player.age, norm.sigma, goalkeeper)
   if (player.ca >= caGate) {
-    if (player.score >= line) found.push('starter')
+    if (fit >= line) found.push('starter')
     else {
       const floor = Math.max(bench.backup ? bench.backup.score : -Infinity, anchor - ROTATION_REACH_SIGMAS * norm.sigma) - tolerance
-      if (player.score >= floor) found.push('rotation')
+      if (fit >= floor) found.push('rotation')
     }
   }
   if (
     player.age !== null &&
     player.age <= PROSPECT_MAX_AGE &&
     player.pa - player.ca >= PROSPECT_MIN_ROOM &&
-    projectedScore(player.score, player.age, player.ca, player.pa, norm.beta) >= line
+    projectedScore(fit, player.age, player.ca, player.pa, norm.beta) >= line
   ) {
     found.push('prospect')
   }
@@ -165,7 +239,8 @@ export interface CandidateQuery {
   expiringWithinMonths: number | null
   /**
    * 전술의 한 자리를 기준으로 찾을 때: 그 자리의 포메이션·자리별 역할과 자리 순번.
-   * 주전·두 번째 선수와 보강 필요도를 모두 이 자리에서 구하고, 역할(roleId)은 자리의 역할로 본다.
+   * 같은 포지션·같은 역할의 자리(예: 4-2-3-1의 중앙 수비 두 자리)는 한 그룹으로 보므로, 그룹의 어느 자리를 골라도 결과가 같다.
+   * 가장 약한 주전·그룹의 첫 후보·그룹의 보강 필요도(자리들 가운데 최대)를 기준으로 하고, 역할(roleId)은 자리의 역할로 본다.
    * 없으면 고른 역할(roleId)만으로 찾는다.
    */
   slot?: { formation: string; slotRoles: Record<string, string>; index: number } | null
@@ -193,9 +268,9 @@ export interface CandidateRow {
   nation: string
   /** 소속 구단의 고유 번호(엠블럼용). 구단을 알아내지 못했거나 자유 계약이면 null */
   clubUid: number | null
-  /** 고른 역할의 적합도(0~100) */
+  /** 고른 역할의 적합도(0~100). 화면에 보이는 값이고 숙련·나이 감점은 반영 전이다 */
   score: number
-  /** 내 주전과의 점수 차이. 주전이 없으면 null */
+  /** 내 주전(그룹에서 가장 약한 주전)과 화면의 적합도끼리의 차이(후보 - 주전). 주전이 없으면 null */
   gap: number | null
   /** 이 선수가 드는 유형(즉시 전력·로테이션·유망주, 소속이 없으면 자유 계약도). 어느 유형에도 들지 않으면 빈 목록 */
   categories: CandidateCategory[]
@@ -224,8 +299,10 @@ export interface CandidateResult {
   ranked?: number
   /** 이 역할의 기준 분포(후보 점수가 상위권에서 어디쯤인지 설명하는 데 쓴다) */
   norm?: RoleNorm
-  /** 자리를 기준으로 찾았을 때 그 자리의 보강 필요도(0~100). 아니면 없다 */
+  /** 자리를 기준으로 찾았을 때 그 자리 그룹의 보강 필요도(0~100, 그룹 자리들 가운데 최대). 아니면 없다 */
   need?: number | null
+  /** 자리를 기준으로 찾았을 때 그 자리가 속한 그룹(같은 포지션·같은 역할의 자리들). 아니면 없다 */
+  group?: { label: string; slots: number } | null
   /** 비용 부담을 견준 내 팀의 주급·몸값 수준. 알 수 없으면 null */
   baseline?: SquadMoney | null
 }
