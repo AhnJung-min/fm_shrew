@@ -107,6 +107,22 @@ export function loanParent(records: SaveContract[], today: GameDate | null, curr
   return parent
 }
 
+/**
+ * 소속 팀이 없는 선수가 다른 구단과 이미 맺어 둔 계약(5회차): 주급이 0보다 크고 만료일이 오늘 뒤인 기록 가운데 가장 늦게 시작하는 것.
+ * 계약 팀(teamId)이 있어야 한다. 이런 선수는 협상할 수 없어 자유 계약이 아니다. 없으면 null.
+ * (contractInEffect는 오늘까지 시작한 기록만 보므로, 앞으로 시작하는 계약만 있는 선수의 기록을 놓칠 수 있다.)
+ */
+export function signedContract(records: SaveContract[], today: GameDate | null): SaveContract | null {
+  if (!today) return null
+  const startOf = (record: SaveContract): number => (record.start ? dateKey(record.start) : 0)
+  let found: SaveContract | null = null
+  for (const record of records) {
+    if (record.teamId === 0xffffffff || record.wage <= 0 || !record.end || dateKey(record.end) <= dateKey(today)) continue
+    if (!found || startOf(record) >= startOf(found)) found = record
+  }
+  return found
+}
+
 /** 임대 중인 선수의 원 소속 팀. 임대가 아니면 null */
 export function loanLender(records: SaveContract[], today: GameDate | null, currentTeam: number): number | null {
   return loanParent(records, today, currentTeam)?.teamId ?? null

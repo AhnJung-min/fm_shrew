@@ -7,6 +7,7 @@ import { footValues, formatPounds, hiddenAttributes, isGoalkeeper, visibleAttrib
 import { normOf, type RoleNorms } from '@shared/norms'
 import { prepareRole, ROLE_BY_ID, savedRoleScore } from '@shared/roles'
 import {
+  clubStature,
   recommend,
   squadMoney,
   tierRanker,
@@ -22,6 +23,8 @@ import {
   categoriesOf,
   checkEdit,
   effectiveScore,
+  gapVsAnchor,
+  rotationWindowOf,
   SAVE_ATTRIBUTE_ORDER,
   shownValue,
   type CandidateBench,
@@ -40,7 +43,7 @@ import {
   SQUAD_STATUS_LABEL
 } from '@shared/world'
 import { ATTRIBUTE_COUNT, POSITION_COUNT } from './save/reader'
-import { ageAt, findTeamByNames, NO_TEAM, readWorld, SEX_FEMALE, teamHasPlayers, type SaveWorld } from './save/world'
+import { ageAt, findTeamByNames, NO_TEAM, readWorld, SEX_FEMALE, signedClubTeam, teamHasPlayers, type SaveWorld } from './save/world'
 import { computeRoleNorms } from './roleNorms'
 import { NameBook } from './names'
 import { calendar } from './save/contracts'
@@ -122,6 +125,7 @@ export class WorldService {
   /** 팀 번호 → 구단 순번(임대 선수의 원 소속 구단을 찾는 데 쓴다). 임대 기록을 믿을 수 있는지도 함께 */
   private loanCache: { world: SaveWorld; teamClub: Map<number, number>; trusted: boolean } | null = null
   private normCache: { world: SaveWorld; revision: number; weights: string; norms: RoleNorms } | null = null
+  private statureCache: { world: SaveWorld; revision: number; byTeam: Map<number, number> } | null = null
 
   constructor(private readonly deps: WorldDeps) {
     this.names = new NameBook(deps.namesDir)
@@ -305,7 +309,56 @@ export class WorldService {
         rows: []
       }
     }
-    return { ok: true, ...squadTable(world), roleNorms: this.roleNorms() ?? undefined }
+    return { ok: true, ...this.squadOf(world), roleNorms: this.roleNorms() ?? undefined }
+  }
+
+  /** 내 팀 선수 표. 임대로 온 선수의 줄에는 임대가 끝나는 날(추정)과 원 소속 구단을 싣는다(5회차) */
+  private squadOf(world: SaveWorld): SquadTable {
+    let myClub = -1
+    for (let k = 0; k < world.count; k++) {
+      if (world.teamIds[k] === world.teamId && world.club[k] >= 0) {
+        myClub = world.club[k]
+        break
+      }
+    }
+    return squadTable(world, (k) => this.loanedInFrom(world, k, myClub))
+  }
+
+  /**
+   * k번 선수가 다른 구단에서 임대로 온 선수이면 원 소속 구단 이름(모르면 빈 글자), 아니면 null.
+   * 대시보드의 임대 영입과 같은 기준: 임대 기록을 믿을 수 있고(세이브 전체에서 임대가 충분히 읽힘) 원 소속이 내 구단이 아니다.
+   */
+  private loanedInFrom(world: SaveWorld, k: number, myClub: number): string | null {
+    const lender = world.loanFrom[k]
+    if (lender === NO_TEAM) return null
+    const index = this.loanIndex(world)
+    if (!index.trusted) return null
+    const club = index.teamClub.get(lender)
+    if (club !== undefined) return club === myClub ? null : world.clubs[club].name
+    const learned = this.names.team(lender)
+    return learned ? learned.club || learned.name : ''
+  }
+
+  /** 팀 번호 → 구단 체급 S(t)(남자 선수의 현재 능력 상위 11명의 중간값, 5명 미만이면 없음). 세이브·값이 같으면 다시 구하지 않는다(5회차) */
+  private statures(world: SaveWorld): Map<number, number> {
+    const kept = this.statureCache
+    if (kept && kept.world === world && kept.revision === this.revision) return kept.byTeam
+    const female = this.femaleMask(world)
+    const abilities = new Map<number, number[]>()
+    for (let k = 0; k < world.count; k++) {
+      const team = world.teamIds[k]
+      if (team === NO_TEAM || female[k] || !world.names[k] || world.uids[k] === 0) continue
+      const list = abilities.get(team)
+      if (list) list.push(world.ca[k])
+      else abilities.set(team, [world.ca[k]])
+    }
+    const byTeam = new Map<number, number>()
+    for (const [team, list] of abilities) {
+      const value = clubStature(list)
+      if (value !== null) byTeam.set(team, value)
+    }
+    this.statureCache = { world, revision: this.revision, byTeam }
+    return byTeam
   }
 
   /**
@@ -340,6 +393,14 @@ export class WorldService {
     // 세이브에서 구단을 알아내지 못한 팀은 게임이 알려 준 이름을 쓴다
     const team = this.names.team(world.teamIds[k])
     return team ? team.club || team.name : ''
+  }
+
+  /** 팀 번호의 구단 이름과 엠블럼 번호. 구단을 세이브에서 알아내지 못했으면 게임이 알려 준 이름을 쓰고, 그것도 모르면 빈 글자 */
+  private teamOf(world: SaveWorld, team: number): { name: string; uid: number | null } {
+    const club = this.loanIndex(world).teamClub.get(team)
+    if (club !== undefined) return { name: world.clubs[club].name, uid: world.clubs[club].uid || null }
+    const learned = this.names.team(team)
+    return { name: learned ? learned.club || learned.name : '', uid: null }
   }
 
   private loanIndex(world: SaveWorld): { teamClub: Map<number, number>; trusted: boolean } {
@@ -458,7 +519,7 @@ export class WorldService {
     const norms = this.roleNorms() ?? {}
     const female = this.femaleMask(world)
     // 전술의 한 자리를 기준으로 찾으면 그 자리의 역할·주전·두 번째 선수·보강 필요도를 쓴다(스쿼드 전술판과 같은 계산)
-    const table = squadTable(world)
+    const table = this.squadOf(world)
     const analysis = query.slot
       ? analyseTactic({ rows: table.rows, columns: table.columns, today: table.today, formation: query.slot.formation, slotRoles: query.slot.slotRoles, roleWeights, norms })
       : null
@@ -498,10 +559,15 @@ export class WorldService {
     const bench: CandidateBench =
       (analysis && slotFound ? slotBench(analysis, slotFound.slot.index) : null) ?? {
         starter: mine[0] ? { name: world.names[mine[0].k], score: mine[0].eff, shownScore: mine[0].score, ca: world.ca[mine[0].k], age: ageAt(world, mine[0].k) } : null,
-        backup: mine[1] ? { name: world.names[mine[1].k], score: mine[1].eff, shownScore: mine[1].score } : null
+        backup: mine[1] ? { name: world.names[mine[1].k], score: mine[1].eff, shownScore: mine[1].score, age: ageAt(world, mine[1].k) } : null,
+        thin: mine.length < 3
       }
     const money = squadMoney(myWages, myValues)
     const wageCoefs = this.deps.wageModel?.() ?? null
+    // 파는 구단의 체급(영입 현실성): 구단별로 한 번 구해 둔다. 임대 중인 후보는 원 소속 팀의 체급이다
+    const statures = this.statures(world)
+    const myStature = statures.get(world.teamId) ?? null
+    const loans = this.loanIndex(world)
     // 같은 포지션·역할의 자리는 한 그룹이라 필요도도 그룹 값(자리들 가운데 최대)이다
     const group = slotFound ? slotFound.group : null
     const need = group ? group.need : null
@@ -510,6 +576,7 @@ export class WorldService {
       backup: bench.backup ? { score: bench.backup.score, shownScore: bench.backup.shownScore } : null,
       today: world.gameDate ? { year: world.gameDate.year, day: world.gameDate.day } : null,
       money,
+      myStature,
       need,
       norm,
       groupSlots: group?.slots.length,
@@ -521,6 +588,10 @@ export class WorldService {
     const inputOf = (k: number, score: number, age: number | null): RecommendInput => {
       const traits = {} as Traits
       for (const id of traitIds) traits[id] = shownValue(world.attributes[k * ATTRIBUTE_COUNT + traitAt(id)])
+      // 소속은 없지만 다른 구단과 계약을 마친 선수는 협상할 수 없다: 소속 있음으로 보고 영입 현실성이 낮다(자유 계약이 아니다)
+      const signedTeam = signedClubTeam(world, k)
+      const lender = world.loanFrom[k]
+      const sellerTeam = lender !== NO_TEAM && loans.trusted ? lender : world.teamIds[k]
       return {
         category: query.category,
         goalkeeper,
@@ -533,11 +604,15 @@ export class WorldService {
         wage: world.wage[k] || null,
         contractEnd: world.contractEnd[k] || null,
         squadStatus: world.squadStatus[k],
-        hasClub: world.teamIds[k] !== NO_TEAM,
+        hasClub: world.teamIds[k] !== NO_TEAM || signedTeam !== null,
+        sellerStature: world.teamIds[k] === NO_TEAM ? null : (statures.get(sellerTeam) ?? null),
+        signedWith: signedTeam === null ? null : this.teamOf(world, signedTeam).name,
         traits
       }
     }
 
+    // 즉시 전력·로테이션의 경계와 유망주의 기준선은 같은 자리 안에서는 모든 후보에 같다: 한 번만 구한다
+    const window = rotationWindowOf(bench, norm, goalkeeper)
     const search = query.search.trim().toLowerCase()
     // 계약 만료 조건: 오늘에서 그 개월 수 뒤의 날짜(연도 × 1000 + 연중 일수)까지 끝나는 선수만
     let expiresBy = 0
@@ -557,6 +632,12 @@ export class WorldService {
       // 내 구단 선수(2군·유스 포함)와 여자 선수는 후보가 아니다
       if (team === world.teamId || (club >= 0 && club === myClub)) continue
       if (female[k]) continue
+      // 내가 임대 보낸 선수(원 소속이 내 구단)는 후보가 아니다. 소속이 "임대받은 팀"으로만 보여 후보로 나오던 것을 막는다(5회차)
+      const lender = world.loanFrom[k]
+      if (lender !== NO_TEAM && loans.trusted && myClub >= 0 && loans.teamClub.get(lender) === myClub) continue
+      // 이미 내 구단과 계약을 마친 선수도 후보가 아니다
+      const signedTeam = signedClubTeam(world, k)
+      if (signedTeam !== null && (signedTeam === world.teamId || (myClub >= 0 && loans.teamClub.get(signedTeam) === myClub))) continue
       if (team !== NO_TEAM && club < 0 && !this.names.hasTeam(team) && !query.includeUnknownClub) continue
       if (expiresBy > 0 && (world.contractEnd[k] === 0 || world.contractEnd[k] > expiresBy)) continue
       if (query.onlyEligible && !eligible(k)) continue
@@ -564,7 +645,8 @@ export class WorldService {
       if (query.maxAge !== null && (age === null || age > query.maxAge)) continue
 
       const score = scoreOf(k)
-      const categories = categoriesOf({ score, age, ca: world.ca[k], pa: world.pa[k], hasClub: team !== NO_TEAM, rating: ratingOf(k) }, bench, norm, goalkeeper)
+      // 다른 구단과 계약을 마친 무소속 선수는 소속 있음으로 본다(자유 계약 유형에서 뺀다. 5회차)
+      const categories = categoriesOf({ score, age, ca: world.ca[k], pa: world.pa[k], hasClub: team !== NO_TEAM || signedTeam !== null, rating: ratingOf(k) }, bench, norm, goalkeeper, window)
       const qualified = categories.length > 0
       const inTab = query.category === 'all' ? qualified : categories.includes(query.category)
       const nameHit = !search || name.toLowerCase().includes(search)
@@ -587,7 +669,10 @@ export class WorldService {
     const tierOf = tierRanker(qualifiedTotals)
 
     const rows: CandidateRow[] = picked.slice(0, MAX_ROWS).map(({ k, score, age, categories, total, low, inTab }) => {
-      const club = this.clubOf(world, k)
+      // 다른 구단과 계약을 마친 무소속 선수의 소속 칸은 "구단명(입단 예정)"
+      const signedTeam = signedClubTeam(world, k)
+      const signedClub = signedTeam === null ? null : this.teamOf(world, signedTeam)
+      const club = signedClub ? { name: `${signedClub.name || '다른 구단'}(입단 예정)`, uid: signedClub.uid, loanedTo: null } : this.clubOf(world, k)
       const recommendation = recommend(inputOf(k, score, age), context)
       return {
         uid: world.uids[k],
@@ -606,6 +691,7 @@ export class WorldService {
         nation: this.names.nation(world.nationId[k]),
         score,
         gap: bench.starter ? Math.round((score - (bench.starter.shownScore ?? bench.starter.score)) * 10) / 10 : null,
+        gapEff: gapVsAnchor(recommendation.fit.effective, bench, norm, goalkeeper),
         categories,
         recommend: recommendation,
         // 등급 경계는 영입 현실성이 낮지 않은 후보로만 정하고, 낮은 선수는 그 위에 끼워 "고려"까지로 제한한다(총점·정렬은 그대로)

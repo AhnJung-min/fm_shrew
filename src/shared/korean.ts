@@ -35,11 +35,17 @@ export function withJosa(word: string, pair: JosaPair): string {
 
 /**
  * 문장을 맺는 꼴("~입니다", "~낮습니다", "~남았습니다")을 뒤에 다른 절이 이어지는 꼴("~이고", "~낮고", "~남았고")로 바꾼다.
- * 알아보는 맺음은 "입니다"와 "습니다"뿐이다. 그 밖의 맺음은 그대로 둔다.
+ * 알아보는 맺음은 "입니다"·"습니다"와, 그 밖의 "ㅂ니다"로 끝나는 동사("못 미칩니다" → "못 미치고", "돌아갑니다" → "돌아가고")다.
+ * 그 밖의 맺음은 그대로 둔다.
  */
 export function linkForm(clause: string): string {
   if (clause.endsWith('입니다')) return `${clause.slice(0, -3)}이고`
   if (clause.endsWith('습니다')) return `${clause.slice(0, -3)}고`
+  if (clause.endsWith('니다') && clause.length >= 3) {
+    const code = clause.charCodeAt(clause.length - 3)
+    // 앞 글자의 받침이 ㅂ(종성 17)이면 받침을 떼고 "고"를 붙인다
+    if (code >= HANGUL_FIRST && code <= HANGUL_LAST && (code - HANGUL_FIRST) % FINALS === 17) return `${clause.slice(0, -3)}${String.fromCharCode(code - 17)}고`
+  }
   return clause
 }
 

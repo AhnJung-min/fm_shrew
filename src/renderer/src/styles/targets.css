@@ -232,6 +232,12 @@
   margin-left: auto;
   font-size: 12.5px;
 }
+/* 유망주 탭 위의 성장 예측 불확실성 한 줄 */
+.reco-note {
+  margin: 0;
+  padding: 0 0 7px 28px;
+  font-size: 12.5px;
+}
 /* 펼치면 표 위에 덮어 얹는다(표를 밀어내지 않는다) */
 .reco-body {
   position: absolute;

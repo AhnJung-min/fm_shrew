@@ -42,6 +42,11 @@ export interface PlayerRow {
   cells: Record<string, CellValue>
   /** 포지션 숙련도 15개(1~20), positions.ts의 POSITION_KEYS 순서. 적합도에서 숙련 감점을 계산하는 데 쓴다. 모르면 없다 */
   ratings?: number[]
+  /**
+   * 다른 구단에서 임대로 온 선수(임대 영입)면 임대 끝 날짜와 원 소속 구단. 임대가 아니면 없다.
+   * 세이브의 임대 기록에는 만료일이 없어, 끝 날짜는 오늘 이후 첫 6월 30일로 어림한 값이다(추정). 원 소속을 모르면 from은 빈 글자
+   */
+  loan?: { end: { year: number; month: number; day: number }; from: string }
 }
 
 /** 내 팀 선수 표 */

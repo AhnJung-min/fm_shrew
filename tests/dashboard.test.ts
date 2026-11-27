@@ -43,8 +43,10 @@ describe('주급 기준선(로그 선형 회귀, 능력 + 나이 더미)', () =>
   it('정확히 지수 관계인 자료에서 a, b와 R²=1을 되찾고, 나이를 모르면 더미는 0이다', () => {
     const points = Array.from({ length: 60 }, (_, i) => ({ ca: 80 + i, wage: Math.exp(3 + 0.05 * (80 + i)) }))
     const model = fitWageModel(points)!
-    expect(model.a).toBeCloseTo(3, 6)
+    // a는 CA 145에서의 로그 주급이다(5회차): 3 + 0.05 × 145. 정확한 지수 관계라 2차항은 0이다
+    expect(model.a).toBeCloseTo(3 + 0.05 * 145, 6)
     expect(model.b).toBeCloseTo(0.05, 8)
+    expect(model.b2).toBeCloseTo(0, 8)
     expect(model.c1).toBe(0)
     expect(model.c2).toBe(0)
     expect(model.r2).toBeCloseTo(1, 8)
@@ -119,8 +121,9 @@ describe('주급 기준선(로그 선형 회귀, 능력 + 나이 더미)', () =>
     expect(model.c2).toBeGreaterThan(0)
     expect(model.c1).toBeCloseTo(-0.5, 1)
     expect(model.c2).toBeCloseTo(0.22, 1)
-    expect(model.a).toBeCloseTo(3.8, 1)
+    expect(model.a).toBeCloseTo(3.8 + 0.05 * 145, 1)
     expect(model.b).toBeCloseTo(0.05, 2)
+    expect(Math.abs(model.b2)).toBeLessThan(0.05)
     expect(model.s).toBeLessThan(0.15)
     // 같은 능력이라도 어린 선수의 기대 주급은 낮고 나이 든 선수는 높다
     expect(expectedWage(model, 120, 19)).toBeLessThan(expectedWage(model, 120, 25))
@@ -366,13 +369,62 @@ describe('정리 후보 고르기(3회차)', () => {
   })
 
   it('클 여지가 있는 어린 선수는 임대 유망주로 나눈다(18세 CA165/PA183). 클 여지가 작은 23세 CA152/PA164는 정리 후보로 본다', () => {
-    const young: Spec = { name: '신예', spots: { ST: 20 }, level: 10, age: 18, ca: 165, pa: 183 }
+    // 5회차: 클 여지만으로는 부족하고 다 컸을 때 우리 주전 수준(그 자리 기준선 이상)이어야 임대 유망주다. 적합도 60(z 0)인 18세가 다 크면 약 63점이다
+    const young: Spec = { name: '신예', spots: { ST: 20 }, level: 12, age: 18, ca: 165, pa: 183 }
     const almost: Spec = { name: '거의다큼', spots: { ST: 20 }, level: 10, age: 23, ca: 152, pa: 164 }
     const { result } = report([...keepersOf([12, 12, 12], [150, 140, 130]), ...field(14), young, almost], '4-4-2')
     expect(result.prospects.map((each) => each.name)).toContain('신예')
     expect(result.prospects.map((each) => each.name)).not.toContain('거의다큼')
     expect(result.rows.map((each) => each.name)).toContain('거의다큼')
     expect(result.prospects[0].gain).toBeGreaterThan(0)
+  })
+
+  it('5회차 T3. 22세 다섯 번째 골키퍼(CA 92/PA 122): 클 여지는 있지만 다 커도 이 자리 기준에 못 미쳐 정리 후보다(적합 위험 1 → 적합 항목 50점)', () => {
+    const young: Spec = { name: '어린골키퍼', spots: { GK: 20 }, level: 8, age: 22, ca: 92, pa: 122 }
+    const specs = [...keepersOf([12, 12, 12, 12], [175, 159, 130, 113]), young, ...field(13)]
+    const { result } = report(specs, '4-2-3-1')
+    expect(result.prospects.map((each) => each.name)).not.toContain('어린골키퍼')
+    const row = result.rows.find((each) => each.name === '어린골키퍼')!
+    expect(row).toBeDefined()
+    expect(row.fit).toBe('keeper')
+    expect(row.parts.fit).toBe(50)
+    // 이유 앞에 "클 여지(+점)는 있지만 다 커도 이 자리 기준(점)에 못 미칩니다(예상 점)"
+    expect(row.reason).toMatch(/^클 여지\(\+3\.7점\)는 있지만 다 커도 골키퍼 자리 기준\(59\.3점\)에 못 미칩니다\(예상 43\.7점\)\. 골키퍼가 5명이라 4번째 이후/)
+  })
+
+  it('5회차 T12. 주급 기준 모델이 없으면(순위표를 못 읽은 리그) 정리 후보의 주급 위험은 0.5(모름)이고 이유에 그렇게 적는다', () => {
+    const rows = [...keepersOf([12, 12, 12], [150, 140, 130]), ...field(13), ...spare(4)].map((spec, i) => makeRow(i + 1, spec))
+    const analysis = analyseTactic({ rows, columns: base.columns, today: base.today, formation: '4-2-3-1', slotRoles: {}, roleWeights: {}, norms })!
+    const players = firstTeamPlayers(rows, base.columns)
+    const none = surplusReport({ players, rows, columns: base.columns, analysis, roleWeights: {}, norms, wageModel: null, minScore: 0 })
+    expect(none.rows.length).toBeGreaterThan(0)
+    for (const row of none.rows) {
+      expect(row.parts.wage).toBe(25 * UNKNOWN_RISK)
+      expect(row.unknown).toContain('wage')
+      expect(row.wageZ).toBeNull()
+      expect(row.reason).toContain('몰라 보통(0.5)으로 보았')
+    }
+  })
+
+  it('5회차: 골키퍼의 클 여지는 골키퍼 성장 표를 쓴다(22세 이득 0.46 몫). 적합도가 기준 이상이면 임대 유망주로 남는다', () => {
+    const young: Spec = { name: '어린골키퍼', spots: { GK: 20 }, level: 12, age: 22, ca: 92, pa: 122 }
+    const specs = [...keepersOf([12, 12, 12, 12], [175, 159, 130, 113]), young, ...field(13)]
+    const { result } = report(specs, '4-2-3-1')
+    const prospect = result.prospects.find((each) => each.name === '어린골키퍼')!
+    expect(prospect).toBeDefined()
+    // β 0.265 × 골키퍼 몫 0.46 × (122 - 92) = 3.66
+    expect(prospect.gain).toBeCloseTo(0.265 * 0.46 * 30, 1)
+  })
+
+  it('5회차: 전술에 뛸 자리가 없어도 다 컸을 때 가장 약한 필드 주전 수준이면 임대 유망주이고, 못 미치면 정리 후보다', () => {
+    const strong: Spec = { name: '유망한공미', spots: { AMC: 20 }, level: 14, age: 17, ca: 130, pa: 170 }
+    const weak: Spec = { name: '약한공미', spots: { AMC: 20 }, level: 8, age: 17, ca: 130, pa: 170 }
+    const { result } = report([...keepersOf([12, 12, 12], [150, 140, 130]), ...field(14), strong, weak], '4-4-2')
+    expect(result.prospects.map((each) => each.name)).toContain('유망한공미')
+    expect(result.prospects.map((each) => each.name)).not.toContain('약한공미')
+    const row = result.rows.find((each) => each.name === '약한공미')!
+    expect(row.fit).toBe('noSlot')
+    expect(row.reason).toContain('다 커도 지금 전술의 가장 약한 주전 수준에 못 미칩니다')
   })
 
   it('경계: 주급 0, 나이 모름, 숙련 숫자 없음, 역할 기준 분포 없음, 전술에 없는 포지션만 있는 선수단에서도 예외가 없다', () => {

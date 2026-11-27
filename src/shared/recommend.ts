@@ -5,6 +5,7 @@ import { lowGate, PLAYABLE_RATING } from './positions'
 import {
   benchmarkOf,
   effectiveFit,
+  growthBetaOf,
   growthGain,
   growthShare,
   projectedScore,
@@ -54,7 +55,7 @@ export const COMPONENT_LABEL: Record<ComponentId, string> = {
 /** 점수 설명에 쓰는 항목별 한 줄 풀이 */
 export const COMPONENT_HELP: Record<ComponentId, string> = {
   immediate: '이 자리 역할의 적합도가 내 주전과 두 번째 선수보다 얼마나 높은가. 차이는 그 역할 선수들의 보통 점수 차이로 재고, 차이가 클수록 좋지만 어느 정도부터는 더 얹히는 점수가 줄어듭니다. 포지션 숙련이 20보다 낮거나 31세를 넘으면(골키퍼는 34세) 그만큼 뺀 적합도로 견주고, 같은 포지션·역할의 자리가 여럿이면 가장 약한 주전을 기준으로 합니다. 보강 필요도가 높은 자리일수록 이 항목의 비중이 커집니다.',
-  maturity: '다 컸을 때의 적합도가 내 주전 기준을 얼마나 넘는가. 어릴수록, 잠재 능력이 현재 능력보다 높을수록 크게 오릅니다. 잠재와 현재의 차이 가운데 이루어질 몫(성장 몫)은 나이별 실제 성장 기록을 따라 17세 이하 78%에서 26세 이상 0%까지 줄어듭니다. 26세 이상은 지금 적합도가 곧 성숙 시 전력입니다.',
+  maturity: '다 컸을 때의 적합도가 내 주전 기준을 얼마나 넘는가. 어릴수록, 잠재 능력이 현재 능력보다 높을수록 크게 오릅니다. 잠재와 현재의 차이 가운데 이루어질 몫(성장 몫)은 나이별 성장 기록을 따라 17세 이하 78%에서 26세 이상 0%까지 줄어듭니다(골키퍼는 늦게 커서 별도 표를 씁니다). 26세 이상은 지금 적합도가 곧 성숙 시 전력입니다.',
   age: '지금 나이가 전성기에 가까운가. 필드 선수는 24~29세, 골키퍼는 27~33세를 전성기로 봅니다. 너무 어리면 당장은 약하고, 전성기가 지나면 가치가 떨어집니다.',
   cost: '이 선수의 주급과 몸값이 내 팀의 주급·몸값 수준에 비해 부담스럽지 않은가. 팀에서 가장 많이 받게 되는 선수는 크게 깎습니다.',
   ease: '데려오기 쉬운가. 계약이 얼마 안 남았거나 자유 계약이면 쉽고, 구단이 핵심 선수로 약속한 선수는 어렵습니다. 이적 의사와 평판을 읽지 못하는 동안, 현재 능력이 내 주전보다 훨씬 높은 선수(체급이 다른 선수)는 어렵다고 보아 조금 깎습니다.',
@@ -301,20 +302,51 @@ export const REALISM_WAGE_RATIO = COST_OVER_TOP_RATIO
 export const REALISM_STATUS: ReadonlySet<number> = new Set([1, 2])
 export const REALISM_LABEL = '영입 현실성 낮음'
 
+/**
+ * 구단 체급(5회차): 그 팀에 소속된 남자 선수의 현재 능력 상위 11명의 중간값. 선수가 5명 미만이면 모른다(null).
+ * 파는 구단이 우리와 비슷하거나 강하면 그 팀의 주전급 선수는 내주지 않을 가능성이 크다(선수 한 명의 현재 능력으로는 가려지지 않는다).
+ * 임대 중인 선수는 원 소속 팀의 체급으로 본다(호출하는 쪽이 팀을 정한다).
+ */
+export const STATURE_TOP_COUNT = 11
+export const STATURE_MIN_PLAYERS = 5
+export function clubStature(abilities: ArrayLike<number>): number | null {
+  if (abilities.length < STATURE_MIN_PLAYERS) return null
+  const top = Array.from(abilities).sort((a, b) => b - a).slice(0, STATURE_TOP_COUNT)
+  const mid = top.length >> 1
+  return top.length % 2 === 1 ? top[mid] : (top[mid - 1] + top[mid]) / 2
+}
+/**
+ * 파는 구단의 체급이 내 체급보다 이만큼(점) 낮은 데까지는 "비슷하다"고 본다. 추정: 3은 어림이다(게임에서 협상 시작 비율로 맞춘다. 검토 5회차 4.2절 1번).
+ * 낮음_체급 = 소속 있음 ∧ 입지 ∈ {핵심 1, 중요 2, 주전 3, 주전 골키퍼 15} ∧ S(파는 팀) ≥ S_me - STATURE_CLUB_MARGIN
+ */
+export const STATURE_CLUB_MARGIN = 3
+
 export interface Realism {
   low: boolean
   /** 낮은 이유(문장). 낮지 않으면 빈 목록 */
   reasons: string[]
 }
 
-export function realismOf(input: Pick<RecommendInput, 'hasClub' | 'wage' | 'ca' | 'squadStatus'>, ctx: Pick<RecommendContext, 'starter' | 'money'>): Realism {
+export function realismOf(
+  input: Pick<RecommendInput, 'hasClub' | 'wage' | 'ca' | 'squadStatus' | 'sellerStature' | 'signedWith'>,
+  ctx: Pick<RecommendContext, 'starter' | 'money' | 'myStature'>
+): Realism {
   const reasons: string[] = []
+  // 소속은 없지만 다른 구단과 계약을 마친 선수(5회차): 협상할 수 없다
+  if (input.signedWith !== undefined && input.signedWith !== null) {
+    reasons.push(input.signedWith ? `다른 구단(${input.signedWith})과 계약을 마쳤습니다` : '다른 구단과 계약을 마쳤습니다')
+  }
   if (input.hasClub) {
     if (input.wage !== null && ctx.money && ctx.money.topWage > 0 && input.wage >= REALISM_WAGE_RATIO * ctx.money.topWage) {
       reasons.push(`주급이 내 팀 최고 주급의 ${fixed1(input.wage / ctx.money.topWage)}배입니다`)
     }
     if (ctx.starter && REALISM_STATUS.has(input.squadStatus) && input.ca - ctx.starter.ca >= STATURE_SPAN_CA) {
       reasons.push(`소속 팀의 ${SQUAD_STATUS_LABEL[input.squadStatus]}이고 현재 능력이 내 주전보다 ${input.ca - ctx.starter.ca} 높습니다`)
+    }
+    const seller = input.sellerStature ?? null
+    const mine = ctx.myStature ?? null
+    if (seller !== null && mine !== null && IMPORTANT_STATUS.has(input.squadStatus) && seller >= mine - STATURE_CLUB_MARGIN) {
+      reasons.push(`소속 구단의 주전 수준(현재 능력 ${Math.round(seller)})이 우리(${Math.round(mine)})와 비슷하거나 높고, 그 팀의 주전급이라 내주지 않을 가능성이 큽니다`)
     }
   }
   return { low: reasons.length > 0, reasons }
@@ -353,8 +385,14 @@ export interface RecommendInput {
   contractEnd: number | null
   /** 계약상 입지 코드. 모르면 0 */
   squadStatus: number
-  /** 소속 구단이 있는가(없으면 자유 계약) */
+  /** 소속 구단이 있는가(없으면 자유 계약). 소속이 없어도 다른 구단과 계약을 마친 선수는 true로 두고 signedWith를 적는다 */
   hasClub: boolean
+  /**
+   * 파는 구단의 체급 S(t)(clubStature). 임대 중이면 원 소속 팀의 것. 모르면 null/없음(체급 조건은 보지 않는다)
+   */
+  sellerStature?: number | null
+  /** 소속은 없지만 다른 구단과 계약을 마친 선수의 계약 구단 이름(구단을 알 수 없으면 빈 글자). 아니면 없다 */
+  signedWith?: string | null
   /** 숨은 능력치와 결단력(게임 표시값 1~20). 모르면 null */
   traits: Traits
 }
@@ -378,6 +416,8 @@ export interface RecommendContext {
   today: { year: number; day: number } | null
   /** 내 팀의 주급·몸값 수준. 알 수 없으면 null */
   money: SquadMoney | null
+  /** 내 체급 S_me(내 1군의 clubStature). 모르면 null/없음 */
+  myStature?: number | null
   /** 고른 자리(그룹)의 보강 필요도(0~100). 자리를 고르지 않았으면 없다(50으로 본다) */
   need?: number | null
   /** 이 역할의 기준 분포. 없으면 FALLBACK_NORM */
@@ -528,7 +568,7 @@ export function immediateFit(fEff: number, ctx: BenchContext, category: Candidat
 export function maturityFit(fEff: number, age: number | null, ca: number, pa: number, ctx: BenchContext, goalkeeper = false): number {
   const norm = ctx.norm ?? FALLBACK_NORM
   const anchor = ctx.starter ? benchmarkOf(ctx.starter, norm, goalkeeper).anchor : norm.mu
-  return gainOf(projectedScore(fEff, age, ca, pa, norm.beta) - anchor, norm)
+  return gainOf(projectedScore(fEff, age, ca, pa, growthBetaOf(norm), goalkeeper) - anchor, norm)
 }
 
 /** 체급의 충족도: 내 약한 주전과 같거나 낮으면 1, 25 이상 높으면 0 */
@@ -617,22 +657,25 @@ function maturityPart(input: RecommendInput, ctx: RecommendContext, adjust: FitA
   const fit = maturityFit(f, input.age, input.ca, input.pa, ctx, input.goalkeeper)
   if (!notes) return { fit, assumed: false, note: '' }
   const anchor = ctx.starter ? benchmarkOf(ctx.starter, norm, input.goalkeeper).anchor : norm.mu
-  const versus = `다 컸을 때의 적합도가 주전 기준(${fixed1(anchor)}점)보다 ${fixed1(Math.abs(projectedScore(f, input.age, input.ca, input.pa, norm.beta) - anchor))}점 ${projectedScore(f, input.age, input.ca, input.pa, norm.beta) >= anchor ? '높습니다' : '낮습니다'}.`
+  const beta = growthBetaOf(norm)
+  const projectedNow = projectedScore(f, input.age, input.ca, input.pa, beta, input.goalkeeper)
+  const versus = `다 컸을 때의 적합도가 주전 기준(${fixed1(anchor)}점)보다 ${fixed1(Math.abs(projectedNow - anchor))}점 ${projectedNow >= anchor ? '높습니다' : '낮습니다'}.`
   if (input.age === null) return { fit, assumed: false, note: `나이를 알 수 없어 성장은 따지지 않고 지금 적합도 ${fixed1(f)}점으로 보았습니다. ${versus}` }
   const room = input.pa - input.ca
-  const share = growthShare(input.age)
+  const share = growthShare(input.age, input.goalkeeper)
   if (share === 0) {
     return { fit, assumed: false, note: `${input.age}세는 더 크기를 기대하지 않아(26세부터) 지금 적합도 ${fixed1(f)}점이 곧 성숙 시 전력입니다. ${versus}` }
   }
   if (room <= 0) {
     return { fit, assumed: false, note: `${input.age}세이지만 잠재 능력이 현재 능력과 같아 더 크지 않습니다. 성숙 시 전력은 지금 적합도 ${fixed1(f)}점입니다. ${versus}` }
   }
-  const projected = projectedScore(f, input.age, input.ca, input.pa, norm.beta)
-  const gain = growthGain(input.age, input.ca, input.pa, norm.beta)
+  const projected = projectedNow
+  const gain = growthGain(input.age, input.ca, input.pa, beta, input.goalkeeper)
+  const keeper = input.goalkeeper ? '골키퍼는 늦게 커서 별도 표를 씁니다. ' : ''
   return {
     fit,
     assumed: false,
-    note: `${input.age}세, 잠재 ${input.pa}(지금 ${input.ca})와의 차이 ${room} 가운데 ${Math.round(share * 100)}%(성장 몫 ${fixed2(share)}: 이 나이 선수들의 실제 성장 기록)가 이루어진다고 보아 적합도가 ${fixed1(gain)}점 올라 약 ${fixed1(projected)}점을 예상합니다. ${versus}`
+    note: `${input.age}세, 잠재 ${input.pa}(지금 ${input.ca})와의 차이 ${room} 가운데 ${Math.round(share * 100)}%(성장 몫 ${fixed2(share)}: 이 나이 선수들의 성장 기록)가 이루어진다고 보아 적합도가 ${fixed1(gain)}점 올라 약 ${fixed1(projected)}점을 예상합니다. ${keeper}${versus}`
   }
 }
 
