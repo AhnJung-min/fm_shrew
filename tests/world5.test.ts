@@ -10,7 +10,8 @@ import { ATTRIBUTE_COUNT, POSITION_COUNT } from '../src/main/save/reader'
 import { NO_TEAM, SEX_MALE, signedClubTeam, type SaveWorld } from '../src/main/save/world'
 import { WorldService } from '../src/main/worldService'
 import { POSITION_KEYS } from '../src/shared/positions'
-import type { CandidateQuery } from '../src/shared/world'
+import { ROLES } from '../src/shared/roles'
+import { SAVE_ATTRIBUTE_ORDER, type CandidateCategory, type CandidateQuery } from '../src/shared/world'
 
 interface Spec {
   name: string
@@ -284,5 +285,105 @@ describe('수정 K: 순위표를 읽지 못하는 리그에서는 주급 기준�
     expect(wageModelMissing(null)).toBe('이 리그의 주급 기준을 세우지 못했습니다(리그 순위표를 읽지 못함).')
     expect(wageModelMissing([])).toContain('리그 순위표를 읽지 못함')
     expect(wageModelMissing(Array.from({ length: 10 }, () => ({})))).toContain('표본이 모자랍니다')
+  })
+})
+
+// ---------- N-04: 능력치 단조성(모든 능력치 × 모든 역할 × 모든 탭) ----------
+
+describe('N-04 단조성: 능력치 하나를 한 단계 올리면 어느 탭에서도 추천 점수와 적합도가 줄지 않는다', () => {
+  const TABS: CandidateCategory[] = ['all', 'starter', 'rotation', 'prospect', 'free']
+  /** 낮을수록 좋은 능력치: 점수에는 이 값이 내려가는 쪽이 "좋아지는" 방향이다(recommend.ts의 LOWER_IS_BETTER) */
+  const LOWER_IS_BETTER = new Set(['injuryProneness', 'dirtiness'])
+  /** 시험 사례: 나이, 소속 유무, 능력치 바탕 값을 정하는 씨앗 */
+  const CASES = [
+    { age: 21, club: true, seed: 11 },
+    { age: 28, club: true, seed: 22 },
+    { age: 24, club: false, seed: 33 }
+  ]
+  const random = (seed: number): (() => number) => {
+    let state = seed
+    return () => {
+      state = (state * 1103515245 + 12345) & 0x7fffffff
+      return state / 0x7fffffff
+    }
+  }
+
+  /**
+   * 내 팀 1군 14명과, 후보: 기준 하나(이름 "후보-기준"), 능력치마다 한 단계 좋아진 것 54명, 포지션 숙련 한 단계 올린 것 1명.
+   * 후보의 능력치는 4~17 사이 무작위(위·아래로 한 단계씩 움직일 여지가 있다). 후보는 모두 같은 구단이고 같은 현재·잠재 능력이다.
+   */
+  function worldFor(roleIndex: number, spec: (typeof CASES)[number]): SaveWorld {
+    const role = ROLES[roleIndex]
+    const specs: Spec[] = [
+      ...Array.from({ length: 14 }, (_, i): Spec => ({ name: `우리${i + 1}`, team: 100, club: 0, ca: 150 - i, level: 13, status: 3 })),
+      ...filler('비', 200, 1, [160, 158, 156, 154, 152, 150])
+    ]
+    const names = ['후보-기준', ...SAVE_ATTRIBUTE_ORDER.map((id) => `후보-${id}`), '후보-숙련']
+    for (const name of names) {
+      specs.push(
+        spec.club
+          ? { name, team: 200, club: 1, ca: 140, pa: 160, age: spec.age, status: 4 }
+          : { name, team: NO_TEAM, club: -1, ca: 140, pa: 160, age: spec.age, wage: 0, end: 0, contractTeam: NO_TEAM }
+      )
+    }
+    const world = build(specs)
+    // 내 팀은 모든 자리를 뛸 수 있다(역할을 바꿔도 비교 주전이 있게)
+    for (let k = 0; k < world.count; k++) {
+      if (world.teamIds[k] === 100) world.positions.fill(18, k * POSITION_COUNT, (k + 1) * POSITION_COUNT)
+    }
+    const first = world.names.indexOf('후보-기준')
+    const draw = random(spec.seed + roleIndex)
+    const base = Array.from({ length: ATTRIBUTE_COUNT }, () => (4 + Math.floor(draw() * 14)) * 5)
+    const roleSlots = role.positions.map((key) => POSITION_KEYS.indexOf(key))
+    for (let k = first; k < world.count; k++) {
+      world.attributes.set(base, k * ATTRIBUTE_COUNT)
+      world.positions.fill(1, k * POSITION_COUNT, (k + 1) * POSITION_COUNT)
+      for (const slot of roleSlots) world.positions[k * POSITION_COUNT + slot] = 14
+    }
+    SAVE_ATTRIBUTE_ORDER.forEach((id, at) => {
+      // 한 단계 = 게임 표시값 1 = 저장값 5
+      world.attributes[(first + 1 + at) * ATTRIBUTE_COUNT + at] += LOWER_IS_BETTER.has(id) ? -5 : 5
+    })
+    const trained = world.count - 1
+    for (const slot of roleSlots) world.positions[trained * POSITION_COUNT + slot] = 15
+    return world
+  }
+
+  it('54개 능력치 + 포지션 숙련 × 역할 14개 × 탭 5개 × 사례 3개: 위반 0건', () => {
+    let checked = 0
+    let raised = 0
+    for (const spec of CASES) {
+      ROLES.forEach((role, roleIndex) => {
+        const ws = service(worldFor(roleIndex, spec))
+        for (const category of TABS) {
+          const result = ws.candidates(ask({ roleId: role.id, category, onlyEligible: false, search: '후보-' }))
+          const rowOf = (name: string) => result.rows.find((row) => row.name === name)!
+          const base = rowOf('후보-기준')
+          expect(base, `${role.id}/${category} 기준`).toBeDefined()
+          for (const name of [...SAVE_ATTRIBUTE_ORDER.map((id) => `후보-${id}`), '후보-숙련']) {
+            const better = rowOf(name)
+            const where = `${role.id}/${category}/${name}/${spec.age}세`
+            expect(better.recommend.total, `총점 ${where}`).toBeGreaterThanOrEqual(base.recommend.total)
+            expect(better.score, `적합도 ${where}`).toBeGreaterThanOrEqual(base.score)
+            expect(better.recommend.fit.effective, `비교용 적합도 ${where}`).toBeGreaterThanOrEqual(base.recommend.fit.effective)
+            if (better.recommend.total > base.recommend.total) raised++
+            checked++
+          }
+        }
+      })
+    }
+    expect(checked).toBe(CASES.length * ROLES.length * TABS.length * (SAVE_ATTRIBUTE_ORDER.length + 1))
+    // 아무것도 안 바뀌는 시험이 아니다: 역할에 걸린 능력치와 신뢰성 항목은 실제로 총점을 올린다(역할마다 능력치 10개 안팎만 걸려 있다)
+    expect(raised).toBeGreaterThan(checked / 10)
+  })
+
+  it('반대로 부상 빈도(낮을수록 좋음)를 올리면 총점이 줄어든다: 방향 판정이 맞는지 확인한다', () => {
+    const world = worldFor(0, CASES[1])
+    const at = SAVE_ATTRIBUTE_ORDER.indexOf('injuryProneness')
+    const k = world.names.indexOf('후보-injuryProneness')
+    world.attributes[k * ATTRIBUTE_COUNT + at] += 10
+    const ws = service(world)
+    const result = ws.candidates(ask({ roleId: ROLES[0].id, category: 'all', onlyEligible: false, search: '후보-' }))
+    expect(result.rows.find((row) => row.name === '후보-injuryProneness')!.recommend.total).toBeLessThan(result.rows.find((row) => row.name === '후보-기준')!.recommend.total)
   })
 })
