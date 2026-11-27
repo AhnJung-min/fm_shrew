@@ -78,6 +78,7 @@ export function PlayerDrawer(props: {
           <span key="club" className="with-logo">
             <ClubLogo uid={profile.clubUid} size={18} />
             {profile.club}
+            {profile.loanedTo ? ` (임대 중: ${profile.loanedTo})` : ''}
           </span>
         )
       ]
@@ -149,6 +150,7 @@ function Profile(props: { profile: PlayerProfile; rangeOf: (id: string) => CellV
         <span className="with-logo">
           <ClubLogo uid={profile.clubUid} size={18} />
           {profile.club}
+          {profile.loanedTo ? ` (임대 중: ${profile.loanedTo})` : ''}
         </span>
       ) : (
         unknown

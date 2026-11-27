@@ -5,9 +5,9 @@ import { lowGate, PLAYABLE_RATING } from './positions'
 import {
   benchmarkOf,
   effectiveFit,
-  growthRatio,
+  growthGain,
+  growthShare,
   projectedScore,
-  realizationOf,
   SQUAD_STATUS_LABEL,
   type BenchStarter,
   type CandidateCategory,
@@ -54,11 +54,19 @@ export const COMPONENT_LABEL: Record<ComponentId, string> = {
 /** 점수 설명에 쓰는 항목별 한 줄 풀이 */
 export const COMPONENT_HELP: Record<ComponentId, string> = {
   immediate: '이 자리 역할의 적합도가 내 주전과 두 번째 선수보다 얼마나 높은가. 차이는 그 역할 선수들의 보통 점수 차이로 재고, 차이가 클수록 좋지만 어느 정도부터는 더 얹히는 점수가 줄어듭니다. 포지션 숙련이 20보다 낮거나 31세를 넘으면(골키퍼는 34세) 그만큼 뺀 적합도로 견주고, 같은 포지션·역할의 자리가 여럿이면 가장 약한 주전을 기준으로 합니다. 보강 필요도가 높은 자리일수록 이 항목의 비중이 커집니다.',
-  maturity: '다 컸을 때의 적합도가 내 주전 기준을 얼마나 넘는가. 어릴수록, 잠재 능력이 현재 능력보다 높을수록 크게 오르지만, 어릴수록 잠재에 이르기까지 오래 걸려 실제로 이루어질 몫(실현률)을 낮게 잡습니다. 27세 이상은 지금 적합도가 곧 성숙 시 전력입니다.',
+  maturity: '다 컸을 때의 적합도가 내 주전 기준을 얼마나 넘는가. 어릴수록, 잠재 능력이 현재 능력보다 높을수록 크게 오릅니다. 잠재와 현재의 차이 가운데 이루어질 몫(성장 몫)은 나이별 실제 성장 기록을 따라 17세 이하 78%에서 26세 이상 0%까지 줄어듭니다. 26세 이상은 지금 적합도가 곧 성숙 시 전력입니다.',
   age: '지금 나이가 전성기에 가까운가. 필드 선수는 24~29세, 골키퍼는 27~33세를 전성기로 봅니다. 너무 어리면 당장은 약하고, 전성기가 지나면 가치가 떨어집니다.',
   cost: '이 선수의 주급과 몸값이 내 팀의 주급·몸값 수준에 비해 부담스럽지 않은가. 팀에서 가장 많이 받게 되는 선수는 크게 깎습니다.',
   ease: '데려오기 쉬운가. 계약이 얼마 안 남았거나 자유 계약이면 쉽고, 구단이 핵심 선수로 약속한 선수는 어렵습니다. 이적 의사와 평판을 읽지 못하는 동안, 현재 능력이 내 주전보다 훨씬 높은 선수(체급이 다른 선수)는 어렵다고 보아 조금 깎습니다.',
   reliability: '꾸준히 제 몫을 하고 다치지 않는가. 일관성, 큰 경기, 부상 빈도, 타고난 체력, 결단력, 비매너 플레이로 봅니다.'
+}
+
+/** 유망주 탭의 나이 가치 풀이: 어릴수록 높다(전성기를 가리는 다른 탭과 반대 방향) */
+export const AGE_HELP_PROSPECT = '지금 나이가 어린가. 어릴수록 클 시간이 길고 되팔 때 값이 오릅니다(17세 이하 1, 21세 0.56, 23세 0.33, 26세 이상 0).'
+
+/** 항목 풀이. 유망주 탭의 나이 가치만 설명이 다르다 */
+export function componentHelp(id: ComponentId, category: CandidateCategory): string {
+  return id === 'age' && category === 'prospect' ? AGE_HELP_PROSPECT : COMPONENT_HELP[id]
 }
 
 /** 화면 어디서나 같은 말로 쓰는 세 가지 점수의 풀이(풍선 도움말과 설명에 그대로 쓴다) */
@@ -282,6 +290,40 @@ const LOWER_IS_BETTER: ReadonlySet<TraitId> = new Set<TraitId>(['injuryProneness
 
 /** 소속팀에서 중요한 선수로 약속된 입지 코드: 핵심 선수 1, 중요 선수 2, 주전 3, 주전 골키퍼 15 */
 export const IMPORTANT_STATUS: ReadonlySet<number> = new Set([1, 2, 3, 15])
+/**
+ * 영입 현실성(3회차): 이적 의사·평판·예산을 읽지 못하는 동안 실현 가능성이 낮은 선수에 등급 상한을 둔다. 총점과 정렬은 그대로 두고 등급만 "고려"까지로 제한한다.
+ *   낮음 = 소속 있음 ∧ ( 주급 ≥ 1.3 × 내 1군 최고 주급  ∨  ( CA - 비교 주전 CA ≥ STATURE_SPAN_CA(25) ∧ 계약상 입지 ∈ {핵심 선수, 중요 선수} ) )
+ * 1.3은 비용 곡선이 0이 되는 배수(COST_OVER_TOP_RATIO)와 같고, 25는 체급과 같다(추정). 최고 주급이나 비교 주전을 모르면 그 조건은 보지 않는다.
+ * 입지 번호는 SQUAD_STATUS_LABEL의 1(핵심 선수)·2(중요 선수).
+ */
+export const REALISM_WAGE_RATIO = COST_OVER_TOP_RATIO
+export const REALISM_STATUS: ReadonlySet<number> = new Set([1, 2])
+export const REALISM_LABEL = '영입 현실성 낮음'
+
+export interface Realism {
+  low: boolean
+  /** 낮은 이유(문장). 낮지 않으면 빈 목록 */
+  reasons: string[]
+}
+
+export function realismOf(input: Pick<RecommendInput, 'hasClub' | 'wage' | 'ca' | 'squadStatus'>, ctx: Pick<RecommendContext, 'starter' | 'money'>): Realism {
+  const reasons: string[] = []
+  if (input.hasClub) {
+    if (input.wage !== null && ctx.money && ctx.money.topWage > 0 && input.wage >= REALISM_WAGE_RATIO * ctx.money.topWage) {
+      reasons.push(`주급이 내 팀 최고 주급의 ${fixed1(input.wage / ctx.money.topWage)}배입니다`)
+    }
+    if (ctx.starter && REALISM_STATUS.has(input.squadStatus) && input.ca - ctx.starter.ca >= STATURE_SPAN_CA) {
+      reasons.push(`소속 팀의 ${SQUAD_STATUS_LABEL[input.squadStatus]}이고 현재 능력이 내 주전보다 ${input.ca - ctx.starter.ca} 높습니다`)
+    }
+  }
+  return { low: reasons.length > 0, reasons }
+}
+
+/** 영입 현실성이 낮으면 등급을 "고려"까지로 제한한다(보류·유형 밖은 그대로) */
+export function capTierByRealism(tier: RecommendTierId, realism: Realism): RecommendTierId {
+  return realism.low && (tier === 'top' || tier === 'good') ? 'maybe' : tier
+}
+
 /** 현재 능력이 내 주전보다 이만큼 이상 높으면 큰 구단의 핵심일 수 있다고 알린다 */
 export const WARN_CA_MARGIN = 10
 /** 계약이 이 일수(4년) 이상 남았으면 이적료가 비쌀 수 있다고 알린다 */
@@ -374,6 +416,8 @@ export interface Recommendation {
   components: RecommendComponent[]
   /** 점수에는 넣지 않았지만 알려 둘 것(영입이 어려울 수 있는 이유) */
   warnings: string[]
+  /** 영입 현실성. 낮으면 등급을 "고려"까지로 제한한다(capTierByRealism) */
+  realism: Realism
 }
 
 // ---------- 도구 ----------
@@ -432,6 +476,16 @@ export function affordability(amount: number, median: number, top: number): numb
     ],
     amount
   )
+}
+
+/**
+ * 유망주 유형의 나이 가치(3회차): 어릴수록 높다. 17세 이하 1, 21세 0.56, 23세 0.33, 26세 이상 0.
+ * 다른 유형의 ageFit(전성기 24~29세)을 유망주 탭에 쓰면 18세가 24세보다 낮아져 "어릴수록 되팔 때 값이 오른다"는 설명과 거꾸로였다.
+ */
+export const AGE_PROSPECT_FROM = 17
+export const AGE_PROSPECT_SPAN = 9
+export function ageProspect(age: number): number {
+  return clamp01(1 - (age - AGE_PROSPECT_FROM) / AGE_PROSPECT_SPAN)
 }
 
 /** 나이 가치의 충족도 */
@@ -560,22 +614,28 @@ function maturityPart(input: RecommendInput, ctx: RecommendContext, adjust: FitA
   const versus = `다 컸을 때의 적합도가 주전 기준(${fixed1(anchor)}점)보다 ${fixed1(Math.abs(projectedScore(f, input.age, input.ca, input.pa, norm.beta) - anchor))}점 ${projectedScore(f, input.age, input.ca, input.pa, norm.beta) >= anchor ? '높습니다' : '낮습니다'}.`
   if (input.age === null) return { fit, assumed: false, note: `나이를 알 수 없어 성장은 따지지 않고 지금 적합도 ${fixed1(f)}점으로 보았습니다. ${versus}` }
   const room = input.pa - input.ca
-  if (growthRatio(input.age) === 0) {
-    return { fit, assumed: false, note: `${input.age}세는 더 크기를 기대하지 않아(27세부터) 지금 적합도 ${fixed1(f)}점이 곧 성숙 시 전력입니다. ${versus}` }
+  const share = growthShare(input.age)
+  if (share === 0) {
+    return { fit, assumed: false, note: `${input.age}세는 더 크기를 기대하지 않아(26세부터) 지금 적합도 ${fixed1(f)}점이 곧 성숙 시 전력입니다. ${versus}` }
   }
   if (room <= 0) {
     return { fit, assumed: false, note: `${input.age}세이지만 잠재 능력이 현재 능력과 같아 더 크지 않습니다. 성숙 시 전력은 지금 적합도 ${fixed1(f)}점입니다. ${versus}` }
   }
   const projected = projectedScore(f, input.age, input.ca, input.pa, norm.beta)
+  const gain = growthGain(input.age, input.ca, input.pa, norm.beta)
   return {
     fit,
     assumed: false,
-    note: `${input.age}세, 잠재 ${input.pa}(지금 ${input.ca})까지 크면 적합도 약 ${fixed1(projected)}점 예상(실현률 ${fixed2(realizationOf(input.age))} 반영: 어릴수록 이루어질 몫을 낮게 잡습니다). ${versus}`
+    note: `${input.age}세, 잠재 ${input.pa}(지금 ${input.ca})와의 차이 ${room} 가운데 ${Math.round(share * 100)}%(성장 몫 ${fixed2(share)}: 이 나이 선수들의 실제 성장 기록)가 이루어진다고 보아 적합도가 ${fixed1(gain)}점 올라 약 ${fixed1(projected)}점을 예상합니다. ${versus}`
   }
 }
 
 function agePart(input: RecommendInput, notes: boolean): Part {
   if (input.age === null) return unknown('나이를 알 수 없어서,')
+  if (input.category === 'prospect') {
+    const young = ageProspect(input.age)
+    return { fit: young, assumed: false, note: notes ? `${input.age}세로 어릴수록 클 시간이 길고 되팔 때 값이 오릅니다(17세 이하 1, 26세 이상 0 사이에서 ${fixed2(young)}).` : '' }
+  }
   const fit = ageFit(input.age, input.goalkeeper)
   if (!notes) return { fit, assumed: false, note: '' }
   const [from, to] = input.goalkeeper ? PEAK_GOALKEEPER : PEAK_OUTFIELD
@@ -728,6 +788,7 @@ export function recommend(input: RecommendInput, ctx: RecommendContext, withNote
     fit: adjust,
     fitNote: withNotes ? fitNoteOf(adjust, input.roleRating, input.age) : '',
     components,
-    warnings: withNotes ? warningsOf(input, ctx) : []
+    warnings: withNotes ? warningsOf(input, ctx) : [],
+    realism: realismOf(input, ctx)
   }
 }

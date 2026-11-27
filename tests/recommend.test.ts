@@ -3,6 +3,11 @@ import { FALLBACK_NORM, gainOf, type RoleNorm } from '../src/shared/norms'
 import {
   affordability,
   ageFit,
+  ageProspect,
+  capTierByRealism,
+  componentHelp,
+  realismOf,
+  REALISM_LABEL,
   COMPONENT_ORDER,
   daysUntil,
   immediateFit,
@@ -27,7 +32,7 @@ import {
   type Traits
 } from '../src/shared/recommend'
 import { lowGate, posPenaltySigma } from '../src/shared/positions'
-import { realizationOf, SQUAD_STATUS_LABEL, type CandidateCategory } from '../src/shared/world'
+import { growthShare, SQUAD_STATUS_LABEL, type CandidateCategory } from '../src/shared/world'
 
 const CATEGORIES: CandidateCategory[] = ['all', 'starter', 'rotation', 'prospect', 'free']
 
@@ -217,9 +222,9 @@ describe('성숙 시 전력(수준)', () => {
     money,
     norm: { mu: 70, sigma: 3, beta: 0.283, n: 100, caRef: 150 }
   }
-  it('다 컸을 때의 적합도가 주전 기준을 넘는 정도(17세 CA 120/PA 168, 적합 66.9 → 74.9점, 기준 73.3 → 0.63)', () => {
-    expect(maturityFit(66.9, 17, 120, 168, lb)).toBeCloseTo(gainOf(66.9 + 0.283 * 0.59 * 48 - 73.3, lb.norm!), 6)
-    expect(maturityFit(66.9, 17, 120, 168, lb)).toBeCloseTo(0.63, 1)
+  it('다 컸을 때의 적합도가 주전 기준을 넘는 정도(17세 CA 120/PA 168, 적합 66.9 → 77.5점, 기준 73.3 → 0.87)', () => {
+    expect(maturityFit(66.9, 17, 120, 168, lb)).toBeCloseTo(gainOf(66.9 + 0.283 * 0.78 * 48 - 73.3, lb.norm!), 6)
+    expect(maturityFit(66.9, 17, 120, 168, lb)).toBeCloseTo(0.87, 1)
   })
   it('지금 적합도가 오르면 줄지 않는다(1회차에는 오히려 내려갔다)', () => {
     let last = -1
@@ -229,11 +234,12 @@ describe('성숙 시 전력(수준)', () => {
       last = next
     }
   })
-  it('어릴수록 같은 잠재 여지에서 실현률이 낮다(24세 0.80, 21세 0.71, 18세 0.62, 16세 0.56)', () => {
-    expect(realizationOf(24)).toBeCloseTo(0.8)
-    expect(realizationOf(21)).toBeCloseTo(0.71)
-    expect(realizationOf(18)).toBeCloseTo(0.62)
-    expect(realizationOf(16)).toBeCloseTo(0.56)
+  it('어릴수록 같은 잠재 여지에서 성장 몫이 크다(17세 이하 0.78, 19세 0.635, 23세 0.265, 26세 이상 0)', () => {
+    expect(growthShare(16)).toBeCloseTo(0.78)
+    expect(growthShare(19)).toBeCloseTo(0.635)
+    expect(growthShare(23)).toBeCloseTo(0.265)
+    expect(growthShare(26)).toBe(0)
+    expect(growthShare(30)).toBe(0)
   })
   it('27세 이상이나 잠재 여지가 없으면 지금 적합도 그대로의 수준이다', () => {
     expect(maturityFit(70, 27, 100, 160, lb)).toBeCloseTo(gainOf(70 - 73.3, lb.norm!))
@@ -575,8 +581,9 @@ describe('단조성(무작위 1,000건)', () => {
       expect(trained, `rating ${i}`).toBeGreaterThanOrEqual(recommend(base, ctx, false).total)
     }
   })
-  it('나이 가치는 18세에서 24세까지 줄지 않고, 주급이 오르면 비용 점수가 늘지 않는다', () => {
+  it('나이 가치는 18세에서 24세까지 줄지 않고(유망주 유형은 반대로 늘지 않고), 주급이 오르면 비용 점수가 늘지 않는다', () => {
     for (let age = 18; age < 24; age++) expect(ageFit(age + 1, false)).toBeGreaterThanOrEqual(ageFit(age, false))
+    for (let age = 16; age < 30; age++) expect(ageProspect(age + 1)).toBeLessThanOrEqual(ageProspect(age))
     for (let i = 0; i < 1000; i++) {
       const { input: base, ctx } = randomCase()
       if (!ctx.money) continue
@@ -656,11 +663,16 @@ describe('설명 글', () => {
     expect(part('age', { age: 31 }).note).toContain('24~29세')
     expect(part('age', { age: 31, goalkeeper: true }).note).toContain('27~33세')
   })
-  it('성숙 시 전력은 나이, 잠재, 예상 적합도와 실현률을 적는다', () => {
+  it('성숙 시 전력은 나이, 잠재, 예상 적합도와 성장 몫을 적는다', () => {
     const note = part('maturity', { age: 20, ca: 100, pa: 150, roleScore: 60 }, context({ starter: { score: 60, ca: 110 }, backup: null })).note
     expect(note).toContain('20세, 잠재 150')
-    expect(note).toContain('적합도 약')
-    expect(note).toContain('실현률 0.68')
+    expect(note).toContain('약')
+    expect(note).toContain('점을 예상')
+    expect(note).toContain('성장 몫 0.57')
+    expect(note).toContain('57%')
+  })
+  it('26세부터는 더 크기를 기대하지 않는다고 적는다', () => {
+    expect(part('maturity', { age: 26, ca: 100, pa: 150 }).note).toContain('26세부터')
   })
 })
 
@@ -754,8 +766,8 @@ describe('2회차 검토 시나리오(검토 보고서 4.1, 값은 ±1점)', () 
   const cb1: RecommendContext = cb2({ starter: { name: '노장', score: 81.5, ca: 175, age: 34 }, need: 25.3 })
   const total = (category: CandidateCategory, patch: Partial<RecommendInput>, ctx: RecommendContext): number => recommend(candidate(category, patch), ctx, false).total
 
-  it('1. 유망주 탭에서 지금 적합도가 오르면 총점이 오른다(18세 CA140/PA170, f 60~86)', () => {
-    const expected = new Map([[60, 35.3], [64, 36.9], [68, 44.2], [72, 61.7], [76, 77.4], [80, 84.0], [86, 86.0]])
+  it('1. 유망주 탭에서 지금 적합도가 오르면 총점이 오른다(18세 CA140/PA170, f 60~86. 3회차 값)', () => {
+    const expected = new Map([[60, 38.3], [64, 40.4], [68, 49.1], [72, 67.2], [76, 81.2], [80, 87.1], [86, 89.0]])
     let last = -1
     for (const [f, want] of expected) {
       const got = total('prospect', { age: 18, ca: 140, pa: 170, roleScore: f }, cb2())
@@ -764,15 +776,15 @@ describe('2회차 검토 시나리오(검토 보고서 4.1, 값은 ±1점)', () 
       last = got
     }
   })
-  it('2. 18세 CA165/PA183이 16세 CA91보다 위다(63.6 > 59.8 > 40.6)', () => {
+  it('2. 18세 CA165/PA183이 16세 CA91보다 위다(67.3 > 63.9 > 58.2, 3회차 값)', () => {
     const a = total('prospect', { age: 18, ca: 165, pa: 183, roleScore: 74 }, cb2())
     const b = total('prospect', { age: 18, ca: 154, pa: 168, roleScore: 73.8 }, cb2())
     const c = total('prospect', { age: 16, ca: 91, pa: 160, roleScore: 61.5 }, cb2())
     expect(a).toBeGreaterThan(b)
     expect(b).toBeGreaterThan(c)
-    expect(Math.abs(a - 63.6)).toBeLessThanOrEqual(1.5)
-    expect(Math.abs(b - 59.8)).toBeLessThanOrEqual(1.5)
-    expect(Math.abs(c - 40.6)).toBeLessThanOrEqual(1.5)
+    expect(Math.abs(a - 67.3)).toBeLessThanOrEqual(1.5)
+    expect(Math.abs(b - 63.9)).toBeLessThanOrEqual(1.5)
+    expect(Math.abs(c - 58.2)).toBeLessThanOrEqual(1.5)
   })
   it('3. 숙련 16·f80이 숙련 20·f78보다 높다(전체 탭: 76.3, 79.8, 79.0, 82.3, 49.7)', () => {
     const cases: Array<[number, number, number]> = [[20, 78, 76.3], [16, 80, 79.8], [15, 80, 79.0], [12, 84, 82.3], [8, 84, 49.7]]
@@ -785,6 +797,55 @@ describe('2회차 검토 시나리오(검토 보고서 4.1, 값은 ±1점)', () 
     const got = [25, 31, 33, 34, 36].map((age) => total('starter', { age, ca: 165, pa: 165, roleScore: 80 }, cb1))
     want.forEach((value, i) => expect(Math.abs(got[i] - value), `age case ${i}: ${got[i]}`).toBeLessThanOrEqual(1.5))
     for (let i = 1; i < got.length; i++) expect(got[i]).toBeLessThan(got[i - 1])
+  })
+  it('3회차 8. 유망주 탭: 같은 f·CA·PA에서 어릴수록 총점이 줄지 않는다(16세 ≥ 18세 ≥ 21세 ≥ 23세)', () => {
+    const got = [16, 18, 21, 23].map((age) => total('prospect', { age, ca: 140, pa: 170, roleScore: 76 }, cb2()))
+    for (let i = 1; i < got.length; i++) expect(got[i], `${[16, 18, 21, 23][i]}세`).toBeLessThanOrEqual(got[i - 1] + 1e-9)
+    expect(got[0]).toBeGreaterThan(got[3])
+    // 다른 유형의 나이 가치는 전성기(24~29세)가 가장 높아 어린 선수가 더 낮다(유망주 유형에서만 방향이 바뀐다)
+    expect(ageFit(18, false)).toBeLessThan(ageFit(24, false))
+    expect(ageProspect(18)).toBeGreaterThan(ageProspect(24))
+  })
+  it('유망주 나이 가치: 17세 이하 1, 21세 0.56, 23세 0.33, 26세 이상 0이고, 설명이 유형에 맞게 갈린다', () => {
+    expect(ageProspect(15)).toBe(1)
+    expect(ageProspect(17)).toBe(1)
+    expect(ageProspect(21)).toBeCloseTo(0.556, 2)
+    expect(ageProspect(23)).toBeCloseTo(0.333, 2)
+    expect(ageProspect(26)).toBe(0)
+    expect(ageProspect(40)).toBe(0)
+    expect(componentHelp('age', 'prospect')).toContain('어릴수록 클 시간이 길고 되팔 때 값이 오릅니다')
+    expect(componentHelp('age', 'starter')).toContain('전성기')
+    const note = part('age', { category: 'prospect', age: 21 }).note
+    expect(note).toContain('어릴수록')
+    expect(note).not.toContain('24~29세')
+  })
+  it('3회차 9. 영입 현실성: 주급이 내 팀 최고 주급의 1.3배 이상이거나, 핵심·중요 선수이면서 CA가 주전보다 25 이상 높으면 낮다. 총점은 그대로이고 등급만 고려까지다', () => {
+    const ctx = cb2({ starter: { name: '주전', score: 76, ca: 157, age: 26 }, money: reviewMoney })
+    const rich = candidate('starter', { wage: 460_000 })
+    const realismRich = recommend(rich, ctx).realism
+    expect(realismRich.low).toBe(true)
+    expect(realismRich.reasons[0]).toContain('주급이 내 팀 최고 주급의 1.3배입니다')
+    const star = candidate('starter', { ca: 192, squadStatus: 1 })
+    const realismStar = recommend(star, ctx).realism
+    expect(realismStar.low).toBe(true)
+    expect(realismStar.reasons[0]).toBe('소속 팀의 핵심 선수이고 현재 능력이 내 주전보다 35 높습니다')
+    expect(recommend(candidate('starter', { ca: 190, squadStatus: 2 }), ctx).realism.reasons[0]).toContain('중요 선수이고')
+    // 해당 없는 선수: 주급 1.29배, CA 격차 24, 입지가 주전, 자유 계약, 최고 주급·비교 주전을 모를 때
+    expect(recommend(candidate('starter', { wage: 449_000 }), ctx).realism.low).toBe(false)
+    expect(recommend(candidate('starter', { ca: 181, squadStatus: 1 }), ctx).realism.low).toBe(false)
+    expect(recommend(candidate('starter', { ca: 192, squadStatus: 3 }), ctx).realism.low).toBe(false)
+    expect(recommend(candidate('starter', { hasClub: false, wage: 900_000, ca: 192, squadStatus: 1 }), ctx).realism.low).toBe(false)
+    expect(realismOf(candidate('starter', { wage: 900_000 }), { starter: ctx.starter, money: null }).low).toBe(false)
+    expect(realismOf(candidate('starter', { ca: 199, squadStatus: 1 }), { starter: null, money: reviewMoney }).low).toBe(false)
+    // 등급만 제한한다: 강력 추천·추천은 고려로, 보류·유형 밖은 그대로. 총점은 같은 입력에서 realism과 상관없이 같다
+    expect(capTierByRealism('top', realismRich)).toBe('maybe')
+    expect(capTierByRealism('good', realismRich)).toBe('maybe')
+    expect(capTierByRealism('maybe', realismRich)).toBe('maybe')
+    expect(capTierByRealism('low', realismRich)).toBe('low')
+    expect(capTierByRealism('outside', realismRich)).toBe('outside')
+    expect(capTierByRealism('top', { low: false, reasons: [] })).toBe('top')
+    expect(recommend(rich, ctx, false).total).toBe(recommend(rich, ctx).total)
+    expect(REALISM_LABEL).toBe('영입 현실성 낮음')
   })
   it('9. 경계: 자유 계약, 몸값 0, 주급 0, 골키퍼, 주전·후보 없음에서 예외 없이 0~100이다', () => {
     const cases: Array<[Partial<RecommendInput>, RecommendContext]> = [

@@ -15,9 +15,9 @@ import { buildSnapshot, emptySnapshot, type ClubSnapshot, type GameFields } from
 import { FIELD_BY_ID, FIELDS } from '@shared/fields'
 import { footValues, formatPounds, hiddenAttributes, isGoalkeeper, visibleAttributes } from '@shared/playerView'
 import { POSITION_KEYS, PLAYABLE_RATING, positionsLabel } from '@shared/positions'
-import { FALLBACK_NORM } from '@shared/norms'
-import { recommend, squadMoney, tierRanker, TRAIT_WEIGHTS, type RecommendContext, type RecommendInput, type TraitId, type Traits } from '@shared/recommend'
-import { ROLE_BY_ID } from '@shared/roles'
+import { FALLBACK_NORM, type RoleNorms } from '@shared/norms'
+import { capTierByRealism, recommend, squadMoney, tierRanker, TRAIT_WEIGHTS, type RecommendContext, type RecommendInput, type TraitId, type Traits } from '@shared/recommend'
+import { ROLE_BY_ID, ROLES } from '@shared/roles'
 import { analyseTactic, slotBench } from '@shared/tactic'
 import type { SeasonMatch, SeasonResult, SeasonTableRow } from '@shared/season'
 import type { ColumnInfo, SquadResult } from '@shared/types'
@@ -87,6 +87,9 @@ const PLAYERS: MockPlayer[] = Array.from({ length: 150 }, (_, i) => {
 
 const ATTRIBUTE_INDEX = new Map<string, number>(SAVE_ATTRIBUTE_ORDER.map((id, i) => [id, i]))
 
+/** 미리보기에는 세이브 전체가 없어 역할별 기준 분포를 구하지 못한다: 모든 역할에 대신하는 값을 주어 실제 앱과 같은 식을 돌린다 */
+const MOCK_NORMS: RoleNorms = Object.fromEntries(ROLES.map((role) => [role.id, FALLBACK_NORM]))
+
 export function mockCandidates(query: CandidateQuery, empty: boolean): CandidateResult {
   const counts: Record<CandidateCategory, number> = { all: 0, starter: 0, rotation: 0, prospect: 0, free: 0 }
   if (empty) {
@@ -95,7 +98,7 @@ export function mockCandidates(query: CandidateQuery, empty: boolean): Candidate
   // 전술의 한 자리를 기준으로 찾으면 그 자리의 역할·주전·두 번째 선수·보강 필요도를 쓴다(실제 앱과 같은 계산)
   const squad = mockSquad(false)
   const analysis = query.slot
-    ? analyseTactic({ rows: squad.rows, columns: squad.columns, today: squad.today, formation: query.slot.formation, slotRoles: query.slot.slotRoles, roleWeights: {} })
+    ? analyseTactic({ rows: squad.rows, columns: squad.columns, today: squad.today, formation: query.slot.formation, slotRoles: query.slot.slotRoles, roleWeights: {}, norms: squad.roleNorms })
     : null
   const slotFound = analysis?.slots[query.slot?.index ?? -1] ?? null
   const role = ROLE_BY_ID[slotFound ? slotFound.slot.roleId : query.roleId]
@@ -185,27 +188,32 @@ export function mockCandidates(query: CandidateQuery, empty: boolean): Candidate
     need,
     group: group ? { label: group.label, slots: group.slots.length } : null,
     baseline: money,
-    rows: picked.map(({ player, score, categories, recommend: recommendation }) => ({
-      uid: player.uid,
-      clubUid: null,
-      recommend: recommendation,
-      value: Math.round(player.ca ** 3 * 2.2),
-      wage: player.club === '자유 계약' ? null : player.ca * 900,
-      contractEnd: player.club === '자유 계약' ? null : { year: 2026 + (player.uid % 4), month: 6, day: 30 },
-      squadStatus: player.club === '자유 계약' ? '' : ['핵심 선수', '중요 선수', '주전', '로테이션'][player.uid % 4],
-      nation: ['대한민국', '브라질', '프랑스', '잉글랜드'][player.uid % 4],
-      name: player.name,
-      age: player.age,
-      position: player.position,
-      club: player.club,
-      ca: player.ca,
-      pa: player.pa,
-      score,
-      gap: bench.starter ? Math.round((score - (bench.starter.shownScore ?? bench.starter.score)) * 10) / 10 : null,
-      categories,
-      tier: tierOf(recommendation.total),
-      attributes: player.attributes.map(shownValue)
-    }))
+    rows: picked.map(({ player, score, categories, recommend: recommendation }) => {
+      // 지어낸 임대 선수: 원 소속(club)과 지금 뛰는 구단(loanedTo)을 따로 보여 준다
+      const loanedTo = player.club !== '자유 계약' && player.uid % 11 === 0 ? CLUBS[(player.uid + 1) % (CLUBS.length - 1)] : null
+      return {
+        uid: player.uid,
+        clubUid: null,
+        loanedTo: loanedTo === player.club ? null : loanedTo,
+        recommend: recommendation,
+        value: Math.round(player.ca ** 3 * 2.2),
+        wage: player.club === '자유 계약' ? null : player.ca * 900,
+        contractEnd: player.club === '자유 계약' ? null : { year: 2026 + (player.uid % 4), month: 6, day: 30 },
+        squadStatus: player.club === '자유 계약' ? '' : ['핵심 선수', '중요 선수', '주전', '로테이션'][player.uid % 4],
+        nation: ['대한민국', '브라질', '프랑스', '잉글랜드'][player.uid % 4],
+        name: player.name,
+        age: player.age,
+        position: player.position,
+        club: player.club,
+        ca: player.ca,
+        pa: player.pa,
+        score,
+        gap: bench.starter ? Math.round((score - (bench.starter.shownScore ?? bench.starter.score)) * 10) / 10 : null,
+        categories,
+        tier: capTierByRealism(tierOf(recommendation.total), recommendation.realism),
+        attributes: player.attributes.map(shownValue)
+      }
+    })
   }
 }
 
@@ -310,7 +318,7 @@ export function mockSquad(empty: boolean): SquadResult {
       }
     }
   })
-  return { ok: true, columns, rows, today }
+  return { ok: true, columns, rows, today, roleNorms: MOCK_NORMS }
 }
 
 /** 지어낸 경기 일정과 순위표(미리보기용). 팀 이름과 점수는 모두 꾸며 낸 것이다. */
@@ -393,19 +401,21 @@ export function mockDashboard(empty: boolean, settings: { formation: string; slo
   const squad = mockSquad(false)
   const season = mockSeason(false)
   const players = firstTeamPlayers(squad.rows, squad.columns)
-  const analysis = analyseTactic({ rows: squad.rows, columns: squad.columns, today: squad.today, formation: settings.formation, slotRoles: settings.slotRoles, roleWeights: {} })!
+  const analysis = analyseTactic({ rows: squad.rows, columns: squad.columns, today: squad.today, formation: settings.formation, slotRoles: settings.slotRoles, roleWeights: {}, norms: squad.roleNorms })!
   const contracts = contractWindows(players, squad.today)
   const need = analysis.byNeed[0]
   const slot = recommendSlotOf(analysis.formation.id, need)
 
-  // 지어낸 주급 기준선: 선수마다 주급이 능력의 지수 함수에 가깝게 흩어지도록 만든 표본
+  // 지어낸 주급 기준선: 선수마다 주급이 능력(과 나이)의 지수 함수에 가깝게 흩어지도록 만든 표본
   const points = Array.from({ length: 400 }, (_, i) => {
     const random = rng(i + 901)
     const ca = 60 + Math.floor(random() * 110)
-    return { ca, wage: Math.exp(3.4 + 0.052 * ca + (random() - 0.5) * 1.4) }
+    const age = 17 + Math.floor(random() * 20)
+    return { ca, age, wage: Math.exp(3.4 + 0.052 * ca - (age < 21 ? 0.5 : 0) + (age >= 30 ? 0.2 : 0) + (random() - 0.5) * 1.2) }
   })
   const fit = fitWageModel(points)!
-  const over = overpaidPlayers(players, fit)
+  const loanedIn = new Set([1030])
+  const over = overpaidPlayers(players, fit, loanedIn)
 
   const candidates = mockCandidates(
     {
@@ -439,14 +449,15 @@ export function mockDashboard(empty: boolean, settings: { formation: string; slo
       ages: ageStructure(players)
     },
     contracts: { known: contracts.known, within1y: contracts.within1y, within2y: contracts.within2y, wageWithin1y: contracts.wageWithin1y },
-    surplus: { ok: true, formation: analysis.formation.label, ...surplusReport({ players, rows: squad.rows, columns: squad.columns, analysis, roleWeights: {} }) },
+    surplus: { ok: true, formation: analysis.formation.label, ...surplusReport({ players, rows: squad.rows, columns: squad.columns, analysis, roleWeights: {}, norms: squad.roleNorms, wageModel: fit, loanedIn }) },
     overpaid: { ok: true, model: { ...fit, scope: 'league', teams: 8 }, rows: over.rows, total: over.total },
     recommend: {
       ok: true,
       matched: candidates.matched,
       slot,
       rows: candidates.rows.slice(0, 3).map((row) => ({
-        uid: row.uid, name: row.name, age: row.age, position: row.position, club: row.club, clubUid: null, ca: row.ca, pa: row.pa, total: row.recommend.total, tier: row.tier, score: row.score, gap: row.gap
+        uid: row.uid, name: row.name, age: row.age, position: row.position, club: row.club, clubUid: null, ca: row.ca, pa: row.pa, total: row.recommend.total, tier: row.tier, score: row.score, gap: row.gap,
+        loanedTo: row.loanedTo, realism: row.recommend.realism
       }))
     }
   }

@@ -6,26 +6,27 @@ import {
   FIT_GAP_SIGMAS,
   GOALKEEPERS_KEPT,
   NO_DASHBOARD,
-  OVERPAID_RATIO,
-  PROSPECT_MAX_AGE,
-  PROSPECT_MIN_ROOM,
+  NO_SLOT_PREMIUM,
+  OVERPAID_Z,
+  OVERPAID_Z_STRONG,
   SURPLUS_WEIGHTS,
   UNKNOWN_RISK,
-  WAGE_RATIO_FULL,
-  WAGE_RATIO_ZERO,
+  WAGE_Z_FULL,
   type DashboardData,
   type DashContract,
   type DashDate,
   type DashPlayer,
   type LoanEntry,
+  type SurplusRow,
   type Tone
 } from '@shared/dashboard'
 import type { LinkStatus } from '@shared/game'
+import { withJosa } from '@shared/korean'
 import { formatPounds } from '@shared/playerView'
-import { RECOMMEND_TIER_LABEL, TIER_MEANING } from '@shared/recommend'
+import { RECOMMEND_TIER_LABEL, REALISM_LABEL, TIER_MEANING } from '@shared/recommend'
 import type { SeasonResult } from '@shared/season'
 import type { Settings, SquadResult } from '@shared/types'
-import { benchLine } from '@shared/world'
+import { benchLine, PROSPECT_MAX_AGE, PROSPECT_MIN_GAIN_SIGMA, PROSPECT_MIN_ROOM } from '@shared/world'
 import { api } from '@/api'
 import { ClubLogo } from '@/components/ClubLogo'
 import { GameCards } from '@/components/GameCards'
@@ -100,6 +101,14 @@ function Who(props: { player: Pick<DashPlayer, 'uid' | 'name'>; onOpen: (uid: nu
 function sourceOf(save: string, ability: string, saveWhat = '', abilityWhat = ''): string {
   if (save === ability) return save
   return `${save}${saveWhat ? `(${saveWhat})` : ''}, ${ability}${abilityWhat ? `(${abilityWhat})` : ''}`
+}
+
+/** 정리 후보 점수 구성의 적합도 항목 이름(어떻게 정했는가에 따라 다르다) */
+const FIT_PART_LABEL: Record<SurplusRow['fit'], string> = {
+  slot: '적합도 차이',
+  noSlot: '자리 없음',
+  keeper: '골키퍼 인원',
+  unknown: '적합도'
 }
 
 const metaItems = (player: DashPlayer): string[] => [player.age !== null ? `${player.age}세` : '', player.position]
@@ -482,7 +491,7 @@ function Cards(props: {
                   <MetaLine
                     items={[
                       '점수 구성',
-                      `적합도 차이 ${row.parts.fit}점`,
+                      `${FIT_PART_LABEL[row.fit]} ${row.parts.fit}점${row.unknown.includes('fit') ? '(확인 못 함, 보통으로 봄)' : ''}`,
                       `주급 ${row.parts.wage}점${row.unknown.includes('wage') ? '(확인 못 함, 보통으로 봄)' : ''}`,
                       `나이와 정체 ${row.parts.age}점${row.unknown.includes('age') ? '(확인 못 함, 보통으로 봄)' : ''}`
                     ]}
@@ -524,19 +533,27 @@ function Cards(props: {
           </p>
           <ul>
             <li>
-              적합도 차이: 현재 전술에서 뛸 수 있는 자리 가운데 첫 후보와 가장 가까운 자리의 점수 차이를 그 자리 역할의 표준편차(σ)로 잰 뒤{' '}
-              {FIT_GAP_SIGMAS}σ로 나눕니다. 뛸 자리가 없으면 최대.
+              적합도: 자리가 있으면, 뛸 수 있는 자리 가운데 첫 후보와 가장 가까운 자리의 점수 차이를 그 자리 역할의 표준편차(σ)로 잰 뒤 {FIT_GAP_SIGMAS}σ로 나눕니다.
+              포지션 숙련이 20보다 낮으면 스쿼드·영입 후보와 같게 그만큼 뺀 점수로 견줍니다.
             </li>
             <li>
-              주급 부담: 주급이 1군 중간값의 {WAGE_RATIO_ZERO}배 이하면 0, {WAGE_RATIO_FULL}배 이상이면 최대.
+              자리가 없으면: 현재 전술에 뛸 자리가 없는 선수는 가장 잘 맞는 역할로 본 점수가 지금 주전 가운데 가장 약한 선수보다 얼마나 낮은지에 {NO_SLOT_PREMIUM}σ를 더해 같은 식으로
+              잽니다. 실력이 주전급이면 자리가 없어도 낮게 나옵니다.
+            </li>
+            <li>골키퍼: 능력이 높은 {GOALKEEPERS_KEPT}명은 빼고, 4번째 이후는 인원이 많아서 최대입니다.</li>
+            <li>
+              주급 부담: 같은 리그에서 현재 능력과 나이가 비슷한 선수의 기대 주급보다 표준편차(σ) 몇 배 높은가입니다. 기대 이하면 0, +{WAGE_Z_FULL}σ 이상이면 최대입니다.
+              아래 주급 과다 의심과 같은 기준입니다.
             </li>
             <li>
-              나이·정체: {AGE_RISK_FROM}세 이하 0에서 {AGE_RISK_FULL}세 이상 최대까지의 나이, 잠재가 현재보다 20 이상 높으면 0인 성장 여지를
-              6 대 4로 섞습니다.
+              나이·정체: {AGE_RISK_FROM}세 이하 0에서 {AGE_RISK_FULL}세 이상 최대까지의 나이, 잠재가 현재보다 20 이상 높으면 0인 성장 여지를 6 대 4로 섞습니다.
             </li>
             <li>
-              뺀 선수: 선발과 첫 후보, 능력이 높은 골키퍼 {GOALKEEPERS_KEPT}명, 그리고 {PROSPECT_MAX_AGE}세 이하이면서 잠재가 현재보다{' '}
-              {PROSPECT_MIN_ROOM} 이상 높은 유망주(따로 보여 줍니다).
+              뺀 선수: 선발과 첫 후보, 능력이 높은 골키퍼 {GOALKEEPERS_KEPT}명, 임대로 들어온 선수(이 구단이 정리할 수 없음), 그리고 클 여지가 있는 어린 선수(따로 보여 줍니다).
+            </li>
+            <li>
+              클 여지: {PROSPECT_MAX_AGE}세 이하이고 잠재가 현재보다 {PROSPECT_MIN_ROOM} 이상 높으며, 다 컸을 때 적합도가 {PROSPECT_MIN_GAIN_SIGMA}σ 이상 오르는 선수입니다. 영입 후보의
+              유망주 유형과 같은 기준입니다.
             </li>
             <li>전술은 스쿼드 전술판과 같은 포메이션({surplus.formation})과 역할 설정을 씁니다.</li>
           </ul>
@@ -546,7 +563,7 @@ function Cards(props: {
       <Card
         id="dash-overpaid"
         title="주급 과다 의심 TOP 5"
-        hint={`같은 리그에서 현재 능력이 비슷한 선수보다 ${OVERPAID_RATIO}배 이상 받는 1군 선수입니다. 초과액이 큰 순서입니다.`}
+        hint="같은 리그 선수들의 주급을 현재 능력과 나이로 맞춘 식에서 1 표준편차 넘게 높은 1군 선수입니다. 임대로 들어온 선수는 뺍니다. 기대보다 얼마나 높은지(σ) 순서입니다."
         source={sourceOf(saveSource, abilitySource, '주급', '현재 능력')}
         action={
           <button className="btn ghost" onClick={onGoSquad}>
@@ -557,7 +574,7 @@ function Cards(props: {
         {!overpaid.ok ? (
           <Empty>{overpaid.message}</Empty>
         ) : overpaid.rows.length === 0 ? (
-          <Empty>기준({OVERPAID_RATIO}배)을 넘게 받는 선수가 없습니다.</Empty>
+          <Empty>기준(기대보다 {OVERPAID_Z}σ 높음)을 넘게 받는 선수가 없습니다.</Empty>
         ) : (
           <ol className="rank">
             {overpaid.rows.map((row) => (
@@ -568,14 +585,15 @@ function Cards(props: {
                     <MetaLine items={metaItems(row)} />
                   </span>
                   <span className="dash-grow" />
-                  <span className="rank-score num" title="주급 ÷ 기대 주급">
-                    {row.ratio.toFixed(1)}
-                    <small>배</small>
+                  <span className="rank-score num" title="기대 주급보다 표준편차의 몇 배 높은가(z)">
+                    +{row.z.toFixed(1)}
+                    <small>σ</small>
                   </span>
                 </div>
                 <p className="num">
-                  주급 {pounds(row.wage)}로 기대치보다 {pounds(row.excess)} 많습니다. 같은 리그에서 현재 능력 {row.ca}인 선수의 보통 주급은
-                  약 {pounds(row.expected)}입니다.
+                  {withJosa(`주급 ${pounds(row.wage)}`, '은/는')} 같은 리그에서 현재 능력 {row.ca}
+                  {row.age !== null ? `·${row.age}세` : ''}인 선수의 기대 주급 {pounds(row.expected)}의 {row.ratio.toFixed(2)}배(+{row.z.toFixed(1)}σ)입니다
+                  {row.strong ? `(강한 의심: ${OVERPAID_Z_STRONG}σ 이상)` : ''}. 기대보다 {pounds(row.excess)} 많습니다.
                 </p>
               </li>
             ))}
@@ -583,11 +601,13 @@ function Cards(props: {
         )}
         {overpaid.model && (
           <p className="dash-note num">
-            기준선: 주급의 로그 = {overpaid.model.a.toFixed(2)} + {overpaid.model.b.toFixed(3)} × 현재 능력 (설명력 R²{' '}
-            {overpaid.model.r2.toFixed(2)}).
+            기준선: 주급의 로그 = {overpaid.model.a.toFixed(2)} + {overpaid.model.b.toFixed(3)} × 현재 능력 {overpaid.model.c1 < 0 ? '−' : '+'}{' '}
+            {Math.abs(overpaid.model.c1).toFixed(2)} × [21세 미만] {overpaid.model.c2 < 0 ? '−' : '+'} {Math.abs(overpaid.model.c2).toFixed(2)} × [30세 이상] (설명력 R²{' '}
+            {overpaid.model.r2.toFixed(2)}, 잔차 표준편차 {overpaid.model.s.toFixed(2)}).
             {overpaid.model.scope === 'league'
               ? ` 내 리그 ${overpaid.model.teams}개 팀의 선수 ${overpaid.model.n.toLocaleString()}명 기준.`
               : ` 순위표를 읽지 못해 구단이 있는 모든 남자 선수 ${overpaid.model.n.toLocaleString()}명 기준.`}
+            {` 의심: 기대 주급의 ${Math.exp(overpaid.model.s * OVERPAID_Z).toFixed(2)}배(+${OVERPAID_Z}σ) 이상, 강한 의심: ${Math.exp(overpaid.model.s * OVERPAID_Z_STRONG).toFixed(2)}배(+${OVERPAID_Z_STRONG}σ) 이상.`}
             {overpaid.total > overpaid.rows.length && ` 기준을 넘는 선수는 모두 ${overpaid.total}명입니다.`}
           </p>
         )}
@@ -650,7 +670,14 @@ function Cards(props: {
                   <div className="rec-club">
                     <ClubLogo uid={row.clubUid} size={20} />
                     <span>{row.club || '소속 확인 못 함'}</span>
+                    {row.loanedTo && <span className="faint">임대 중: {row.loanedTo}</span>}
+                    {row.realism.low && (
+                      <span className="tag edited" title={row.realism.reasons.join(' / ')}>
+                        {REALISM_LABEL}
+                      </span>
+                    )}
                   </div>
+                  {row.realism.low && <p className="faint">{row.realism.reasons.join('. ')}. 등급은 고려까지로 제한했습니다.</p>}
                   <p className="faint num">
                     <MetaLine
                       items={[

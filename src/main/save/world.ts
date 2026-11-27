@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs'
 import { extractDatabase, extractFile, gameDateOf, openContainer } from './container'
-import { contractInEffect, dateKey, findContracts, loanLender } from './contracts'
+import { contractInEffect, dateKey, findContracts, loanParent } from './contracts'
 import {
   ATTRIBUTE_COUNT,
   BLOCK_SIZE,
@@ -85,7 +85,7 @@ export interface SaveWorld {
   contractEnd: Uint32Array
   /**
    * 임대 중이면 임대를 보낸 팀(원 소속)의 번호, 아니면 NO_TEAM. 선수의 소속 팀은 임대를 받은 팀이다.
-   * 임대 선수는 계약 기록이 둘이다: 원 소속과 맺은 계약(만료일이 있음)과, 임대받은 팀과 맺은 만료일 없는 기록. contracts.ts의 loanLender 참고.
+   * 임대 선수는 계약 기록이 둘이다: 원 소속과 맺은 계약(만료일이 있음)과, 임대받은 팀과 맺은 만료일 없는 기록. 주급·만료일·입지(wage, contractEnd, squadStatus)는 임대 선수에 한해 원 소속 계약에서 읽는다. contracts.ts의 loanParent 참고.
    */
   loanFrom: Uint32Array
   /** 계약상 입지(게임의 값 그대로, shared/world.ts의 SQUAD_STATUS_LABEL). 모르면 0 */
@@ -364,9 +364,10 @@ export function buildWorld(db: Buffer, pickTeam?: (world: SaveWorld) => number |
   for (let k = 0; k < count; k++) {
     if (ownerIndex[k] === 0) continue
     const records = findContracts(db, blocks[k] + BLOCK_SIZE, recordEnd(k), ownerIndex[k])
-    const lender = loanLender(records, world.gameDate, world.teamIds[k])
-    if (lender !== null) world.loanFrom[k] = lender
-    const contract = contractInEffect(records, world.gameDate)
+    const parent = loanParent(records, world.gameDate, world.teamIds[k])
+    if (parent) world.loanFrom[k] = parent.teamId
+    // 임대 선수의 주급·만료일·입지는 원 소속과 맺은 계약에서 읽는다(임대받은 팀의 기록에는 만료일과 입지가 없다). 이적료를 받는 쪽도 원 소속이다
+    const contract = parent ?? contractInEffect(records, world.gameDate)
     if (!contract) continue
     world.wage[k] = contract.wage
     world.contractEnd[k] = contract.end ? dateKey(contract.end) : 0

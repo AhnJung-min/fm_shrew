@@ -2,21 +2,24 @@ import { useState } from 'react'
 import { AlertTriangle, ChevronDown, ChevronRight } from 'lucide-react'
 import type { RoleNorm } from '@shared/norms'
 import {
-  COMPONENT_HELP,
+  componentHelp,
   COMPONENT_LABEL,
   COMPONENT_ORDER,
   NEED_WEIGHT_HIGH,
   NEED_WEIGHT_LOW,
+  REALISM_LABEL,
+  REALISM_WAGE_RATIO,
   RECOMMEND_TIER_LABEL,
   RECOMMEND_WEIGHTS,
   TERM_HELP,
   TIER_CUMULATIVE_SHARE,
   TIER_MEANING,
   TIER_MIN_TOTAL,
+  STATURE_SPAN_CA,
   type SquadMoney
 } from '@shared/recommend'
 import { formatPounds } from '@shared/playerView'
-import { CATEGORY_LABEL, type CandidateCategory, type CandidateRow } from '@shared/world'
+import { CATEGORY_LABEL, PROSPECT_MIN_GAIN_SIGMA, type CandidateCategory, type CandidateRow } from '@shared/world'
 
 const percent = (share: number): number => Math.round(share * 100)
 
@@ -47,7 +50,7 @@ function Explainer(props: { category: CandidateCategory; baseline: SquadMoney | 
               <tr key={id} className={weights[id] === 0 ? 'off' : ''}>
                 <th scope="row">{COMPONENT_LABEL[id]}</th>
                 <td className="num">{weights[id] === 0 ? '반영 안 함' : weights[id]}</td>
-                <td>{COMPONENT_HELP[id]}</td>
+                <td>{componentHelp(id, category)}</td>
               </tr>
             ))}
           </tbody>
@@ -62,6 +65,17 @@ function Explainer(props: { category: CandidateCategory; baseline: SquadMoney | 
           등급은 점수의 절대값이 아니라, 같은 유형의 자격을 갖춘 선수 전체 안에서의 순위로 매깁니다: 상위 {percent(TIER_CUMULATIVE_SHARE[0])}%는 강력 추천, 다음{' '}
           {percent(TIER_CUMULATIVE_SHARE[1] - TIER_CUMULATIVE_SHARE[0])}%는 추천, 다음 {percent(TIER_CUMULATIVE_SHARE[2] - TIER_CUMULATIVE_SHARE[1])}%는 고려, 나머지는 보류입니다.
           후보 수가 적어도 모든 등급이 나오도록 인원은 올림해서 셉니다. 점수가 {TIER_MIN_TOTAL}점 미만이면 순위와 상관없이 보류입니다.
+        </p>
+        {category === 'prospect' && (
+          <p>
+            유망주는 나이가 어릴수록 점수가 높습니다(17세 이하 1, 26세 이상 0). 성숙 시 이득(잠재와 현재의 차이 × 나이별 성장 몫 × 역할의 기울기)이 {PROSPECT_MIN_GAIN_SIGMA} 표준편차보다
+            작은 선수는 유망주로 보지 않습니다. 그런 선수도 즉시 전력·로테이션 탭에는 그대로 남습니다.
+          </p>
+        )}
+        <p>
+          {REALISM_LABEL}: 소속이 있는 선수가 내 팀 최고 주급의 {REALISM_WAGE_RATIO}배 이상을 받거나, 소속 팀의 핵심·중요 선수이면서 현재 능력이 내 주전보다 {STATURE_SPAN_CA} 이상 높으면 붙는 표지입니다.
+          이 이적 의사·평판·예산을 읽지 못하는 동안의 임시 장치로, 총점과 순서는 그대로 두고 등급만 “고려”까지로 제한합니다.
+          임대 중인 선수는 원 소속 구단을 소속으로 보여 줍니다(이적료를 받는 쪽). 계약·주급은 세이브에 적힌 값 그대로입니다.
         </p>
         <p className="muted">
           {baseline
@@ -103,6 +117,7 @@ export function RecommendPanel(props: {
             <span className="reco-toggle-name">{row.name}의 추천 점수</span>
             <b className={`num reco-total ${row.tier}`}>{reco.total}</b>
             <span className={`reco-tier ${row.tier}`}>{RECOMMEND_TIER_LABEL[row.tier]}</span>
+            {reco.realism.low && <span className="tag edited">{REALISM_LABEL}</span>}
             <span className="muted reco-toggle-hint">{open ? '풀이 접기' : '항목별 풀이 보기'}</span>
           </>
         ) : (
@@ -128,6 +143,12 @@ export function RecommendPanel(props: {
                 {reco.fitNote} {reco.gateNote}
               </p>
               <p className="muted reco-tier-line">
+                {reco.realism.low && (
+                  <>
+                    <b>{REALISM_LABEL}</b>: {reco.realism.reasons.join('. ')}. 등급은 고려까지로 제한했습니다.{' '}
+                  </>
+                )}
+                {row.loanedTo && `임대 중: 원 소속은 ${row.club}이고 지금은 ${row.loanedTo}에서 뜁니다. `}
                 {row.tier === 'outside'
                   ? `이 선수는 “${CATEGORY_LABEL[category]}” 유형의 자격이 없어 이름으로 찾아 보여 드린 것입니다(등급 대신 유형 밖). 점수는 참고용입니다.`
                   : `${TIER_MEANING[category]}${ranked !== null ? ` 이 유형의 자격 후보는 ${ranked.toLocaleString()}명입니다.` : ''}`}
@@ -136,7 +157,7 @@ export function RecommendPanel(props: {
                 {reco.components.map((each) => (
                   <li key={each.id} className={each.counted ? '' : 'skipped'}>
                     <div className="reco-line">
-                      <span className="reco-label" title={COMPONENT_HELP[each.id]}>
+                      <span className="reco-label" title={componentHelp(each.id, category)}>
                         {each.label}
                       </span>
                       <span className="reco-track" aria-hidden="true">

@@ -2,13 +2,14 @@ import { PencilRuler, Search } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { FIELDS } from '@shared/fields'
 import { formatPounds as pounds } from '@shared/playerView'
-import { RECOMMEND_TIER_LABEL, TERM_HELP } from '@shared/recommend'
+import { RECOMMEND_TIER_LABEL, REALISM_LABEL, TERM_HELP } from '@shared/recommend'
 import { ROLE_BY_ID, ROLES } from '@shared/roles'
 import { analyseTactic } from '@shared/tactic'
 import type { LinkStatus } from '@shared/game'
 import type { CellValue, ColumnInfo, PlayerRow, Settings, SquadResult } from '@shared/types'
 import {
   benchLine,
+  benchmarkOf,
   CATEGORY_HELP,
   CATEGORY_LABEL,
   SAVE_ATTRIBUTE_ORDER,
@@ -32,13 +33,13 @@ const info = (header: string, field: string, label: string, numeric: boolean): C
 })
 
 const NAME = info('이름', 'name', '이름', false)
-const KIND = info('유형', 'candidateKind', '이 선수가 드는 유형', false)
+const KIND: ColumnInfo = { ...info('유형', 'candidateKind', '이 선수가 드는 유형(영입 현실성이 낮으면 표지가 붙습니다)', false), width: 250 }
 const RECO: ColumnInfo = { ...info('추천 점수', 'recommend', TERM_HELP.recommend, true), width: 118 }
 const SCORE = info('적합도', 'roleScore', TERM_HELP.fit, true)
 const GAP = info('주전 대비', 'starterGap', '이 자리(역할) 내 주전과의 적합도 차이', true)
 const AGE = info('나이', 'age', '나이', true)
 const POSITION = info('포지션', 'position', '포지션', false)
-const CLUB: ColumnInfo = { ...info('소속 구단', 'club', '소속 구단', false), width: 196 }
+const CLUB: ColumnInfo = { ...info('소속 구단', 'club', '소속 구단. 임대 중이면 원 소속 구단(이적료를 받는 쪽)입니다', false), width: 250 }
 // 너비를 고정한다: 열 너비는 앞쪽 줄의 글자 수로 어림하는데, 게임이 범위로 적어 주는 몸값("170억 원 - 185억 원")은 나중에 도착해 더 길어서 잘렸다
 const VALUE: ColumnInfo = {
   ...info(
@@ -291,17 +292,30 @@ export function Targets(props: {
         </span>
       )
     }
-    if (col.field === 'club' && candidate.clubUid) {
+    if (col.field === 'club' && (candidate.clubUid || candidate.loanedTo)) {
       const name = row.cells[col.header]?.raw ?? candidate.club
       return (
-        <span className="club-cell" title={name}>
-          <ClubLogo uid={candidate.clubUid} size={18} />
+        <span className="club-cell" title={candidate.loanedTo ? `${name}(원 소속). 지금은 ${candidate.loanedTo}에서 임대로 뛰고 있습니다.` : name}>
+          {candidate.clubUid ? <ClubLogo uid={candidate.clubUid} size={18} /> : null}
           <span>{name}</span>
+          {candidate.loanedTo && <span className="tag">임대 중: {candidate.loanedTo}</span>}
+        </span>
+      )
+    }
+    if (col.field === 'candidateKind' && candidate.recommend.realism.low) {
+      const text = row.cells[col.header]?.raw ?? ''
+      return (
+        <span className="club-cell" title={`${REALISM_LABEL}: ${candidate.recommend.realism.reasons.join(' / ')}. 등급은 고려까지로 제한했습니다.`}>
+          <span>{text}</span>
+          <span className="tag edited">{REALISM_LABEL}</span>
         </span>
       )
     }
     return null
   }
+
+  // 자유 계약 탭이 비었을 때 이유로 보여 줄 현재 능력 문턱(즉시 전력·로테이션의 문턱과 같다)
+  const caGate = result?.ok ? benchmarkOf(result.bench.starter, result.norm ?? undefined).caGate : null
 
   if (result && !result.ok) {
     return (
@@ -474,7 +488,7 @@ export function Targets(props: {
           <div className="empty" style={{ flex: 1 }}>
             <strong>조건에 맞는 선수가 없습니다</strong>
             {category === 'free'
-              ? '소속이 없는 선수 가운데 이 자리의 주전 수준에 가까운 선수가 없습니다. 유형을 “전체”로 바꾸거나 역할·나이 조건을 풀어 보세요.'
+              ? `이 세이브에는 이 자리에 맞는 소속 없는 선수가 없습니다${caGate !== null ? `(현재 능력 ${Math.round(caGate)} 이상이고 적합도가 주전 수준 근처인 선수가 없음)` : ''}. 유형을 “전체”로 바꾸거나 역할·나이 조건을 풀어 보세요.`
               : '유형을 “전체”로 바꾸거나 역할·나이 조건을 풀어 보세요. 이름으로 찾으면 유형 자격과 상관없이 보여 줍니다.'}
           </div>
         ) : (
