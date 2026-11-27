@@ -1,8 +1,9 @@
-import { meanCaAbove, normFromScores, referenceCa, NORM_MIN_RATING, type RoleNorms } from '@shared/norms'
+import { meanCaAbove, normFromScores, referenceCa, type RoleNorms } from '@shared/norms'
 import { POSITION_KEYS } from '@shared/positions'
 import { prepareRole, ROLES, savedRoleScore } from '@shared/roles'
 import { ATTRIBUTE_COUNT, POSITION_COUNT } from './save/reader'
 import type { SaveWorld } from './save/world'
+import { K } from '@shared/ledger'
 
 /**
  * 역할별 기준 분포를 세이브 전체에서 구한다(shared/norms.ts가 식이다. 이 파일은 선수를 돌며 점수를 모으기만 한다).
@@ -34,13 +35,16 @@ export function computeRoleNorms(world: SaveWorld, weights: Record<string, Recor
       if (female[k] || !world.names[k]) continue
       let plays = false
       for (const slot of slots) {
-        if (world.positions[k * POSITION_COUNT + slot] >= NORM_MIN_RATING) {
+        if (world.positions[k * POSITION_COUNT + slot] >= K.NORM_MIN_RATING) {
           plays = true
           break
         }
       }
       if (!plays) continue
-      scores.push(savedRoleScore(world.attributes, k * ATTRIBUTE_COUNT, prepared))
+      // 능력치가 모자라 적합도를 못 구하는 선수(60% 규칙, 세이브에서는 일어나지 않는다)는 모집단에서 뺀다
+      const score = savedRoleScore(world.attributes, k * ATTRIBUTE_COUNT, prepared)
+      if (score === null) continue
+      scores.push(score)
       abilities.push(world.ca[k])
       ids.push(k)
     }

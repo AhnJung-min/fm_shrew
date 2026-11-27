@@ -1,10 +1,11 @@
 import { buildDepth, FORMATION_BY_ID, FORMATIONS, type DepthPlayer, type DepthSlot, type Formation } from './depth'
 import { joinClauses, withJosa } from './korean'
+import { K } from './ledger'
 import { FALLBACK_NORM, normOf, zOf, zWords, type RoleNorm, type RoleNorms } from './norms'
 import { parsePositions, posPenaltySigma, ratingAt, RATING_UNKNOWN_ASSUMED } from './positions'
 import { attributesOf, effectiveWeights, ROLE_BY_ID, scoreRole, type AttributeValue, type PositionKey } from './roles'
 import type { ColumnInfo, PlayerRow } from './types'
-import { agingDrop, AGING_START_AGE, AGING_START_AGE_GOALKEEPER, type CandidateBench } from './world'
+import { agingDrop, type CandidateBench } from './world'
 
 /**
  * 전술 분석: 고른 포메이션과 자리별 역할(settings.formation, settings.slotRoles)을 기준으로
@@ -43,6 +44,14 @@ export function daysBetween(from: Ymd, to: Ymd): number {
 }
 
 /**
+ * "12개월 안에 계약이 끝난다"의 정의: 오늘부터 만료일까지 0~365일(K.CONTRACT_SOON_DAYS). 이미 끝난 계약(남은 일수 < 0)은 들지 않는다.
+ * 대시보드의 계약 카드, 스쿼드 진단의 계약 만료 임박 카드, 보강 필요도의 주전 계약 위험이 같은 365일을 쓴다(F-08).
+ */
+export function isContractSoon(daysLeft: number): boolean {
+  return daysLeft >= 0 && daysLeft <= K.CONTRACT_SOON_DAYS
+}
+
+/**
  * 임대로 온 선수가 원 소속 팀으로 돌아가는 날(5회차). 세이브의 임대 기록에는 만료일이 없어 오늘 이후 첫 6월 30일(오늘이 6월 30일이면 오늘)로 어림한다.
  * 이 날짜는 추정이다(임대 만료일을 읽을 수 있는지는 켜진 게임에서 확인한다). 화면에는 "추정"을 붙인다.
  */
@@ -63,8 +72,8 @@ export function loanEndFrom(today: Ymd): Ymd {
  * - 후보 두께 25: 한 명이 다치거나 빠지면 바로 구멍이 난다.
  * - 주전 나이 15, 주전 계약 15: 곧 사라질 주전은 지금 약하지 않아도 미리 준비해야 한다.
  */
-export const NEED_FACTOR_WEIGHTS = { quality: 45, depth: 25, age: 15, contract: 15 } as const
-export type NeedFactorId = keyof typeof NEED_FACTOR_WEIGHTS
+// 항목 가중치(K.NEED_FACTOR_WEIGHTS)는 대장(ledger.ts)에 있다. 화면의 가중치 표시(TacticPanel)도 거기서 읽는다.
+export type NeedFactorId = keyof typeof K.NEED_FACTOR_WEIGHTS
 
 export const NEED_FACTOR_LABEL: Record<NeedFactorId, string> = {
   quality: '주전 전력',
@@ -80,49 +89,31 @@ export const NEED_FACTOR_HELP: Record<NeedFactorId, string> = {
   contract: '주전의 계약이 12개월 안에 끝나는가. 가까울수록 위험합니다. 임대로 온 주전은 임대가 끝나는 날(오늘 이후 첫 6월 30일로 어림)에 원 소속 팀으로 돌아가므로 그날을 계약이 끝나는 날로 봅니다.'
 }
 
-/** 주전 전력 위험 = clamp01((1 - z_eff) / 3): z_eff +1 이상이면 0, 0이면 0.33, -1이면 0.67, -2 이하면 1 (z_eff = 포지션 숙련 감점을 뺀 적합도의 z) */
-export const QUALITY_Z_GOOD = 1
-export const QUALITY_Z_SPAN = 3
-/** 후보가 없으면 1, 한 명이면 0.5, 두 명 이상이면 0 */
-export const DEPTH_COUNT_RISK = [1, 0.5, 0] as const
-/**
- * 첫 후보가 주전보다 표준편차의 1.2배(DEPTH_GAP_FREE_SIGMAS)까지 낮은 것은 무료이고, 거기서 3.6σ(DEPTH_GAP_SPAN_SIGMAS) 더 벌어지면 최대(0.8).
- * (σ 4점인 역할에서는 예전의 5점·15점 고정값과 같다. 역할마다 σ가 2.8~5.9로 달라 σ로 바꿨다.)
+/*
+ * 위험 곡선의 상수는 대장(ledger.ts)에 있다.
+ * 주전 전력 위험 = clamp01((QUALITY_Z_GOOD - z_eff) / QUALITY_Z_SPAN): z_eff +1 이상이면 0, 0이면 0.33, -1이면 0.67, -2 이하면 1
+ *   (z_eff = 포지션 숙련 감점을 뺀 적합도의 z)
+ * 후보 두께: DEPTH_COUNT_RISK(후보가 없으면 1, 한 명이면 0.5, 두 명 이상이면 0)와 첫 후보 격차 위험 가운데 큰 값.
+ *   첫 후보가 주전보다 DEPTH_GAP_FREE_SIGMAS σ까지 낮은 것은 무료이고, 거기서 DEPTH_GAP_SPAN_SIGMAS σ 더 벌어지면 최대(DEPTH_GAP_MAX).
+ *   (σ 4점인 역할에서는 예전의 5점·15점 고정값과 같다. 역할마다 σ가 2.8~5.9로 달라 σ로 바꿨다.)
+ * 주전 나이: 시작 나이(AGING_START_AGE, 골키퍼 AGING_START_AGE_GOALKEEPER)에서 AGE_RISK_BASE, 한 해마다 AGE_RISK_STEP씩 올라 시작+4세에서 1.
+ * 주전 계약: CONTRACT_SOON_DAYS(365일, "12개월") 이내면 CONTRACT_RISK_BASE에서 시작해 만료 직전 1. 이미 끝났으면 1.
+ * 나이나 계약을 알 수 없을 때는 NEED_UNKNOWN_RISK.
+ * 후계자: SUCCESSOR_MAX_AGE세 이하 내 선수가 이 자리를 뛸 수 있고(숙련 15 이상) 적합도가 주전보다 SUCCESSOR_MAX_GAP_SIGMAS σ 넘게 낮지 않으면,
+ * 주전 나이·계약 위험에 SUCCESSOR_RELIEF를 곱한다(곧 빠져도 이어받을 사람이 있다).
  */
-export const DEPTH_GAP_FREE_SIGMAS = 1.2
-export const DEPTH_GAP_SPAN_SIGMAS = 3.6
-export const DEPTH_GAP_MAX = 0.8
-/** 주전 나이: 시작 나이에서 0.4, 한 해마다 0.15씩 올라 시작+4세에서 1 */
-export const AGE_RISK_START = AGING_START_AGE
-export const AGE_RISK_START_GOALKEEPER = AGING_START_AGE_GOALKEEPER
-export const AGE_RISK_BASE = 0.4
-export const AGE_RISK_STEP = 0.15
-/** 주전 계약: 12개월 이내면 0.3에서 시작해 만료 직전 1. 이미 끝났으면 1 */
-export const CONTRACT_RISK_DAYS = 365
-export const CONTRACT_RISK_BASE = 0.3
-/** 나이나 계약을 알 수 없을 때 위험으로 두는 값(추정: 알려진 주전들의 평균 위험이 0.15쯤) */
-export const UNKNOWN_RISK = 0.15
-/**
- * 후계자: 23세 이하 내 선수가 이 자리를 뛸 수 있고(숙련 15 이상) 적합도가 주전보다 2.5σ 넘게 낮지 않으면,
- * 주전 나이·계약 위험을 절반으로 줄인다(곧 빠져도 이어받을 사람이 있다).
- */
-export const SUCCESSOR_MAX_AGE = 23
-export const SUCCESSOR_MAX_GAP_SIGMAS = 2.5
-export const SUCCESSOR_RELIEF = 0.5
-/** 이유 문장에 올리려면 그 항목이 필요도에 이만큼(점) 이상 더해야 한다 */
-export const REASON_MIN_POINTS = 5
 
-/** 필요도 등급 경계: 이상이면 그 등급 */
-export const NEED_LEVELS: Array<{ min: number; id: NeedLevelId; label: string }> = [
-  { min: 55, id: 'urgent', label: '시급' },
-  { min: 30, id: 'recommended', label: '보강 권장' },
-  { min: 12, id: 'normal', label: '보통' },
-  { min: 0, id: 'fine', label: '충분' }
+/** 필요도 등급(높은 등급부터). 경계(이상이면 그 등급)는 대장의 NEED_LEVEL_MIN이다 */
+export const NEED_LEVELS: Array<{ id: NeedLevelId; label: string }> = [
+  { id: 'urgent', label: '시급' },
+  { id: 'recommended', label: '보강 권장' },
+  { id: 'normal', label: '보통' },
+  { id: 'fine', label: '충분' }
 ]
 export type NeedLevelId = 'urgent' | 'recommended' | 'normal' | 'fine'
 
 export function needLevel(need: number): { id: NeedLevelId; label: string } {
-  const level = NEED_LEVELS.find((each) => need >= each.min) ?? NEED_LEVELS[NEED_LEVELS.length - 1]
+  const level = NEED_LEVELS.find((each) => need >= K.NEED_LEVEL_MIN[each.id]) ?? NEED_LEVELS[NEED_LEVELS.length - 1]
   return { id: level.id, label: level.label }
 }
 
@@ -278,7 +269,7 @@ export interface TacticInput {
   formation: string
   slotRoles: Record<string, string>
   roleWeights: Record<string, Record<string, number>>
-  /** 역할별 기준 분포(WorldService가 세이브에서 구한 것, SquadResult.roleNorms). 없으면 우리 팀 주전 평균과 표준편차 4로 대신한다 */
+  /** 역할별 기준 분포(WorldService가 세이브에서 구한 것, SquadResult.roleNorms). 없으면 고정 기준(FALLBACK_NORM, 영입 추천과 같다)으로 대신한다 */
   norms?: RoleNorms
 }
 
@@ -320,8 +311,7 @@ export function analyseTactic(input: TacticInput): TacticAnalysis | null {
 
   const starterScores = slots.filter((slot) => slot.starter).map((slot) => slot.starter!.score)
   const fitAverage = starterScores.length > 0 ? round1(starterScores.reduce((a, b) => a + b, 0) / starterScores.length) : null
-  // 기준 분포를 못 받은 역할은 "우리 팀 주전 평균, 표준편차 4"로 대신한다(옛 호출·미리보기)
-  const fallbackNorm: RoleNorm = { ...FALLBACK_NORM, mu: fitAverage ?? FALLBACK_NORM.mu }
+  // 기준 분포를 못 받은 역할은 영입 추천과 같은 고정 기준(norms.ts의 FALLBACK_NORM)으로 대신한다(옛 호출·미리보기. F-08)
 
   // 같은 자리가 둘 이상이면 번호를 붙인다
   const count = new Map<PositionKey, number>()
@@ -335,7 +325,7 @@ export function analyseTactic(input: TacticInput): TacticAnalysis | null {
     const label = (count.get(slot.position) ?? 1) > 1 ? `${positionLabel} ${nth}` : positionLabel
     const weights = effectiveWeights(slot.roleId, roleWeights)
     const known = input.norms?.[slot.roleId]
-    const norm = known ? normOf(input.norms, slot.roleId) : fallbackNorm
+    const norm = known ? normOf(input.norms, slot.roleId) : FALLBACK_NORM
     const normSource = known ? 'world' : 'fallback'
 
     // 내 선수 모두의 이 역할 적합도
@@ -375,9 +365,9 @@ export function analyseTactic(input: TacticInput): TacticAnalysis | null {
     // 후계자: 23세 이하이고 이 자리를 뛸 수 있는 내 선수 가운데, 숙련 감점을 뺀 적합도가 주전(같은 방식으로 뺀 값)에 크게 뒤지지 않는 선수
     const successor = starter
       ? scored.find(({ person, score }) => {
-          if (person.row.idx === starter.idx || person.age === null || person.age > SUCCESSOR_MAX_AGE || !person.positions.includes(slot.position)) return false
+          if (person.row.idx === starter.idx || person.age === null || person.age > K.SUCCESSOR_MAX_AGE || !person.positions.includes(slot.position)) return false
           const rating = ratingAt(person.ratings, slot.position) ?? RATING_UNKNOWN_ASSUMED
-          return score - norm.sigma * posPenaltySigma(rating) >= starter.effScore - SUCCESSOR_MAX_GAP_SIGMAS * norm.sigma
+          return score - norm.sigma * posPenaltySigma(rating) >= starter.effScore - K.SUCCESSOR_MAX_GAP_SIGMAS * norm.sigma
         })
       : undefined
     const { need, factors, reason } = needOf({
@@ -553,7 +543,7 @@ function needOf(args: {
 }): { need: number; factors: NeedFactor[]; reason: string } {
   const { slot, norm, normSource, starterPerson, successor, today } = args
   const starter = slot.starter
-  const ids = Object.keys(NEED_FACTOR_WEIGHTS) as NeedFactorId[]
+  const ids = Object.keys(K.NEED_FACTOR_WEIGHTS) as NeedFactorId[]
 
   if (!starter) {
     return {
@@ -571,15 +561,15 @@ function needOf(args: {
     }
   }
 
-  const relief = successor ? SUCCESSOR_RELIEF : 1
+  const relief = successor ? K.SUCCESSOR_RELIEF : 1
   const reliefNote = successor
     ? ` 다만 ${successor.person.row.name}(${successor.person.age}세)${josaOf(successor.person.row.name, '이/가')} 이어받을 수 있어 위험을 절반으로 줄였습니다.`
     : ''
   const risks: Record<NeedFactorId, { risk: number; assumed: boolean; note: string; phrase: string }> = {
     quality: { risk: 0, assumed: false, note: '', phrase: '' },
     depth: { risk: 0, assumed: false, note: '', phrase: '' },
-    age: { risk: UNKNOWN_RISK, assumed: true, note: '', phrase: '' },
-    contract: { risk: UNKNOWN_RISK, assumed: true, note: '', phrase: '' }
+    age: { risk: K.NEED_UNKNOWN_RISK, assumed: true, note: '', phrase: '' },
+    contract: { risk: K.NEED_UNKNOWN_RISK, assumed: true, note: '', phrase: '' }
   }
   const name = starter.name
   const unknownNote = '알 수 없어 보통 수준으로 보았습니다.'
@@ -587,12 +577,12 @@ function needOf(args: {
   // 주전 전력: z가 낮을수록 위험
   const eff = starter.effScore
   const z = zOf(norm, eff)
-  risks.quality.risk = clamp01((QUALITY_Z_GOOD - z) / QUALITY_Z_SPAN)
-  const base = normSource === 'world' ? '같은 역할 상위권 선수들의 평균' : '우리 팀 주전들의 평균'
+  risks.quality.risk = clamp01((K.QUALITY_Z_GOOD - z) / K.QUALITY_Z_SPAN)
+  const base = normSource === 'world' ? '같은 역할 상위권 선수들의 평균' : '기본 기준 평균'
   const penalty = starter.score - eff > 0.05 ? ` 포지션 숙련이 ${starter.rating}이라 적합도 ${starter.score}점에서 ${round1(starter.score - eff)}점 빼고 견주었습니다.` : ''
   const temporary = starter.temporary ? ` 숙련 ${starter.rating}이라 임시로 세웠습니다.` : ''
   risks.quality.note = `주전 ${name}의 적합도 ${round1(eff)}점은 ${base}(${round1(norm.mu)}점)보다 ${Math.abs(round1(eff - norm.mu))}점 ${eff >= norm.mu ? '높고' : '낮고'}, 이 역할의 보통 점수 차이(${round1(norm.sigma)}점)로 보면 ${zWords(z)}.${penalty}${temporary}`
-  const crowd = normSource === 'world' ? '이 역할 상위권' : '팀 주전'
+  const crowd = normSource === 'world' ? '이 역할 상위권' : '기본 기준'
   // 0 ≤ z < 1: 평균보다 조금 높지만 뛰어난 수준(μ+σ)에는 못 미친다. "조금 높은 수준"만 쓰면 괜찮다는 뜻으로 읽혀 보강 이유와 어긋난다(5회차 P9)
   risks.quality.phrase =
     z >= 1
@@ -603,9 +593,9 @@ function needOf(args: {
 
   // 후보 두께
   const backups = slot.backups.length
-  const countRisk = DEPTH_COUNT_RISK[Math.min(backups, DEPTH_COUNT_RISK.length - 1)]
+  const countRisk = K.DEPTH_COUNT_RISK[Math.min(backups, K.DEPTH_COUNT_RISK.length - 1)]
   const gap = backups > 0 ? starter.effScore - slot.backups[0].effScore : 0
-  const gapRisk = backups > 0 ? DEPTH_GAP_MAX * clamp01((gap / norm.sigma - DEPTH_GAP_FREE_SIGMAS) / DEPTH_GAP_SPAN_SIGMAS) : 0
+  const gapRisk = backups > 0 ? K.DEPTH_GAP_MAX * clamp01((gap / norm.sigma - K.DEPTH_GAP_FREE_SIGMAS) / K.DEPTH_GAP_SPAN_SIGMAS) : 0
   risks.depth.risk = Math.max(countRisk, gapRisk)
   risks.depth.note =
     backups === 0
@@ -624,8 +614,8 @@ function needOf(args: {
   // 주전 나이
   if (starterPerson?.age !== null && starterPerson?.age !== undefined) {
     const age = starterPerson.age
-    const start = slot.position === 'GK' ? AGE_RISK_START_GOALKEEPER : AGE_RISK_START
-    const raw = age >= start ? clamp01(AGE_RISK_BASE + AGE_RISK_STEP * (age - start)) : 0
+    const start = slot.position === 'GK' ? K.AGING_START_AGE_GOALKEEPER : K.AGING_START_AGE
+    const raw = age >= start ? clamp01(K.AGE_RISK_BASE + K.AGE_RISK_STEP * (age - start)) : 0
     risks.age.risk = raw * relief
     risks.age.assumed = false
     risks.age.note =
@@ -642,7 +632,7 @@ function needOf(args: {
   const endDate = loan?.end ?? starterPerson?.contractEnd ?? null
   if (endDate && today) {
     const days = daysBetween(today, endDate)
-    const raw = days > CONTRACT_RISK_DAYS ? 0 : days < 0 ? 1 : CONTRACT_RISK_BASE + (1 - CONTRACT_RISK_BASE) * (1 - days / CONTRACT_RISK_DAYS)
+    const raw = days > K.CONTRACT_SOON_DAYS ? 0 : days < 0 ? 1 : K.CONTRACT_RISK_BASE + (1 - K.CONTRACT_RISK_BASE) * (1 - days / K.CONTRACT_SOON_DAYS)
     risks.contract.risk = raw * relief
     risks.contract.assumed = false
     const left = days < 31 ? `${Math.max(0, days)}일` : `${Math.round(days / 30.44)}개월`
@@ -661,7 +651,7 @@ function needOf(args: {
   let need = 0
   const factors = ids.map((id): NeedFactor => {
     const { risk, assumed, note } = risks[id]
-    const max = NEED_FACTOR_WEIGHTS[id]
+    const max = K.NEED_FACTOR_WEIGHTS[id]
     const points = risk * max
     need += points
     return { id, label: NEED_FACTOR_LABEL[id], points: round1(points), max, counted: true, assumed, note }
@@ -671,7 +661,7 @@ function needOf(args: {
   // 이유: 점수를 가장 많이 더한 두 가지 가운데 REASON_MIN_POINTS점 이상인 것(알 수 없어 보통으로 둔 항목은 이유로 쓰지 않는다)
   const top = ids
     .map((id, i) => ({ phrase: risks[id].phrase, points: factors[i].points, assumed: risks[id].assumed }))
-    .filter((each) => each.points >= REASON_MIN_POINTS && each.phrase && !each.assumed)
+    .filter((each) => each.points >= K.REASON_MIN_POINTS && each.phrase && !each.assumed)
     .sort((a, b) => b.points - a.points)
     // 임시 주전이면 그 사실을 맨 앞에 두고 이유는 하나만 더한다
     .slice(0, starter.temporary ? 1 : 2)

@@ -1,9 +1,10 @@
 import { guessOwnTeam } from '@shared/gameUi'
-import { LOW_CONFIDENCE, type TalkLine, type TalkScene, type TalkStatus, type TalkUsage } from '@shared/talk'
+import { type TalkLine, type TalkScene, type TalkStatus, type TalkUsage } from '@shared/talk'
 import type { SettingsStore } from '../settings'
 import { respond, type AdvisorConfig } from './advisor'
 import { bridgeAlive, readFromGame, readMatchFromGame, sendReply, waitForWords, type GameReply, type GameWords } from './bridge'
 import type { KeyStore } from './keyStore'
+import { K } from '@shared/ledger'
 
 const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
 
@@ -115,7 +116,7 @@ export class TalkController {
       return { pick: 0, pickText: '', note: turn.reason || '맞는 선택지를 찾지 못했습니다.', replies: turn.replies }
     }
     const what = shout ? '외침' : '선택지'
-    const lead = turn.confidence < LOW_CONFIDENCE ? `딱 맞는 ${what}이 없어 가장 가까운 것` : `적용할 ${what}`
+    const lead = turn.confidence < K.LOW_CONFIDENCE ? `딱 맞는 ${what}이 없어 가장 가까운 것` : `적용할 ${what}`
     const tone = option.tone ? ` (${option.tone})` : ''
     return { pick: option.ref, pickText: option.text, note: `${lead}${tone}: ${option.text}`, replies: turn.replies }
   }

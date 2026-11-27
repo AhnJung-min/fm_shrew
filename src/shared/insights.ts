@@ -1,4 +1,5 @@
-import { dateFromNumber, POSITION_LABEL, type TacticAnalysis, type Ymd } from './tactic'
+import { K } from './ledger'
+import { dateFromNumber, daysBetween, isContractSoon, POSITION_LABEL, type TacticAnalysis, type Ymd } from './tactic'
 import type { ColumnInfo, PlayerRow, SquadResult } from './types'
 
 /**
@@ -9,12 +10,8 @@ import type { ColumnInfo, PlayerRow, SquadResult } from './types'
 export { dateFromNumber, POSITION_LABEL }
 export type { Ymd }
 
-/** 성장 기대주로 보는 나이 */
-export const PROSPECT_AGE = 23
-/** 핵심 전력으로 보여 주는 인원 */
+/** 핵심 전력으로 보여 주는 인원(화면 줄 수라 조정 상수가 아니다) */
 export const CORE_COUNT = 5
-/** 계약 만료 임박으로 보는 기간(개월) */
-export const EXPIRY_MONTHS = 12
 /** 카드마다 이름을 보여 주는 최대 줄 수 */
 const MAX_LINES = 5
 
@@ -25,7 +22,10 @@ export interface InsightPlayer {
   age: number | null
   ca: number | null
   pa: number | null
+  /** 계약 만료일. 임대로 온 선수는 원 소속과 맺은 계약이 아니라 임대가 끝나는 날(추정)이다(대시보드와 같은 규칙, F-08) */
   contractEnd: Ymd | null
+  /** 임대로 온 선수인가(contractEnd가 임대 끝 날짜) */
+  loan?: boolean
   /** 표에 적힌 주급 글자("£120K"). 없으면 빈 글자 */
   wage: string
 }
@@ -85,7 +85,8 @@ export function insightPlayers(
       age: num(row, at.age),
       ca: num(row, at.ca),
       pa: num(row, at.pa),
-      contractEnd: dateFromNumber(num(row, at.end)),
+      contractEnd: row.loan ? row.loan.end : dateFromNumber(num(row, at.end)),
+      ...(row.loan ? { loan: true } : {}),
       wage: (at.wage && row.cells[at.wage]?.raw) || ''
     })
   )
@@ -98,14 +99,13 @@ const missing = (id: InsightCard['id'], title: string, finding: string): Insight
 
 // ---------- 포지션 뎁스 ----------
 
-/** 보강 필요도가 이 값 이상인 자리를 카드에 올린다(전술 분석의 "보강 권장" 이상) */
-export const DEPTH_CARD_MIN_NEED = 30
+// 보강 필요도가 K.DEPTH_CARD_MIN_NEED(30) 이상인 자리를 카드에 올린다(전술 분석의 "보강 권장" 이상)
 
 /** 전술 분석(shared/tactic.ts)의 결과를 카드로. 전술판의 분석과 같은 자리·같은 이유를 쓴다. */
 export function depthCard(analysis: TacticAnalysis | null, formationLabel: string): InsightCard {
   const title = '포지션 뎁스'
   if (!analysis) return missing('depth', title, '포지션과 능력치 열이 있어야 자리별 선수를 계산할 수 있습니다.')
-  const flagged = analysis.byNeed.filter((each) => each.need >= DEPTH_CARD_MIN_NEED)
+  const flagged = analysis.byNeed.filter((each) => each.need >= K.DEPTH_CARD_MIN_NEED)
   const urgent = flagged.filter((each) => each.level === 'urgent').length
   const lines = flagged.slice(0, MAX_LINES).map(
     (each): InsightLine => ({
@@ -120,7 +120,7 @@ export function depthCard(analysis: TacticAnalysis | null, formationLabel: strin
     finding:
       flagged.length === 0
         ? `${formationLabel} 기준으로 보강이 필요한 자리가 없습니다.`
-        : `${formationLabel} 기준 보강 필요도가 ${DEPTH_CARD_MIN_NEED} 이상인 자리가 ${flagged.length}곳${urgent > 0 ? `(시급 ${urgent}곳)` : ''}입니다.`,
+        : `${formationLabel} 기준 보강 필요도가 ${K.DEPTH_CARD_MIN_NEED} 이상인 자리가 ${flagged.length}곳${urgent > 0 ? `(시급 ${urgent}곳)` : ''}입니다.`,
     tone: flagged.length === 0 ? 'normal' : 'attention',
     lines,
     more: Math.max(0, flagged.length - lines.length)
@@ -162,13 +162,17 @@ export function ageCard(players: InsightPlayer[], hasAge: boolean): InsightCard 
   }
 }
 
-// ---------- 성장 기대주 ----------
+// ---------- 성장 여지 ----------
 
-export function prospectsCard(players: InsightPlayer[], hasPotential: boolean): InsightCard {
-  const title = '성장 기대주'
+/**
+ * 23세 이하 가운데 잠재 능력과 현재 능력의 차이가 큰 선수를 센다. 영입 후보·대시보드의 "유망주"(world.ts의 prospectCheck: 성장 몫, 0.5σ, 기준 주전)와는
+ * 다른 느슨한 요약이라 "유망주"라고 부르지 않는다(F-08). 카드 id는 그대로 'prospects'다.
+ */
+export function growthRoomCard(players: InsightPlayer[], hasPotential: boolean): InsightCard {
+  const title = '성장 여지'
   if (!hasPotential) return missing('prospects', title, '이 기록에는 현재 능력이나 잠재 능력 열이 없어 셀 수 없습니다.')
-  const young = players.filter((player) => player.age !== null && player.age <= PROSPECT_AGE)
-  if (young.length === 0) return { ...missing('prospects', title, `${PROSPECT_AGE}세 이하 선수가 없습니다.`), tone: 'normal' }
+  const young = players.filter((player) => player.age !== null && player.age <= K.ROOM_CARD_MAX_AGE)
+  if (young.length === 0) return { ...missing('prospects', title, `${K.ROOM_CARD_MAX_AGE}세 이하 선수가 없습니다.`), tone: 'normal' }
   const room = young
     .filter((player) => player.ca !== null && player.pa !== null && player.pa > player.ca)
     .sort((a, b) => b.pa! - b.ca! - (a.pa! - a.ca!) || b.pa! - a.pa! || a.name.localeCompare(b.name, 'ko'))
@@ -176,7 +180,7 @@ export function prospectsCard(players: InsightPlayer[], hasPotential: boolean): 
     return {
       id: 'prospects',
       title,
-      finding: `${PROSPECT_AGE}세 이하 ${young.length}명 가운데 잠재 능력이 현재 능력보다 높은 선수가 없습니다.`,
+      finding: `${K.ROOM_CARD_MAX_AGE}세 이하 ${young.length}명 가운데 잠재 능력이 현재 능력보다 높은 선수가 없습니다.`,
       tone: 'normal',
       lines: [],
       more: 0
@@ -192,7 +196,7 @@ export function prospectsCard(players: InsightPlayer[], hasPotential: boolean): 
   return {
     id: 'prospects',
     title,
-    finding: `${PROSPECT_AGE}세 이하 ${young.length}명 가운데 잠재 능력이 현재 능력보다 가장 많이 높은 선수들입니다.`,
+    finding: `${K.ROOM_CARD_MAX_AGE}세 이하 ${young.length}명 가운데 잠재 능력이 현재 능력보다 가장 많이 높은 선수들입니다.`,
     tone: 'normal',
     lines,
     more: Math.max(0, room.length - lines.length)
@@ -229,14 +233,6 @@ export function coreCard(players: InsightPlayer[], hasAbility: boolean): Insight
 
 // ---------- 계약 만료 임박 ----------
 
-const DAY_MS = 86_400_000
-const dayNumber = (date: Ymd): number => Math.round(Date.UTC(date.year, date.month - 1, date.day) / DAY_MS)
-
-/** date에서 months개월 뒤(달력 기준)의 날짜 번호 */
-function monthsLater(date: Ymd, months: number): number {
-  return Math.round(Date.UTC(date.year, date.month - 1 + months, date.day) / DAY_MS)
-}
-
 const dateText = (date: Ymd): string => `${date.year}.${date.month}.${date.day}`
 
 export function expiringCard(players: InsightPlayer[], today: Ymd | undefined, hasContract: boolean): InsightCard {
@@ -245,31 +241,28 @@ export function expiringCard(players: InsightPlayer[], today: Ymd | undefined, h
   if (!today) return missing('expiring', title, '게임 속 오늘 날짜를 알 수 없어 남은 기간을 셀 수 없습니다.')
   const known = players.filter((player) => player.contractEnd !== null)
   if (known.length === 0) return missing('expiring', title, '세이브에서 계약 만료일을 읽지 못했습니다.')
-  const from = dayNumber(today)
-  const until = monthsLater(today, EXPIRY_MONTHS)
+  // "12개월 안"은 365일이다: 대시보드의 계약 카드와 같은 정의(isContractSoon, F-08)
+  const daysLeft = (player: InsightPlayer): number => daysBetween(today, player.contractEnd!)
   const soon = known
-    .filter((player) => {
-      const end = dayNumber(player.contractEnd!)
-      return end >= from && end <= until
-    })
-    .sort((a, b) => dayNumber(a.contractEnd!) - dayNumber(b.contractEnd!) || a.name.localeCompare(b.name, 'ko'))
+    .filter((player) => isContractSoon(daysLeft(player)))
+    .sort((a, b) => daysLeft(a) - daysLeft(b) || a.name.localeCompare(b.name, 'ko'))
   const unknown = players.length - known.length
   const note = [`기준일은 게임 속 오늘(${dateText(today)})입니다.`, unknown > 0 ? `계약 만료일을 읽지 못한 선수 ${unknown}명은 세지 않았습니다.` : '']
     .filter(Boolean)
     .join(' ')
   const lines = soon.slice(0, MAX_LINES).map((player): InsightLine => {
-    const days = dayNumber(player.contractEnd!) - from
+    const days = daysLeft(player)
     const left = days <= 31 ? `${days}일 남음` : `${Math.round(days / 30.44)}개월 남음`
     return {
       idx: player.idx,
       name: player.name,
-      detail: [dateText(player.contractEnd!), left, player.wage ? `주급 ${player.wage}` : ''].filter(Boolean).join(', ')
+      detail: [dateText(player.contractEnd!), left, player.loan ? '임대 복귀(추정)' : '', !player.loan && player.wage ? `주급 ${player.wage}` : ''].filter(Boolean).join(', ')
     }
   })
   return {
     id: 'expiring',
     title,
-    finding: soon.length === 0 ? `${EXPIRY_MONTHS}개월 안에 계약이 끝나는 선수가 없습니다.` : `${soon.length}명의 계약이 ${EXPIRY_MONTHS}개월 안에 끝납니다.`,
+    finding: soon.length === 0 ? '12개월 안에 계약이 끝나는 선수가 없습니다.' : `${soon.length}명의 계약이 12개월 안에 끝납니다.`,
     tone: soon.length === 0 ? 'normal' : 'attention',
     lines,
     more: Math.max(0, soon.length - lines.length),
@@ -287,7 +280,7 @@ export function buildInsights(
   return [
     depthCard(analysis, formationLabel),
     expiringCard(players, snapshot.today, has.contract),
-    prospectsCard(players, has.potential),
+    growthRoomCard(players, has.potential),
     coreCard(players, has.ability),
     ageCard(players, has.age)
   ]

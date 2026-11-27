@@ -1,6 +1,7 @@
 import { TERM_HELP } from '@shared/recommend'
 import { MetaLine } from '@/components/MetaLine'
-import { NEED_FACTOR_HELP, NEED_FACTOR_WEIGHTS, type LineId, type LineSummary, type SlotAnalysis, type TacticAnalysis } from '@shared/tactic'
+import { NEED_FACTOR_HELP, type LineId, type LineSummary, type SlotAnalysis, type TacticAnalysis } from '@shared/tactic'
+import { K } from '@shared/ledger'
 
 /** 자리의 포지션이 어느 줄(골키퍼·수비·미드필드·공격)인지. shared/tactic.ts의 줄 나누기와 같다 */
 const LINE_OF_POSITION: Record<string, LineId> = {
@@ -53,7 +54,7 @@ function SlotDetail(props: {
         <MetaLine
           items={[
             slot.starterScore !== null
-              ? `주전 적합도 ${slot.starterScore}점${slot.starterEff !== null && slot.starterScore - slot.starterEff > 0.05 ? `(포지션 숙련 ${slot.starterRating}이라 ${Math.round((slot.starterScore - slot.starterEff) * 10) / 10}점 빼면 ${Math.round(slot.starterEff * 10) / 10}점)` : ''}, ${slot.normSource === 'world' ? '같은 역할 상위권 평균' : '팀 주전 평균'} ${Math.round(slot.norm.mu * 10) / 10}점`
+              ? `주전 적합도 ${slot.starterScore}점${slot.starterEff !== null && slot.starterScore - slot.starterEff > 0.05 ? `(포지션 숙련 ${slot.starterRating}이라 ${Math.round((slot.starterScore - slot.starterEff) * 10) / 10}점 빼면 ${Math.round(slot.starterEff * 10) / 10}점)` : ''}, ${slot.normSource === 'world' ? '같은 역할 상위권 평균' : '기본 기준 평균'} ${Math.round(slot.norm.mu * 10) / 10}점`
               : '주전 없음',
             slot.backupScore !== null && `첫 후보 ${slot.backupScore}점`,
             `이 자리를 뛸 수 있는 선수 ${slot.eligible}명`
@@ -176,8 +177,8 @@ export function TacticPanel(props: {
       <details className="tactic-more need-help">
         <summary>어떻게 계산했나</summary>
         <p className="muted">
-          {TERM_HELP.need} 주전 전력 {NEED_FACTOR_WEIGHTS.quality}%, 후보 두께 {NEED_FACTOR_WEIGHTS.depth}%, 주전 나이 {NEED_FACTOR_WEIGHTS.age}%,
-          주전 계약 {NEED_FACTOR_WEIGHTS.contract}%로 계산합니다.
+          {TERM_HELP.need} 주전 전력 {K.NEED_FACTOR_WEIGHTS.quality}%, 후보 두께 {K.NEED_FACTOR_WEIGHTS.depth}%, 주전 나이 {K.NEED_FACTOR_WEIGHTS.age}%,
+          주전 계약 {K.NEED_FACTOR_WEIGHTS.contract}%로 계산합니다.
         </p>
       </details>
       <ol className="need-list">

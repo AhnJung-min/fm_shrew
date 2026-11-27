@@ -13,18 +13,12 @@ import {
   immediateFit,
   interpolate,
   maturityFit,
-  NEED_WEIGHT_HIGH,
-  NEED_WEIGHT_LOW,
-  RECOMMEND_WEIGHTS,
   recommend,
   reliabilityFit,
   squadMoney,
-  STARTER_SHARE,
-  STATUS_EASE,
   statureFit,
   tierCutoffs,
   tierRanker,
-  TIER_MIN_TOTAL,
   warningsOf,
   type ComponentId,
   type RecommendContext,
@@ -33,6 +27,7 @@ import {
 } from '../src/shared/recommend'
 import { lowGate, posPenaltySigma } from '../src/shared/positions'
 import { growthShare, SQUAD_STATUS_LABEL, type CandidateCategory } from '../src/shared/world'
+import { K } from '../src/shared/ledger'
 
 const CATEGORIES: CandidateCategory[] = ['all', 'starter', 'rotation', 'prospect', 'free']
 
@@ -81,18 +76,18 @@ function rng(seed: number): () => number {
 describe('가중치 표', () => {
   it('유형마다 합이 100이다', () => {
     for (const category of CATEGORIES) {
-      const sum = COMPONENT_ORDER.reduce((total, id) => total + RECOMMEND_WEIGHTS[category][id], 0)
+      const sum = COMPONENT_ORDER.reduce((total, id) => total + K.RECOMMEND_WEIGHTS[category][id], 0)
       expect(sum, category).toBe(100)
     }
   })
   it('유형마다 중요하게 보는 항목이 다르다', () => {
-    expect(RECOMMEND_WEIGHTS.starter.immediate).toBeGreaterThan(RECOMMEND_WEIGHTS.prospect.immediate)
-    expect(RECOMMEND_WEIGHTS.prospect.maturity).toBeGreaterThan(RECOMMEND_WEIGHTS.starter.maturity)
-    expect(RECOMMEND_WEIGHTS.rotation.cost).toBeGreaterThan(RECOMMEND_WEIGHTS.starter.cost)
+    expect(K.RECOMMEND_WEIGHTS.starter.immediate).toBeGreaterThan(K.RECOMMEND_WEIGHTS.prospect.immediate)
+    expect(K.RECOMMEND_WEIGHTS.prospect.maturity).toBeGreaterThan(K.RECOMMEND_WEIGHTS.starter.maturity)
+    expect(K.RECOMMEND_WEIGHTS.rotation.cost).toBeGreaterThan(K.RECOMMEND_WEIGHTS.starter.cost)
     // 자유 계약: 이적료가 없고 계약·입지가 걸리지 않아 비용·난이도 비중은 작지만 0은 아니다(4회차)
-    expect(RECOMMEND_WEIGHTS.free).toEqual({ immediate: 44, maturity: 10, age: 12, cost: 10, ease: 8, reliability: 16 })
-    expect(RECOMMEND_WEIGHTS.free.cost).toBeLessThan(RECOMMEND_WEIGHTS.starter.cost)
-    expect(RECOMMEND_WEIGHTS.free.ease).toBeLessThan(RECOMMEND_WEIGHTS.starter.ease)
+    expect(K.RECOMMEND_WEIGHTS.free).toEqual({ immediate: 44, maturity: 10, age: 12, cost: 10, ease: 8, reliability: 16 })
+    expect(K.RECOMMEND_WEIGHTS.free.cost).toBeLessThan(K.RECOMMEND_WEIGHTS.starter.cost)
+    expect(K.RECOMMEND_WEIGHTS.free.ease).toBeLessThan(K.RECOMMEND_WEIGHTS.starter.ease)
   })
 })
 
@@ -142,7 +137,7 @@ describe('즉시 전력', () => {
   })
   it('교체 자원을 찾을 때는 두 번째 선수를 넘는지를 더 본다', () => {
     expect(immediateFit(55, both, 'rotation')).toBeGreaterThan(immediateFit(55, both, 'starter'))
-    expect(STARTER_SHARE.rotation).toBeLessThan(STARTER_SHARE.starter)
+    expect(K.STARTER_SHARE.rotation).toBeLessThan(K.STARTER_SHARE.starter)
   })
   it('나이 든 주전은 내년 하락을 감안해 기준을 낮춘다(34세 필드 선수는 3점)', () => {
     const young = { starter: { score: 70, ca: 150, age: 28 }, backup: null, norm: FALLBACK_NORM }
@@ -381,7 +376,7 @@ describe('영입 난이도', () => {
     expect(rotation).toBeLessThan(surplus)
   })
   it('입지 표에 있는 모든 코드가 난이도를 가진다', () => {
-    for (const code of Object.keys(SQUAD_STATUS_LABEL).map(Number)) expect(STATUS_EASE[code], String(code)).toBeGreaterThan(0)
+    for (const code of Object.keys(SQUAD_STATUS_LABEL).map(Number)) expect(K.STATUS_EASE[code], String(code)).toBeGreaterThan(0)
   })
   it('계약과 입지를 모두 모르면 각각 보통(0.5)으로 보고 이유를 적는다(체급이 1이면 0.4·0.5 + 0.4·0.5 + 0.2)', () => {
     const result = part('ease', { contractEnd: null, squadStatus: 0 })
@@ -637,8 +632,8 @@ describe('자리의 보강 필요도', () => {
     expect(immediateMax(100)).toBeGreaterThan(immediateMax(50))
     expect(immediateMax(50)).toBeGreaterThan(immediateMax(0))
     expect(immediateMax(50)).toBeCloseTo(immediateMax(null), 5)
-    expect(NEED_WEIGHT_LOW).toBe(0.8)
-    expect(NEED_WEIGHT_HIGH).toBe(1.2)
+    expect(K.NEED_WEIGHT_LOW).toBe(0.8)
+    expect(K.NEED_WEIGHT_HIGH).toBe(1.2)
   })
   it('비중이 바뀌어도 최대 점수의 합은 100이다', () => {
     for (const need of [0, 25, 50, 75, 100]) {
@@ -731,10 +726,10 @@ describe('등급(같은 유형의 자격 후보 안에서의 순위, 올림 인�
   })
   it('점수가 60 미만이면 순위가 높아도 보류이고, 후보 한 명이면 60 이상일 때 강력 추천이다', () => {
     expect(ranker([59.9])(59.9)).toBe('low')
-    expect(ranker([TIER_MIN_TOTAL])(TIER_MIN_TOTAL)).toBe('top')
+    expect(ranker([K.TIER_MIN_TOTAL])(K.TIER_MIN_TOTAL)).toBe('top')
     expect(ranker([80])(80)).toBe('top')
     expect(grades([58, 57, 56, 55])).toEqual({ top: 0, good: 0, maybe: 0, low: 4 })
-    expect(TIER_MIN_TOTAL).toBe(60)
+    expect(K.TIER_MIN_TOTAL).toBe(60)
   })
   it('T2. 영입 현실성 낮음 선수는 순위 칸을 쓰지 않는다: [70.7 낮음, 70.4 낮음, 67.4, 64.9, 59.1, 56.6] → 고려, 고려, 강력 추천, 추천, 보류, 보류', () => {
     const tier = ranker([67.4, 64.9, 59.1, 56.6], [70.7, 70.4])

@@ -4,9 +4,7 @@ import { hasBatchim, joinClauses, josa, linkForm, withJosa } from '../src/shared
 import {
   betaFromScores,
   meanCaAbove,
-  DEFAULT_BETA,
   FALLBACK_NORM,
-  NORM_MIN_SIGMA,
   normFromScores,
   pickCaRef,
   referenceCa,
@@ -14,7 +12,8 @@ import {
   zWords,
   type RoleNorm
 } from '../src/shared/norms'
-import { AGING_DROP_PER_YEAR, benchmarkOf, categoriesOf, growthShare, hasGrowthRoom, projectedScore, rotationBoundaryLine, type CandidateBench } from '../src/shared/world'
+import { benchmarkOf, categoriesOf, growthShare, hasGrowthRoom, projectedScore, rotationBoundaryLine, type CandidateBench } from '../src/shared/world'
+import { K } from '../src/shared/ledger'
 
 describe('기준 능력', () => {
   it('내 상위 11명 현재 능력의 중간값에서 10을 뺀 값이고 100 아래로는 내려가지 않는다', () => {
@@ -55,15 +54,15 @@ describe('기준 분포', () => {
   })
   it('표준편차에는 하한이 있다', () => {
     const norm = normFromScores(Array(50).fill(72), Array(50).fill(155), 150)
-    expect(norm.sigma).toBe(NORM_MIN_SIGMA)
+    expect(norm.sigma).toBe(K.NORM_MIN_SIGMA)
   })
   it('기울기: 현재 능력 1점당 점수. 표본이 40명 미만이거나 기울기가 0 이하이면 0.28', () => {
     const abilities = Array.from({ length: 60 }, (_, i) => 60 + i)
     const scores = abilities.map((ca) => 20 + 0.3 * ca)
     expect(betaFromScores(scores, abilities)).toBeCloseTo(0.3, 6)
-    expect(betaFromScores(scores.slice(0, 30), abilities.slice(0, 30))).toBe(DEFAULT_BETA)
-    expect(betaFromScores(scores.map((value) => -value), abilities)).toBe(DEFAULT_BETA)
-    expect(betaFromScores(Array(60).fill(70), Array(60).fill(100))).toBe(DEFAULT_BETA)
+    expect(betaFromScores(scores.slice(0, 30), abilities.slice(0, 30))).toBe(K.DEFAULT_BETA)
+    expect(betaFromScores(scores.map((value) => -value), abilities)).toBe(K.DEFAULT_BETA)
+    expect(betaFromScores(Array(60).fill(70), Array(60).fill(100))).toBe(K.DEFAULT_BETA)
   })
   it('z 점수와 쉬운 말', () => {
     const norm: RoleNorm = { mu: 71.7, sigma: 3, beta: 0.28, n: 100, caRef: 150 }
@@ -137,7 +136,7 @@ describe('모든 역할을 하나의 기준 능력으로(4회차)', () => {
 
   it('풀 안의 기울기를 못 구하면(표본 부족·분산 0) 그 역할의 기본 기울기로 보정한다. 선수가 없으면 대신하는 값이다', () => {
     const flat = normFromScores(Array(50).fill(70), Array(50).fill(120), 150, 160)
-    expect(flat.shift).toBeCloseTo(DEFAULT_BETA * (160 - 120), 6)
+    expect(flat.shift).toBeCloseTo(K.DEFAULT_BETA * (160 - 120), 6)
     const empty = normFromScores([], [], 150, 160)
     expect(empty.n).toBe(0)
     expect(empty.caRef).toBe(150)
@@ -257,7 +256,7 @@ describe('영입 유형 판정', () => {
   })
   it('나이 든 주전은 한 해마다 1점씩 기준을 낮춘다(34세 필드 선수 → 3점)', () => {
     const old: CandidateBench = { ...bench, starter: { ...bench.starter!, age: 34 } }
-    expect(benchmarkOf(old.starter, norm, false).anchor).toBeCloseTo(83.6 - 3 * AGING_DROP_PER_YEAR)
+    expect(benchmarkOf(old.starter, norm, false).anchor).toBeCloseTo(83.6 - 3 * K.AGING_DROP_PER_YEAR)
     expect(categoriesOf(player({ score: 79.8 }), bench, norm)).not.toContain('starter')
     expect(categoriesOf(player({ score: 79.8 }), old, norm)).toContain('starter')
     // 골키퍼는 34세까지는 낮추지 않는다

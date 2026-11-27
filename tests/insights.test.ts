@@ -6,9 +6,10 @@ import {
   dateFromNumber,
   expiringCard,
   insightPlayers,
-  prospectsCard,
+  growthRoomCard,
   type InsightPlayer
 } from '../src/shared/insights'
+import { contractWindows, firstTeamPlayers, type FirstTeamPlayer } from '../src/shared/dashboard'
 import type { ColumnInfo, PlayerRow } from '../src/shared/types'
 
 const player = (idx: number, patch: Partial<InsightPlayer> = {}): InsightPlayer => ({
@@ -52,7 +53,7 @@ describe('나이 구성', () => {
 
 describe('성장 기대주', () => {
   it('23세 이하 가운데 잠재와 현재의 차이가 큰 순으로 세 명', () => {
-    const card = prospectsCard(
+    const card = growthRoomCard(
       [
         player(1, { age: 18, ca: 90, pa: 150 }),
         player(2, { age: 20, ca: 100, pa: 130 }),
@@ -68,11 +69,11 @@ describe('성장 기대주', () => {
     expect(card.lines[0].detail).toContain('+70')
   })
   it('어린 선수가 없거나 클 여지가 없으면 그렇게 적는다', () => {
-    expect(prospectsCard([player(1, { age: 30 })], true).finding).toContain('23세 이하 선수가 없습니다')
-    expect(prospectsCard([player(1, { age: 20, ca: 100, pa: 100 })], true).lines).toEqual([])
+    expect(growthRoomCard([player(1, { age: 30 })], true).finding).toContain('23세 이하 선수가 없습니다')
+    expect(growthRoomCard([player(1, { age: 20, ca: 100, pa: 100 })], true).lines).toEqual([])
   })
   it('잠재 능력 열이 없으면 자료 없음', () => {
-    expect(prospectsCard([player(1)], false).tone).toBe('missing')
+    expect(growthRoomCard([player(1)], false).tone).toBe('missing')
   })
 })
 
@@ -158,10 +159,72 @@ describe('표에서 뽑기', () => {
     expect(players[1]).toMatchObject({ age: null, ca: null, contractEnd: null })
     expect(has).toEqual({ age: true, ability: true, potential: true, contract: true })
   })
+  it('F-08. 임대로 온 선수는 대시보드처럼 임대 끝 날짜로 센다(원 소속과 맺은 계약일과 주급은 쓰지 않는다)', () => {
+    const today2 = { year: 2026, month: 7, day: 1 }
+    const loaned: PlayerRow = { ...rows[0], idx: 9, name: '임대생', loan: { end: { year: 2027, month: 6, day: 30 }, from: '가상 FC' } }
+    const all = [...rows, loaned]
+    const card = expiringCard(insightPlayers(all, columns).players, today2, true)
+    const dashboard = contractWindows(firstTeamPlayers(all, columns), today2)
+    expect(card.lines.map((line) => line.idx)).toEqual(dashboard.within1y.map((row) => row.uid))
+    expect(card.lines.find((line) => line.idx === 9)?.detail).toContain('임대 복귀(추정)')
+    expect(card.lines.find((line) => line.idx === 9)?.detail).not.toContain('주급')
+  })
   it('카드 다섯 장을 만든다', () => {
     const cards = buildInsights({ rows, columns, today }, null, '4-4-2')
     expect(cards.map((card) => card.id)).toEqual(['depth', 'expiring', 'prospects', 'core', 'age'])
     expect(cards[0].tone).toBe('missing')
     expect(cards[1].lines[0].idx).toBe(7)
+  })
+})
+
+describe('F-08 정의 통일', () => {
+  const end = (year: number, month: number, day: number) => ({ year, month, day })
+  const asDashboard = (p: InsightPlayer): FirstTeamPlayer => ({ uid: p.idx, name: p.name, age: p.age, position: p.position, ca: p.ca, pa: p.pa, wage: null, contractEnd: p.contractEnd })
+
+  it('1. "12개월"은 365일이다: 같은 입력에 대시보드 계약 카드와 진단 카드가 같은 선수를 센다', () => {
+    // 오늘 2027-07-01에서 달력으로 12개월 뒤(2028-07-01)는 2028년 2월 29일 때문에 366일 뒤다. 예전 진단 카드는 달력으로 세어 이 선수를 포함했다
+    const today2 = end(2027, 7, 1)
+    const players = [
+      player(1, { contractEnd: end(2027, 6, 30) }), // 이미 끝남: 둘 다 뺀다
+      player(2, { contractEnd: end(2027, 7, 1) }), // 오늘 끝남(0일): 둘 다 센다
+      player(3, { contractEnd: end(2028, 6, 30) }), // 365일: 둘 다 센다
+      player(4, { contractEnd: end(2028, 7, 1) }), // 366일: 둘 다 뺀다
+      player(5, { contractEnd: end(2027, 12, 31) }),
+      player(6, { contractEnd: end(2030, 6, 30) }),
+      player(7)
+    ]
+    const card = expiringCard(players, today2, true)
+    const dashboard = contractWindows(players.map(asDashboard), today2)
+    expect(card.lines.map((line) => line.idx)).toEqual([2, 5, 3])
+    expect(card.more).toBe(0)
+    expect(dashboard.within1y.map((row) => row.uid)).toEqual([2, 5, 3])
+    expect(card.finding).toContain('3명')
+    expect(dashboard.expired.map((row) => row.uid)).toEqual([1])
+  })
+
+  it('1. 오늘부터 윤년 2월을 지나도 두 카드가 같다(2028-01-15의 365일 뒤는 2029-01-14, 달력 12개월 뒤는 2029-01-15)', () => {
+    const today2 = end(2028, 1, 15)
+    const players = [player(1, { contractEnd: end(2029, 1, 14) }), player(2, { contractEnd: end(2029, 1, 15) }), player(3, { contractEnd: end(2028, 12, 15) })]
+    const card = expiringCard(players, today2, true)
+    const dashboard = contractWindows(players.map(asDashboard), today2)
+    expect(card.lines.map((line) => line.idx)).toEqual(dashboard.within1y.map((row) => row.uid))
+    expect(dashboard.within1y.map((row) => row.uid)).toEqual([3, 1])
+  })
+
+  it('2. "유망주"는 ③의 자격에만 쓴다: 진단 카드의 글에는 나오지 않고 이름은 "성장 여지"다', () => {
+    const young = [player(1, { age: 18, ca: 90, pa: 150 }), player(2, { age: 20, ca: 100, pa: 130 })]
+    const cards = [
+      growthRoomCard(young, true),
+      growthRoomCard([player(1, { age: 30 })], true),
+      growthRoomCard([player(1, { age: 20, ca: 100, pa: 100 })], true),
+      growthRoomCard(young, false)
+    ]
+    expect(cards[0].id).toBe('prospects')
+    expect(cards[0].title).toBe('성장 여지')
+    for (const card of cards) {
+      const text = [card.title, card.finding, card.linesTitle ?? '', card.note ?? '', ...card.lines.map((line) => `${line.name} ${line.detail}`)].join(' ')
+      expect(text).not.toContain('유망주')
+      expect(text).not.toContain('기대주')
+    }
   })
 })

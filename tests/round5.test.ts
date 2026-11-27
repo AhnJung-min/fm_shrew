@@ -15,7 +15,6 @@ import { FIELDS } from '../src/shared/fields'
 import { joinClauses, linkForm } from '../src/shared/korean'
 import {
   betaGrowFromScores,
-  BETA_MIN_POPULATION,
   normFromScores,
   type RoleNorm
 } from '../src/shared/norms'
@@ -26,10 +25,8 @@ import {
   maturityFit,
   realismOf,
   recommend,
-  STATURE_CLUB_MARGIN,
   tierCutoffs,
   tierRanker,
-  TRAIT_WEIGHTS,
   type RecommendContext,
   type RecommendInput,
   type TraitId,
@@ -40,8 +37,6 @@ import type { CellValue, ColumnInfo, PlayerRow } from '../src/shared/types'
 import {
   categoriesOf,
   gapVsAnchor,
-  GROWTH_SHARE_TABLE,
-  GROWTH_SHARE_TABLE_GOALKEEPER,
   growthBetaOf,
   growthGain,
   growthShare,
@@ -50,6 +45,7 @@ import {
   rotationWindowOf,
   type CandidateBench
 } from '../src/shared/world'
+import { K } from '../src/shared/ledger'
 
 const norm = (over: Partial<RoleNorm> = {}): RoleNorm => ({ mu: 72, sigma: 3.15, beta: 0.28, n: 100, caRef: 153, ...over })
 
@@ -97,7 +93,7 @@ describe('수정 A: 영입 현실성에 파는 구단의 체급', () => {
   })
 
   it('경계: 내 체급 - 3과 같으면 낮고, 그보다 1 낮으면 낮지 않다', () => {
-    expect(STATURE_CLUB_MARGIN).toBe(3)
+    expect(K.STATURE_CLUB_MARGIN).toBe(3)
     expect(realismOf(asked({ sellerStature: 160 }), mine).low).toBe(true)
     expect(realismOf(asked({ sellerStature: 159 }), mine).low).toBe(false)
   })
@@ -115,7 +111,7 @@ describe('수정 A: 영입 현실성에 파는 구단의 체급', () => {
 
   it('등급만 바꾸고 총점은 그대로다: 체급·계약 정보가 있어도 없어도 총점과 항목 점수가 같다', () => {
     const traits = {} as Traits
-    for (const id of Object.keys(TRAIT_WEIGHTS) as TraitId[]) traits[id] = 12
+    for (const id of Object.keys(K.TRAIT_WEIGHTS) as TraitId[]) traits[id] = 12
     const input: RecommendInput = {
       category: 'starter', goalkeeper: false, roleScore: 76, roleRating: 20, age: 26, ca: 160, pa: 165, value: 40_000_000, wage: 100_000,
       contractEnd: 2028 * 1000 + 100, squadStatus: 3, hasClub: true, traits
@@ -215,12 +211,12 @@ describe('수정 H: 로테이션 창과 내년의 기준', () => {
 
 describe('수정 D: 성장 예측(β_grow, 골키퍼 전용 성장 몫)', () => {
   it('골키퍼 성장 몫: 17세 이하 0.73, 18세 0.72, 20세 0.58, 22세 0.46, 24세 0.28, 26세 이상 0이고 사이는 직선이다. 필드 표는 그대로다', () => {
-    for (const [age, share] of GROWTH_SHARE_TABLE_GOALKEEPER) expect(growthShare(age, true), `${age}세`).toBeCloseTo(share, 10)
+    for (const [age, share] of K.GROWTH_SHARE_TABLE_GOALKEEPER) expect(growthShare(age, true), `${age}세`).toBeCloseTo(share, 10)
     expect(growthShare(15, true)).toBeCloseTo(0.73, 10)
     expect(growthShare(19, true)).toBeCloseTo(0.65, 10)
     expect(growthShare(23, true)).toBeCloseTo(0.37, 10)
     expect(growthShare(30, true)).toBe(0)
-    for (const [age, share] of GROWTH_SHARE_TABLE) expect(growthShare(age), `필드 ${age}세`).toBeCloseTo(share, 10)
+    for (const [age, share] of K.GROWTH_SHARE_TABLE) expect(growthShare(age), `필드 ${age}세`).toBeCloseTo(share, 10)
     for (let age = 15; age < 35; age++) expect(growthShare(age + 1, true)).toBeLessThanOrEqual(growthShare(age, true) + 1e-12)
   })
 
@@ -274,7 +270,7 @@ describe('수정 D: 성장 예측(β_grow, 골키퍼 전용 성장 몫)', () => 
     // 구간 표본이 모자라면 β
     const few = betaGrowFromScores([60, 65, 70], [120, 130, 140], 0.28)
     expect(few).toBe(0.28)
-    expect(BETA_MIN_POPULATION).toBe(40)
+    expect(K.BETA_MIN_POPULATION).toBe(40)
     // 기울기가 0 이하이면 β
     const down = betaGrowFromScores(Array.from({ length: 60 }, (_, i) => 80 - i * 0.1), Array.from({ length: 60 }, (_, i) => 120 + i), 0.31)
     expect(down).toBe(0.31)
@@ -284,7 +280,7 @@ describe('수정 D: 성장 예측(β_grow, 골키퍼 전용 성장 몫)', () => 
 
   it('유망주 탭 점수가 β_grow로 바뀐다: 같은 선수의 성숙 시 전력이 달라진다', () => {
     const traits = {} as Traits
-    for (const id of Object.keys(TRAIT_WEIGHTS) as TraitId[]) traits[id] = 12
+    for (const id of Object.keys(K.TRAIT_WEIGHTS) as TraitId[]) traits[id] = 12
     const input: RecommendInput = {
       category: 'prospect', goalkeeper: false, roleScore: 62, roleRating: 20, age: 19, ca: 130, pa: 170, value: null, wage: null, contractEnd: null, squadStatus: 0, hasClub: false, traits
     }
@@ -302,7 +298,7 @@ describe('회귀: 추천 점수의 단조성은 5회차 뒤에도 그대로다(�
   const random = rng(20260105)
   const pick = <T,>(list: T[]): T => list[Math.floor(random() * list.length)]
   const traits = {} as Traits
-  for (const id of Object.keys(TRAIT_WEIGHTS) as TraitId[]) traits[id] = 12
+  for (const id of Object.keys(K.TRAIT_WEIGHTS) as TraitId[]) traits[id] = 12
   const categories = ['all', 'starter', 'rotation', 'prospect', 'free'] as const
 
   const sample = (): { input: RecommendInput; ctx: RecommendContext } => {
@@ -374,7 +370,7 @@ describe('수정 F: 표의 "주전 대비"를 설명과 같은 기준으로', ()
     expect(gapVsAnchor(76.3, bench, norm())).toBe(1.4)
     expect(Math.round((76.3 - bench.starter!.shownScore!) * 10) / 10).toBe(-0.2)
     const traits = {} as Traits
-    for (const id of Object.keys(TRAIT_WEIGHTS) as TraitId[]) traits[id] = 12
+    for (const id of Object.keys(K.TRAIT_WEIGHTS) as TraitId[]) traits[id] = 12
     const result = recommend(
       { category: 'starter', goalkeeper: false, roleScore: 76.3, roleRating: 20, age: 24, ca: 160, pa: 165, value: null, wage: null, contractEnd: null, squadStatus: 0, hasClub: false, traits },
       { starter: bench.starter, backup: bench.backup, today: null, money: null, norm: norm() }
@@ -581,7 +577,8 @@ describe('수정 B: 임대로 온 선수의 계약 끝(T1)', () => {
     // 필요도가 그만큼 오르고 이유에 임대 이야기가 들어간다
     expect(after.slot.need - before.slot.need).toBeCloseTo(9.9, 1)
     expect(after.slot.reason).toContain('임대 선수라 6월 30일에')
-    expect(after.slot.reason).toContain('원 소속 팀(가상 FC)으로 돌아가')
+    // 문장 끝이면 "돌아갑니다", 뒤에 다른 이유가 이어지면 "돌아가고"다(기준 분포가 없을 때의 기본 기준(F-08)에서는 주전 전력 이유가 앞서 이 문장이 끝에 온다)
+    expect(after.slot.reason).toMatch(/원 소속 팀\(가상 FC\)으로 돌아(가고|갑니다)/)
     // 계약 항목 설명에는 날짜가 추정이라고 적는다
     expect(after.factor.note).toContain('추정')
     expect(after.factor.note).toContain('가상 FC')
@@ -589,7 +586,7 @@ describe('수정 B: 임대로 온 선수의 계약 끝(T1)', () => {
 
   it('원 소속을 모르면 "원 소속 팀으로"라고만 적는다', () => {
     const loaned = analyse(squadSpecs({ 센터백1: { loanFrom: '' } }))
-    expect(contractOf(loaned, '센터백1').slot.reason).toContain('원 소속 팀으로 돌아가')
+    expect(contractOf(loaned, '센터백1').slot.reason).toMatch(/원 소속 팀으로 돌아(가고|갑니다)/)
     expect(contractOf(loaned, '센터백1').slot.reason).not.toContain('()')
   })
 

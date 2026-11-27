@@ -7,15 +7,9 @@ import {
   firstTeamPlayers,
   fitRiskOf,
   fitWageModel,
-  FIT_GAP_SIGMAS,
-  NO_SLOT_PREMIUM,
-  OVERPAID_Z,
   overpaidPlayers,
   surplusReport,
   surplusScore,
-  SURPLUS_MIN_SHOWN,
-  UNKNOWN_RISK,
-  WAGE_Z_FULL,
   type FirstTeamPlayer
 } from '@shared/dashboard'
 import type { RoleNorm, RoleNorms } from '@shared/norms'
@@ -24,9 +18,9 @@ import { ROLES } from '@shared/roles'
 import type { SeasonMatch, SeasonTableRow } from '@shared/season'
 import { analyseTactic } from '@shared/tactic'
 import type { PlayerRow } from '@shared/types'
-import { REPRESENTATIVE_SIGMA } from '@shared/world'
 import { loanLender, loanParent, type SaveContract } from '../src/main/save/contracts'
 import { mockSquad } from '../src/renderer/src/lib/mockWorld'
+import { K } from '@shared/ledger'
 
 const player = (over: Partial<FirstTeamPlayer> & { uid: number }): FirstTeamPlayer => ({
   name: `선수${over.uid}`,
@@ -145,7 +139,7 @@ describe('주급 기준선(로그 선형 회귀, 능력 + 나이 더미)', () =>
       player({ uid: 7, ca: 130, wage: Math.round(at(130) * 2.2) })
     ]
     const found = overpaidPlayers(players, model)
-    expect(OVERPAID_Z).toBe(1)
+    expect(K.OVERPAID_Z).toBe(1)
     expect(found.total).toBe(3)
     expect(found.rows.map((row) => row.uid)).toEqual([7, 3, 6])
     expect(found.rows[0].strong).toBe(true)
@@ -193,13 +187,13 @@ describe('정리 후보 나이·정체 항(4회차)', () => {
       }
     }
   })
-  it('점수 하한: 30점 미만은 보여 주지 않고(SURPLUS_MIN_SHOWN), 하한을 빼면 낮은 점수도 나온다', () => {
-    expect(SURPLUS_MIN_SHOWN).toBe(30)
+  it('점수 하한: 30점 미만은 보여 주지 않고(K.SURPLUS_MIN_SHOWN), 하한을 빼면 낮은 점수도 나온다', () => {
+    expect(K.SURPLUS_MIN_SHOWN).toBe(30)
     const squad = mockSquad(false)
     const players = firstTeamPlayers(squad.rows, squad.columns)
     const analysis = analyseTactic({ rows: squad.rows, columns: squad.columns, today: squad.today, formation: '4-2-3-1', slotRoles: {}, roleWeights: {} })!
     const shown = surplusReport({ players, rows: squad.rows, columns: squad.columns, analysis, roleWeights: {} }).rows
-    for (const row of shown) expect(row.score).toBeGreaterThanOrEqual(SURPLUS_MIN_SHOWN)
+    for (const row of shown) expect(row.score).toBeGreaterThanOrEqual(K.SURPLUS_MIN_SHOWN)
     const all = surplusReport({ players, rows: squad.rows, columns: squad.columns, analysis, roleWeights: {}, minScore: 0 }).rows
     expect(all.length).toBeGreaterThanOrEqual(shown.length)
   })
@@ -210,7 +204,7 @@ describe('잉여 점수', () => {
 
   it('0~100 안이고, 위험이 클수록 높다', () => {
     const calm = surplusScore({ fitRisk: 0, wageZ: -1, age: 22, ca: 120, pa: 150 })
-    const heavy = surplusScore({ fitRisk: fitRiskOf(FIT_GAP_SIGMAS), wageZ: WAGE_Z_FULL, age: 33, ca: 120, pa: 120 })
+    const heavy = surplusScore({ fitRisk: fitRiskOf(K.FIT_GAP_SIGMAS), wageZ: K.WAGE_Z_FULL, age: 33, ca: 120, pa: 120 })
     expect(calm.score).toBe(0)
     expect(heavy.score).toBe(100)
     expect(surplusScore(base).score).toBeGreaterThan(calm.score)
@@ -235,20 +229,20 @@ describe('잉여 점수', () => {
   it('모르는 항목은 보통(0.5)으로 계산하고 재분배하지 않는다', () => {
     const unknownFit = surplusScore({ ...base, fitRisk: null })
     expect(unknownFit.unknown).toEqual(['fit'])
-    expect(unknownFit.parts.fit).toBe(50 * UNKNOWN_RISK)
+    expect(unknownFit.parts.fit).toBe(50 * K.SURPLUS_UNKNOWN_RISK)
     const unknownWage = surplusScore({ ...base, wageZ: null })
     expect(unknownWage.unknown).toEqual(['wage'])
-    expect(unknownWage.parts.wage).toBe(25 * UNKNOWN_RISK)
+    expect(unknownWage.parts.wage).toBe(25 * K.SURPLUS_UNKNOWN_RISK)
     const unknownAge = surplusScore({ ...base, age: null })
     expect(unknownAge.unknown).toEqual(['age'])
-    expect(unknownAge.parts.age).toBe(25 * UNKNOWN_RISK)
+    expect(unknownAge.parts.age).toBe(25 * K.SURPLUS_UNKNOWN_RISK)
     // 재분배가 없으므로 모르는 항목이 있어도 합은 100을 넘지 않는다
     expect(surplusScore({ fitRisk: 1, wageZ: null, age: null, ca: null, pa: null }).score).toBe(75)
   })
 
   it('적합도 차이는 σ 단위다: 같은 점수 차이라도 σ가 작은 역할에서는 더 큰 차이다', () => {
     expect(surplusScore({ ...base, fitRisk: fitRiskOf(6 / 2) }).parts.fit).toBeGreaterThan(surplusScore({ ...base, fitRisk: fitRiskOf(6 / 4) }).parts.fit)
-    expect(surplusScore({ ...base, fitRisk: fitRiskOf(FIT_GAP_SIGMAS * 2) }).parts.fit).toBe(50)
+    expect(surplusScore({ ...base, fitRisk: fitRiskOf(K.FIT_GAP_SIGMAS * 2) }).parts.fit).toBe(50)
   })
 })
 
@@ -312,7 +306,7 @@ describe('정리 후보 고르기(3회차)', () => {
     expect(row!.fit).toBe('noSlot')
     expect(row!.bestRole).toBeTruthy()
     // 최약 주전보다 z가 높으므로 가산 0.5σ만 남는다
-    expect(row!.parts.fit).toBeCloseTo(50 * (NO_SLOT_PREMIUM / FIT_GAP_SIGMAS), 1)
+    expect(row!.parts.fit).toBeCloseTo(50 * (K.NO_SLOT_PREMIUM / K.FIT_GAP_SIGMAS), 1)
     expect(row!.reason).toContain('4-4-2에는 별이 뛸 자리가 없습니다')
     expect(row!.reason).toContain('전술을 바꾸면 주전감')
     expect(wide.result.rows.slice(0, 3).map((each) => each.name)).not.toContain('별')
@@ -399,7 +393,7 @@ describe('정리 후보 고르기(3회차)', () => {
     const none = surplusReport({ players, rows, columns: base.columns, analysis, roleWeights: {}, norms, wageModel: null, minScore: 0 })
     expect(none.rows.length).toBeGreaterThan(0)
     for (const row of none.rows) {
-      expect(row.parts.wage).toBe(25 * UNKNOWN_RISK)
+      expect(row.parts.wage).toBe(25 * K.SURPLUS_UNKNOWN_RISK)
       expect(row.unknown).toContain('wage')
       expect(row.wageZ).toBeNull()
       expect(row.reason).toContain('몰라 보통(0.5)으로 보았')
@@ -448,7 +442,7 @@ describe('정리 후보 고르기(3회차)', () => {
     if (unknown) {
       expect(unknown.fit).toBe('unknown')
       expect(unknown.unknown).toContain('fit')
-      expect(unknown.parts.fit).toBe(50 * UNKNOWN_RISK)
+      expect(unknown.parts.fit).toBe(50 * K.SURPLUS_UNKNOWN_RISK)
     }
     // 포지션이 전술에 하나도 없는 선수만 있는 1군
     const odd = Array.from({ length: 12 }, (_, i) => makeRow(i + 1, { name: `윙${i}`, spots: { AML: 20, AMR: 20 }, level: 12 }))
@@ -484,7 +478,7 @@ describe('정리 후보 고르기(목업 선수단)', () => {
     for (const row of report.prospects) {
       expect(row.age!).toBeLessThanOrEqual(23)
       expect(row.room).toBeGreaterThanOrEqual(10)
-      expect(row.gain).toBeGreaterThanOrEqual(0.5 * REPRESENTATIVE_SIGMA - 0.1)
+      expect(row.gain).toBeGreaterThanOrEqual(0.5 * K.REPRESENTATIVE_SIGMA - 0.1)
     }
   })
 

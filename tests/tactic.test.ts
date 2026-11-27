@@ -1,15 +1,16 @@
 import { describe, expect, it } from 'vitest'
 import { bestRoleOf, buildDepth, FORMATION_BY_ID } from '../src/shared/depth'
 import { FIELDS } from '../src/shared/fields'
+import { K, withLedger } from '../src/shared/ledger'
+import { immediateFit } from '../src/shared/recommend'
 import { depthCard } from '../src/shared/insights'
 import { attributesOf, effectiveWeights, prepareRole, ROLES, savedRoleScore, scoreRole } from '../src/shared/roles'
-import type { RoleNorm } from '../src/shared/norms'
+import { FALLBACK_NORM, type RoleNorm } from '../src/shared/norms'
 import {
   analyseTactic,
   daysBetween,
   dateFromNumber,
   needLevel,
-  NEED_FACTOR_WEIGHTS,
   slotBench,
   type TacticInput
 } from '../src/shared/tactic'
@@ -119,7 +120,7 @@ describe('전술 분석', () => {
       expect(max).toBeGreaterThan(99.6)
       expect(max).toBeLessThan(100.4)
     }
-    expect(Object.values(NEED_FACTOR_WEIGHTS).reduce((a, b) => a + b, 0)).toBe(100)
+    expect(Object.values(K.NEED_FACTOR_WEIGHTS).reduce((a, b) => a + b, 0)).toBe(100)
   })
 
   it('보강 필요도가 높은 순으로 줄 세운다', () => {
@@ -396,12 +397,29 @@ describe('역할 기준 분포로 재는 보강 필요도', () => {
     expect(quality('ML')).toBeGreaterThan(quality('DL'))
   })
 
-  it('기준 분포가 없으면 우리 팀 주전 평균을 기준으로 대신하고 그렇게 표시한다', () => {
+  it('기준 분포가 없으면 영입 추천과 같은 고정 기준(FALLBACK_NORM)으로 대신하고 그렇게 표시한다(F-08)', () => {
+    // 예전에는 평균을 우리 팀 주전 평균으로 두어 영입 추천(평균 72)과 평균이 달랐다
     const analysis = analyseTactic(base(squad()))!
     for (const slot of analysis.slots) {
       expect(slot.normSource).toBe('fallback')
-      expect(slot.norm.mu).toBe(analysis.fitAverage)
+      expect(slot.norm.mu).toBe(FALLBACK_NORM.mu)
+      expect(slot.norm.sigma).toBe(FALLBACK_NORM.sigma)
+      expect(slot.norm.mu).not.toBe(analysis.fitAverage)
     }
+  })
+
+  it('기준 분포가 없을 때 전술 분석과 영입 추천이 같은 평균을 쓰고, 대장의 한 값이 둘을 함께 바꾼다(F-08)', () => {
+    const noOne = { starter: null, backup: null }
+    const analysis = analyseTactic(base(squad()))!
+    // 영입 추천은 기준 분포(norm)를 못 받으면 FALLBACK_NORM으로 잰다: 주전이 없는 자리에서 적합도가 평균과 같으면 충족도 0.5
+    expect(immediateFit(analysis.slots[0].norm.mu, noOne, 'all')).toBeCloseTo(0.5, 6)
+    withLedger({ FALLBACK_MU: 60 }, () => {
+      const changed = analyseTactic(base(squad()))!
+      for (const slot of changed.slots) expect(slot.norm.mu).toBe(60)
+      expect(immediateFit(60, noOne, 'all')).toBeCloseTo(0.5, 6)
+      expect(immediateFit(72, noOne, 'all')).toBeGreaterThan(0.95)
+    })
+    expect(analyseTactic(base(squad()))!.slots[0].norm.mu).toBe(72)
   })
 
   it('이유 문장은 사실과 맞다: 적합도가 기준보다 높은데 못 미친다고 쓰지 않는다', () => {

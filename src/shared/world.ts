@@ -1,3 +1,4 @@
+import { K } from './ledger'
 import { FALLBACK_NORM, type RoleNorm } from './norms'
 import { posPenaltySigma } from './positions'
 import type { Recommendation, RecommendTierId, SquadMoney } from './recommend'
@@ -52,61 +53,28 @@ export const CATEGORY_HELP: Record<CandidateCategory, string> = {
 
 // ---------- 유형 판정 ----------
 
-/** 유망주로 보는 나이와 성장 여지(1회차 21세 → 2회차 23세: 22~23세 고잠재 선수가 어느 탭에도 못 드는 것을 막는다) */
-export const PROSPECT_MAX_AGE = 23
-export const PROSPECT_MIN_ROOM = 10
-/**
- * 유망주 자격(3회차): 성숙 시 적합도 이득이 이 값 × σ 이상이어야 "클 여지가 있다"고 본다. 23세 CA152/PA164는 이득 0.27σ라 빠지고(로테이션 자원),
- * 18세 CA165/PA183은 1.1σ라 든다. 추정: 0.5σ는 "한 시즌 주전 경쟁에 보탬이 될 만한 크기"라는 어림이다.
- */
-export const PROSPECT_MIN_GAIN_SIGMA = 0.5
-/** 역할을 정할 수 없을 때 쓰는 대표 기울기와 σ(실제 세이브에서 역할별 β 0.24~0.34, σ 2.8~5.9의 가운데쯤. 3회차 보고서) */
-export const REPRESENTATIVE_BETA = 0.265
-export const REPRESENTATIVE_SIGMA = 3.2
-
-/**
+/*
+ * 유형 판정과 성장 예측의 상수는 대장(ledger.ts)에 있다.
+ *
+ * 유망주 자격(PROSPECT_MAX_AGE 23세 이하, PROSPECT_MIN_ROOM, PROSPECT_MIN_GAIN_SIGMA, 3회차): 성숙 시 적합도 이득이 이 값 × σ 이상이어야 "클 여지가 있다"고 본다.
+ * 23세 CA152/PA164는 이득 0.27σ라 빠지고(로테이션 자원), 18세 CA165/PA183은 1.1σ라 든다.
+ *
  * 성숙 시 적합도 proj_eff = f_eff + β × growthShare(나이) × max(0, PA - CA)  (f_eff는 숙련 감점·나이 하락을 뺀 지금 적합도, β는 역할 기준 분포의 "현재 능력 1점당 적합도").
- * growthShare(나이)는 지금 현재 능력(CA)과 잠재 능력(PA)의 차이 가운데 성숙까지 채워질 몫이다(3회차).
- * 직선 보간표: (17세 이하 0.78) (18 0.70) (20 0.57) (22 0.38) (24 0.15) (26세 이상 0).
+ * growthShare(나이)는 지금 현재 능력(CA)과 잠재 능력(PA)의 차이 가운데 성숙까지 채워질 몫이다(3회차). 직선 보간표(GROWTH_SHARE_TABLE):
+ * (17세 이하 0.78) (18 0.70) (20 0.57) (22 0.38) (24 0.15) (26세 이상 0).
  * 근거(단면 실측, 실험): 같은 PA 구간(120~140, 140~160, 160~180) 선수들이 나이별로 평균 현재 능력이 27~29세 평균에 대해
  * (PA - CA)를 얼마나 채웠는가를 셋 구간에서 평균했다(16~18세 0.77~0.80/0.68~0.71, 20세 0.54~0.59, 22세 0.36~0.42, 24세 0.00~0.16, 26세 이후 0에 수렴).
  * 한계: 한 시점의 단면이라 세대(코호트) 차이와 은퇴·방출 편향이 섞여 있다. 두 날짜의 세이브로 같은 선수들의 변화를 직접 재어 다시 확인해야 한다.
  * (1·2회차의 ρ(나이)·R(나이) 곱은 22~26세에서 이 실측의 약 2배였다.)
+ * 골키퍼는 늦게 크는 별도 표(GROWTH_SHARE_TABLE_GOALKEEPER, 5회차): 22세 0.46 대 필드 0.35, 24세 0.28 대 0.09.
+ *
+ * 하락: AGING_START_AGE(필드 31세, 골키퍼 AGING_START_AGE_GOALKEEPER 34세)를 넘으면 한 해마다 AGING_DROP_PER_YEAR점씩 내려갈 것으로 보고
+ * 적합도를 낮춘다(주전과 영입 후보에 똑같이 적용). 하락 속도는 단면 자료(세이브 하나)로 구할 수 없어 추정이다.
+ *
+ * 유형 경계: STARTER_TOLERANCE_SIGMAS(주전보다 이만큼 낮아도 주전 수준), ROTATION_REACH_SIGMAS(로테이션은 주전보다 이만큼 넘게 낮으면 아니다),
+ * THIN_REACH_SIGMAS(후보가 2명 미만인 그룹은 로테이션 창을 이만큼까지 연다), CA_GATE(현재 능력은 내 주전의 이 비율 이상).
+ * REPRESENTATIVE_BETA·REPRESENTATIVE_SIGMA는 역할을 정할 수 없을 때 쓰는 대표 기울기와 σ(실제 세이브에서 역할별 β 0.24~0.34, σ 2.8~5.9의 가운데쯤. 3회차 보고서).
  */
-export const GROWTH_SHARE_TABLE: Array<[number, number]> = [
-  [17, 0.78],
-  [18, 0.7],
-  [20, 0.57],
-  [22, 0.38],
-  [24, 0.15],
-  [26, 0]
-]
-/**
- * 골키퍼 전용 성장 몫(5회차). 같은 단면 자료에서 골키퍼가 필드 선수보다 늦게 큰다(22세 0.46 대 필드 0.35, 24세 0.28 대 0.09).
- * 직선 보간표: (17세 이하 0.73) (18 0.72) (20 0.58) (22 0.46) (24 0.28) (26세 이상 0). 필드 표는 그대로다.
- */
-export const GROWTH_SHARE_TABLE_GOALKEEPER: Array<[number, number]> = [
-  [17, 0.73],
-  [18, 0.72],
-  [20, 0.58],
-  [22, 0.46],
-  [24, 0.28],
-  [26, 0]
-]
-
-/** 이 나이를 넘으면 한 해마다 AGING_DROP_PER_YEAR점씩 내려갈 것으로 보고 적합도를 낮춘다(주전과 영입 후보에 똑같이 적용. 골키퍼는 늦게 내려간다) */
-export const AGING_START_AGE = 31
-export const AGING_START_AGE_GOALKEEPER = 34
-/** 추정: 하락 속도는 단면 자료(세이브 하나)로 구할 수 없어 한 해 1점으로 어림했다 */
-export const AGING_DROP_PER_YEAR = 1.0
-/** 주전보다 이만큼(σ의 배수) 낮아도 "주전 수준"으로 본다(반올림·표본 오차를 감안한 여유) */
-export const STARTER_TOLERANCE_SIGMAS = 0.25
-/** 로테이션: 주전보다 이만큼(σ의 배수)보다 많이 낮은 선수는 번갈아 쓸 수준이 아니다 */
-export const ROTATION_REACH_SIGMAS = 1.5
-/** 후보가 2명 미만인 그룹은 로테이션 창을 아래로 이만큼(σ의 배수)까지는 열어 둔다(5회차. 후보급 한 명 더가 필요한 경우. 추정) */
-export const THIN_REACH_SIGMAS = 1.0
-/** 주전·로테이션 후보의 현재 능력은 내 주전의 이 비율 이상이어야 한다(적합도만 높고 전체 실력이 낮은 선수를 거른다) */
-export const CA_GATE = 0.85
 
 /** 비교 기준으로 쓰는 내 주전. score는 포지션 숙련을 반영한 적합도(f_eff)이고, 나이 하락은 benchmarkOf가 더 뺀다 */
 export interface BenchStarter {
@@ -142,7 +110,7 @@ export function benchLine(bench: CandidateBench, groupSlots: number): string {
 
 /** 성장 몫(GROWTH_SHARE_TABLE을 직선으로 이은 값). 17세 이하 0.78, 26세 이상 0. 골키퍼는 늦게 크는 별도 표를 쓴다 */
 export function growthShare(age: number, goalkeeper = false): number {
-  const table = goalkeeper ? GROWTH_SHARE_TABLE_GOALKEEPER : GROWTH_SHARE_TABLE
+  const table = goalkeeper ? K.GROWTH_SHARE_TABLE_GOALKEEPER : K.GROWTH_SHARE_TABLE
   if (age <= table[0][0]) return table[0][1]
   for (let i = 1; i < table.length; i++) {
     const [x1, y1] = table[i]
@@ -178,14 +146,14 @@ export function projectedScore(score: number, age: number | null, ca: number, pa
  * 영입 후보의 유망주 유형(categoriesOf)과 대시보드의 "임대 보내 키울 선수"가 이 함수 하나를 쓴다.
  */
 export function hasGrowthRoom(age: number | null, ca: number, pa: number, beta: number, sigma: number, goalkeeper = false): boolean {
-  return age !== null && age <= PROSPECT_MAX_AGE && pa - ca >= PROSPECT_MIN_ROOM && growthGain(age, ca, pa, beta, goalkeeper) >= PROSPECT_MIN_GAIN_SIGMA * sigma
+  return age !== null && age <= K.PROSPECT_MAX_AGE && pa - ca >= K.PROSPECT_MIN_ROOM && growthGain(age, ca, pa, beta, goalkeeper) >= K.PROSPECT_MIN_GAIN_SIGMA * sigma
 }
 
 /** 나이 하락으로 내년까지 깎아 보는 적합도(점). 시작 나이(필드 31, 골키퍼 34)를 넘은 해마다 AGING_DROP_PER_YEAR */
 export function agingDrop(age: number | null | undefined, goalkeeper = false): number {
   if (age === null || age === undefined) return 0
-  const start = goalkeeper ? AGING_START_AGE_GOALKEEPER : AGING_START_AGE
-  return AGING_DROP_PER_YEAR * Math.max(0, age - start)
+  const start = goalkeeper ? K.AGING_START_AGE_GOALKEEPER : K.AGING_START_AGE
+  return K.AGING_DROP_PER_YEAR * Math.max(0, age - start)
 }
 
 /** f_eff = f - σ·posPenaltySigma(r) - 나이 하락. 숙련을 모르면(null) 숙련 감점은 없다(많은 선수를 도는 곳에서 쓰는 숫자만 돌려주는 꼴) */
@@ -234,9 +202,9 @@ export interface Benchmark {
 }
 
 export function benchmarkOf(starter: CandidateBench['starter'], norm: RoleNorm = FALLBACK_NORM, goalkeeper = false): Benchmark {
-  if (!starter) return { anchor: norm.mu, drop: 0, caGate: CA_GATE * norm.caRef, hasStarter: false }
+  if (!starter) return { anchor: norm.mu, drop: 0, caGate: K.CA_GATE * norm.caRef, hasStarter: false }
   const drop = agingDrop(starter.age, goalkeeper)
-  return { anchor: starter.score - drop, drop, caGate: CA_GATE * starter.ca, hasStarter: true }
+  return { anchor: starter.score - drop, drop, caGate: K.CA_GATE * starter.ca, hasStarter: true }
 }
 
 /**
@@ -269,13 +237,13 @@ export interface RotationWindow {
 
 export function rotationWindowOf(bench: CandidateBench, norm: RoleNorm = FALLBACK_NORM, goalkeeper = false): RotationWindow {
   const { anchor, caGate, hasStarter } = benchmarkOf(bench.starter, norm, goalkeeper)
-  const tolerance = STARTER_TOLERANCE_SIGMAS * norm.sigma
+  const tolerance = K.STARTER_TOLERANCE_SIGMAS * norm.sigma
   const backupEff = bench.backup ? bench.backup.score - agingDrop(bench.backup.age, goalkeeper) : null
   const next = hasStarter && backupEff !== null ? Math.max(anchor, backupEff) : anchor
-  const reach = next - ROTATION_REACH_SIGMAS * norm.sigma
+  const reach = next - K.ROTATION_REACH_SIGMAS * norm.sigma
   const thin = bench.thin === true
   const base = backupEff === null ? reach : Math.max(backupEff, reach)
-  const floor = (thin ? Math.min(base, next - THIN_REACH_SIGMAS * norm.sigma) : base) - tolerance
+  const floor = (thin ? Math.min(base, next - K.THIN_REACH_SIGMAS * norm.sigma) : base) - tolerance
   return { anchor, next, backupEff, line: next - tolerance, floor, thin, caGate, hasStarter }
 }
 
@@ -352,7 +320,7 @@ export function categoriesOf(
     else if (fit >= window.floor) found.push('rotation')
   }
   // 23세를 넘으면 클 여지가 없다(많은 선수를 도는 곳이라 먼저 걸러 낸다)
-  if (player.age !== null && player.age <= PROSPECT_MAX_AGE) {
+  if (player.age !== null && player.age <= K.PROSPECT_MAX_AGE) {
     const prospect = prospectCheck(player, bench, norm, goalkeeper, window)
     if (prospect.room && prospect.margin >= 0) found.push('prospect')
   }

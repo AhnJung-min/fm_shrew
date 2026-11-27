@@ -5,6 +5,7 @@
  *
  * 값은 게임이 보여 주는 글자를 그대로 쓰고, 정렬이나 막대에 쓸 숫자만 따로 읽는다. 게임에서 읽지 못한 값은 null이다.
  */
+import { K } from './ledger'
 import { formatWon, WON_PER_POUND } from './playerView'
 
 /** 게임 안 플러그인(0.11.0 이상)이 /club, /health에서 돌려주는 기록 하나: 항목 이름 → 게임의 글자 */
@@ -322,12 +323,6 @@ export function playerHealthOf(player: RosterPlayer, fields: GameFields | undefi
   }
 }
 
-/** 이 값보다 낮으면 "낮은 선수"로 모아 보여 준다(%) */
-export const LOW_CONDITION = 85
-export const LOW_SHARPNESS = 80
-/** 평점 비교에 넣으려면 이번 시즌 이만큼은 뛰었어야 한다(출전 수를 모르면 평점만 본다) */
-export const MIN_APPEARANCES_FOR_FORM = 3
-
 export interface SquadReport {
   /** 게임이 답한 선수 수 */
   answered: number
@@ -357,15 +352,15 @@ export function squadReport(players: PlayerHealth[]): SquadReport {
   const suspended = answered.filter((player) => player.suspended)
   const withMorale = answered.filter((player) => player.morale !== null)
   const rated = answered
-    .filter((player) => player.rating !== null && (player.appearances === null || player.appearances >= MIN_APPEARANCES_FOR_FORM))
+    .filter((player) => player.rating !== null && (player.appearances === null || player.appearances >= K.MIN_APPEARANCES_FOR_FORM))
     .sort((a, b) => (b.rating as number) - (a.rating as number))
   const spread = rated.length >= 6
   return {
     answered: answered.length,
     injured,
     suspended,
-    lowCondition: lowest(answered, (player) => player.condition, LOW_CONDITION, 5),
-    lowSharpness: lowest(answered, (player) => player.sharpness, LOW_SHARPNESS, 5),
+    lowCondition: lowest(answered, (player) => player.condition, K.LOW_CONDITION, 5),
+    lowSharpness: lowest(answered, (player) => player.sharpness, K.LOW_SHARPNESS, 5),
     // 사기는 단위를 몰라 기준선을 두지 않고, 가장 낮은 세 명만 보여 준다
     lowMorale:
       withMorale.length >= 4

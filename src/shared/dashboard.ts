@@ -1,20 +1,18 @@
 import { withJosa } from './korean'
+import { K } from './ledger'
 import { zOf, type RoleNorms } from './norms'
 import { formatPounds } from './playerView'
-import { parsePositions, posPenaltySigma, ratingAt, RATING_UNKNOWN_ASSUMED, TEMPORARY_MIN_RATING } from './positions'
+import { parsePositions, posPenaltySigma, ratingAt, RATING_UNKNOWN_ASSUMED } from './positions'
 import type { Realism, RecommendTierId } from './recommend'
 import { attributesOf, effectiveWeights, ROLES, scoreRole, type AttributeValue } from './roles'
 import type { SeasonMatch, SeasonTableRow } from './season'
-import { dateFromNumber, daysBetween, type SlotAnalysis, type TacticAnalysis, type Ymd } from './tactic'
+import { dateFromNumber, daysBetween, isContractSoon, type SlotAnalysis, type TacticAnalysis, type Ymd } from './tactic'
 import type { ColumnInfo, PlayerRow } from './types'
 import {
   growthBetaOf,
   growthGain,
   hasGrowthRoom,
   prospectCheck,
-  REPRESENTATIVE_BETA,
-  REPRESENTATIVE_SIGMA,
-  STARTER_TOLERANCE_SIGMAS,
   type CandidateBench,
   type ProspectCheck
 } from './world'
@@ -361,9 +359,10 @@ export function ageStructure(players: DashPlayer[]): { bands: AgeBand[]; known: 
 
 // ---------- 계약 만료 ----------
 
-/** 계약 만료 창: 1년 이내와 그 뒤 1년(1~2년) */
-export const CONTRACT_WINDOW_DAYS = [365, 730] as const
-
+/**
+ * 계약 만료 창: 오늘부터 K.CONTRACT_SOON_DAYS(365일, 화면의 "12개월") 이내와 그 뒤 K.CONTRACT_FAR_DAYS(730일)까지(1~2년).
+ * 이미 끝난 계약(남은 일수 < 0)은 따로 센다. 스쿼드 진단 카드(insights.ts)도 같은 정의(isContractSoon)를 쓴다(F-08).
+ */
 export function contractWindows(
   players: FirstTeamPlayer[],
   today: Ymd | undefined
@@ -383,32 +382,29 @@ export function contractWindows(
   rows.sort((a, b) => a.daysLeft - b.daysLeft || a.name.localeCompare(b.name, 'ko'))
   // 이미 끝난 계약(남은 일수 < 0)은 "12개월 안에 끝난다"에 섞지 않고 따로 센다(4회차)
   const expired = rows.filter((row) => row.daysLeft < 0)
-  const within1y = rows.filter((row) => row.daysLeft >= 0 && row.daysLeft <= CONTRACT_WINDOW_DAYS[0])
-  const within2y = rows.filter((row) => row.daysLeft > CONTRACT_WINDOW_DAYS[0] && row.daysLeft <= CONTRACT_WINDOW_DAYS[1])
+  const within1y = rows.filter((row) => isContractSoon(row.daysLeft))
+  const within2y = rows.filter((row) => row.daysLeft > K.CONTRACT_SOON_DAYS && row.daysLeft <= K.CONTRACT_FAR_DAYS)
   // 임대 복귀 선수의 주급은 원 소속 계약 값이라 우리가 아끼는 돈이 아니다. 주급 합계에서 뺀다
   return { known: rows.length, expired, within1y, within2y, wageWithin1y: within1y.reduce((sum, row) => sum + (row.loan ? 0 : (row.wage ?? 0)), 0) }
 }
 
 // ---------- 주급 과다 의심: ln(주급) = a + b × 현재 능력 + c1 × [나이 < 21] + c2 × [나이 ≥ 30] ----------
 
-/**
- * 과다 의심: 같은 리그 선수들의 주급을 현재 능력과 나이로 맞춘 식의 잔차가 표준편차(s)의 OVERPAID_Z배 이상 높은 선수.
+/*
+ * 과다 의심: 같은 리그 선수들의 주급을 현재 능력과 나이로 맞춘 식의 잔차가 표준편차(s)의 K.OVERPAID_Z배 이상 높은 선수.
  * z = 1.0은 기대 주급의 e^s배(s 0.52이면 약 1.67배)다. 2회차까지의 "기대의 1.3배"는 z 0.5 안팎이라 리그 선수의 3분의 1이 걸렸다(3회차).
- * 1.0, 1.5(강한 의심)는 추정이다: 이 앱이 정한 어림이며 리그에서 z ≥ 1인 선수는 약 10~11%다.
+ * 1.0, 1.5(강한 의심 K.OVERPAID_Z_STRONG)는 추정이다: 이 앱이 정한 어림이며 리그에서 z ≥ 1인 선수는 약 10~11%다.
+ * 나이 더미는 K.WAGE_YOUNG_BELOW세 미만(어린 선수는 같은 능력이라도 덜 받는다)과 K.WAGE_OLD_FROM세 이상(경험이 많으면 더 받는다)이다.
+ * 회귀는 K.WAGE_MODEL_MIN_SAMPLE명 이상일 때만 믿고, 잔차가 K.WAGE_OUTLIER_Z 표준편차를 넘는 선수는 빼고 한 번만 다시 맞춘다(4회차).
+ * K.WAGE_SD_FLOOR는 잔차 표준편차가 0에 가까운 자료에서 z가 폭주하지 않게 하는 하한이다.
  */
-export const OVERPAID_Z = 1
-export const OVERPAID_Z_STRONG = 1.5
-/** 목록에 보여 주는 최대 인원 */
+
+/** 목록에 보여 주는 최대 인원(화면 줄 수라 조정 상수가 아니다) */
 export const OVERPAID_SHOWN = 5
-/** 회귀를 믿으려면 필요한 최소 표본 */
-export const WAGE_MODEL_MIN_SAMPLE = 30
-/** 나이 더미: 21세 미만(어린 선수는 같은 능력이라도 덜 받는다), 30세 이상(경험이 많으면 더 받는다) */
-export const WAGE_YOUNG_BELOW = 21
-export const WAGE_OLD_FROM = 30
-/** 잔차 표준편차가 0에 가까운 자료(완전히 맞는 합성 자료)에서 z가 폭주하지 않게 하는 하한 */
-export const WAGE_SD_FLOOR = 0.05
-/** 첫 적합에서 잔차가 이 표준편차 배수를 넘는 선수는 빼고 한 번만 다시 맞춘다(극단값이 s를 부풀린다. 4회차) */
-export const WAGE_OUTLIER_Z = 3
+
+/** 로그 주급 모델에서 현재 능력의 기준점과 2차항의 눈금(식의 열 눈금이라 값을 바꿔도 적합 결과가 같다) */
+export const WAGE_CA_CENTER = 145
+export const WAGE_CA_QUAD_SCALE = 10
 
 export interface WagePoint {
   ca: number
@@ -433,10 +429,6 @@ export interface WageCoefs {
   /** 30세 이상 */
   c2: number
 }
-
-/** 로그 주급 모델에서 현재 능력의 기준점과 2차항의 눈금 */
-export const WAGE_CA_CENTER = 145
-export const WAGE_CA_QUAD_SCALE = 10
 
 /** 계수와 잔차 표준편차(z를 매기는 데 필요한 전부) */
 export interface WageScale extends WageCoefs {
@@ -476,12 +468,12 @@ function solveLinear(matrix: number[][], vector: number[]): number[] | null {
  * 표본이 적거나 능력이 모두 같거나 주급이 모두 같으면 null. r2는 로그 주급에서의 결정계수, s는 잔차 표준편차(자유도 n - 계수 수).
  * 이상치(|z| > 3)를 한 번 빼고 다시 맞추는 절차와 표본·더미 조건은 4회차 그대로다.
  */
-export function fitWageModel(points: WagePoint[], minSample = WAGE_MODEL_MIN_SAMPLE): WageFit | null {
+export function fitWageModel(points: WagePoint[], minSample = K.WAGE_MODEL_MIN_SAMPLE): WageFit | null {
   const used = points.filter((point) => point.ca > 0 && point.wage > 0)
   const first = fitOnce(used, minSample)
   if (!first) return null
   // |z| > 3인 선수를 빼고 한 번만 다시 맞춘다. 남은 표본이 너무 적거나 다시 맞출 수 없으면 첫 적합을 그대로 쓴다
-  const kept = used.filter((point) => Math.abs(wageZ(first, point.wage, point.ca, point.age ?? null).z) <= WAGE_OUTLIER_Z)
+  const kept = used.filter((point) => Math.abs(wageZ(first, point.wage, point.ca, point.age ?? null).z) <= K.WAGE_OUTLIER_Z)
   if (kept.length === used.length) return first
   const second = fitOnce(kept, minSample)
   return second ? { ...second, removed: used.length - kept.length } : first
@@ -494,8 +486,8 @@ function fitOnce(used: WagePoint[], minSample: number): WageFit | null {
 function fitColumns(used: WagePoint[], minSample: number, quadratic: boolean): WageFit | null {
   const n = used.length
   if (n < minSample) return null
-  const young = used.map((point) => (point.age !== null && point.age !== undefined && point.age < WAGE_YOUNG_BELOW ? 1 : 0))
-  const old = used.map((point) => (point.age !== null && point.age !== undefined && point.age >= WAGE_OLD_FROM ? 1 : 0))
+  const young = used.map((point) => (point.age !== null && point.age !== undefined && point.age < K.WAGE_YOUNG_BELOW ? 1 : 0))
+  const old = used.map((point) => (point.age !== null && point.age !== undefined && point.age >= K.WAGE_OLD_FROM ? 1 : 0))
   const usable = (dummy: number[]): boolean => {
     const ones = dummy.reduce((sum, value) => sum + value, 0)
     return ones >= 2 && n - ones >= 2
@@ -532,8 +524,8 @@ function fitColumns(used: WagePoint[], minSample: number, quadratic: boolean): W
 
 /** 기대 주급(파운드). 나이를 모르면(null) 나이 더미는 0이다. 자유 계약 선수의 기대 주급도 같은 식이다 */
 export function expectedWage(model: WageCoefs, ca: number, age: number | null = null): number {
-  const young = age !== null && age < WAGE_YOUNG_BELOW ? model.c1 : 0
-  const old = age !== null && age >= WAGE_OLD_FROM ? model.c2 : 0
+  const young = age !== null && age < K.WAGE_YOUNG_BELOW ? model.c1 : 0
+  const old = age !== null && age >= K.WAGE_OLD_FROM ? model.c2 : 0
   const x = ca - WAGE_CA_CENTER
   return Math.exp(model.a + model.b * x + (model.b2 ?? 0) * (x / WAGE_CA_QUAD_SCALE) ** 2 + young + old)
 }
@@ -541,7 +533,7 @@ export function expectedWage(model: WageCoefs, ca: number, age: number | null = 
 /** 주급이 기대 주급보다 잔차 표준편차의 몇 배 높은가(z_w) */
 export function wageZ(model: WageScale, wage: number, ca: number, age: number | null): { z: number; expected: number; ratio: number } {
   const expected = expectedWage(model, ca, age)
-  return { z: Math.log(wage / expected) / Math.max(model.s, WAGE_SD_FLOOR), expected, ratio: wage / expected }
+  return { z: Math.log(wage / expected) / Math.max(model.s, K.WAGE_SD_FLOOR), expected, ratio: wage / expected }
 }
 
 /**
@@ -553,14 +545,14 @@ export function overpaidPlayers(players: FirstTeamPlayer[], model: WageScale, ex
   for (const player of players) {
     if (exclude.has(player.uid) || player.wage === null || player.ca === null || player.ca <= 0) continue
     const { z, expected, ratio } = wageZ(model, player.wage, player.ca, player.age)
-    if (z < OVERPAID_Z) continue
+    if (z < K.OVERPAID_Z) continue
     found.push({
       ...asPlayer(player),
       wage: player.wage,
       expected: Math.round(expected),
       ratio: Math.round(ratio * 100) / 100,
       z: Math.round(z * 100) / 100,
-      strong: z >= OVERPAID_Z_STRONG,
+      strong: z >= K.OVERPAID_Z_STRONG,
       excess: Math.round(player.wage - expected)
     })
   }
@@ -570,9 +562,9 @@ export function overpaidPlayers(players: FirstTeamPlayer[], model: WageScale, ex
 
 // ---------- 정리 후보: 잉여 점수 ----------
 
-/**
+/*
  * 잉여 점수(0~100) = 세 위험의 가중 평균 × 100. 각 위험은 0(정리할 이유 없음)~1(매우 큼).
- * 알 수 없는 위험은 빼지 않고 보통(UNKNOWN_RISK 0.5)으로 계산한다(tactic.ts·recommend.ts와 같은 방침). 이유 문장에 그 사실을 적는다.
+ * 알 수 없는 위험은 빼지 않고 보통(SURPLUS_UNKNOWN_RISK 0.5)으로 계산한다(tactic.ts·recommend.ts와 같은 방침). 이유 문장에 그 사실을 적는다.
  *
  * - 적합도 50: 자리가 있으면 ②와 같은 f_eff(숙련 감점을 뺀 적합도)로 그 자리 첫 후보와의 차이를 그 자리 역할의 σ로 잰다. 가장 작은 자리가 "가장 가까운 자리".
  *     f_eff,i,s = f_i,s - σ_s · posPenaltySigma(r_i,s),  bench_s = 첫 후보의 f_eff(없으면 주전의 f_eff),  gapσ = min_s max(0, bench_s - f_eff,i,s)/σ_s
@@ -588,31 +580,15 @@ export function overpaidPlayers(players: FirstTeamPlayer[], model: WageScale, ex
  *
  * 선발도 첫 후보도 아닌 선수만 대상이다. 골키퍼 상위 3명, 임대로 들어온 선수(이 구단이 정리할 수 없다)도 뺀다.
  * 클 여지가 있는 어린 선수(hasGrowthRoom, 영입 후보의 유망주 자격과 같은 판정)는 정리 후보가 아니라 "임대 보낼 선수"로 따로 본다.
+ * 가중치(K.SURPLUS_WEIGHTS: 적합도 50, 주급 25, 나이·정체 25)와 아래 상수들(NO_SLOT_PREMIUM, FIT_GAP_SIGMAS, WAGE_Z_FULL, AGE_RISK_FROM, AGE_RISK_FULL,
+ * STAGNATION_ROOM_FULL, AGE_SHARE, STAGNATION_AGE_FROM, STAGNATION_AGE_FULL, SURPLUS_MIN_SHOWN, GOALKEEPERS_KEPT)는 모두 대장(ledger.ts)에 있다.
  */
-export const SURPLUS_WEIGHTS = { fit: 50, wage: 25, age: 25 } as const
-/** 첫 후보보다 이만큼(σ 단위) 낮으면 적합도 위험이 최대 */
-export const FIT_GAP_SIGMAS = 3
-/** 전술에 뛸 자리가 없는 선수의 적합도 차이에 더하는 가산(σ 단위). 자리가 없다는 사실 자체의 무게(추정) */
-export const NO_SLOT_PREMIUM = 0.5
-/** 주급이 기대보다 이만큼(σ 단위) 높으면 주급 위험이 최대(기대 이하는 0) */
-export const WAGE_Z_FULL = 2
-/** 주급이나 나이를 몰라 위험을 정할 수 없을 때 쓰는 보통 값(추정) */
-export const UNKNOWN_RISK = 0.5
-export const AGE_RISK_FROM = 24
-export const AGE_RISK_FULL = 32
-export const STAGNATION_ROOM_FULL = 20
-export const AGE_SHARE = 0.6
-/** 정체 위험을 나이와 함께 보는 구간: 26세는 PA - CA 그대로, 28세 이상은 1(4회차) */
-export const STAGNATION_AGE_FROM = 26
-export const STAGNATION_AGE_FULL = 28
+
+/** 화면에 보여 주는 최대 인원(조정 상수가 아니다) */
 export const SURPLUS_SHOWN = 5
-/** 이 점수 미만이면 정리 후보로 보여 주지 않는다(4회차, 추정: 20점 이하는 "정리를 생각해 볼" 이유가 약하다) */
-export const SURPLUS_MIN_SHOWN = 30
-/** 골키퍼는 이만큼은 두어야 하므로 정리 후보로 보지 않는다 */
-export const GOALKEEPERS_KEPT = 3
 
 export interface SurplusInput {
-  /** 적합도 위험(0~1). 정할 수 없으면 null(보통 UNKNOWN_RISK) */
+  /** 적합도 위험(0~1). 정할 수 없으면 null(보통 SURPLUS_UNKNOWN_RISK) */
   fitRisk: number | null
   /** 주급이 기대 주급보다 몇 σ 높은가(z_w). 주급을 모르거나 모델이 없으면 null */
   wageZ: number | null
@@ -629,25 +605,25 @@ export interface SurplusScore {
 }
 
 /** 적합도 차이(σ 단위)를 위험(0~1)으로 */
-export const fitRiskOf = (gapSigma: number): number => clamp01(gapSigma / FIT_GAP_SIGMAS)
+export const fitRiskOf = (gapSigma: number): number => clamp01(gapSigma / K.FIT_GAP_SIGMAS)
 
 export function surplusScore(input: SurplusInput): SurplusScore {
   const unknown: SurplusScore['unknown'] = []
-  let fit = UNKNOWN_RISK
+  let fit = K.SURPLUS_UNKNOWN_RISK
   if (input.fitRisk !== null) fit = clamp01(input.fitRisk)
   else unknown.push('fit')
-  let wage = UNKNOWN_RISK
-  if (input.wageZ !== null) wage = clamp01(Math.max(0, input.wageZ) / WAGE_Z_FULL)
+  let wage = K.SURPLUS_UNKNOWN_RISK
+  if (input.wageZ !== null) wage = clamp01(Math.max(0, input.wageZ) / K.WAGE_Z_FULL)
   else unknown.push('wage')
-  let age = UNKNOWN_RISK
+  let age = K.SURPLUS_UNKNOWN_RISK
   if (input.age !== null) {
-    const ageRisk = clamp01((input.age - AGE_RISK_FROM) / (AGE_RISK_FULL - AGE_RISK_FROM))
-    const w = clamp01((input.age - STAGNATION_AGE_FROM) / (STAGNATION_AGE_FULL - STAGNATION_AGE_FROM))
-    const stagnation = input.ca !== null && input.pa !== null ? (1 - w) * clamp01(1 - (input.pa - input.ca) / STAGNATION_ROOM_FULL) + w : null
-    age = stagnation === null ? ageRisk : AGE_SHARE * ageRisk + (1 - AGE_SHARE) * stagnation
+    const ageRisk = clamp01((input.age - K.AGE_RISK_FROM) / (K.AGE_RISK_FULL - K.AGE_RISK_FROM))
+    const w = clamp01((input.age - K.STAGNATION_AGE_FROM) / (K.STAGNATION_AGE_FULL - K.STAGNATION_AGE_FROM))
+    const stagnation = input.ca !== null && input.pa !== null ? (1 - w) * clamp01(1 - (input.pa - input.ca) / K.STAGNATION_ROOM_FULL) + w : null
+    age = stagnation === null ? ageRisk : K.AGE_SHARE * ageRisk + (1 - K.AGE_SHARE) * stagnation
   } else unknown.push('age')
-  const parts = { fit: round1(fit * SURPLUS_WEIGHTS.fit), wage: round1(wage * SURPLUS_WEIGHTS.wage), age: round1(age * SURPLUS_WEIGHTS.age) }
-  const score = round1(fit * SURPLUS_WEIGHTS.fit + wage * SURPLUS_WEIGHTS.wage + age * SURPLUS_WEIGHTS.age)
+  const parts = { fit: round1(fit * K.SURPLUS_WEIGHTS.fit), wage: round1(wage * K.SURPLUS_WEIGHTS.wage), age: round1(age * K.SURPLUS_WEIGHTS.age) }
+  const score = round1(fit * K.SURPLUS_WEIGHTS.fit + wage * K.SURPLUS_WEIGHTS.wage + age * K.SURPLUS_WEIGHTS.age)
   return { score, parts, unknown }
 }
 
@@ -675,7 +651,7 @@ function surplusReason(player: FirstTeamPlayer, scored: SurplusScore, basis: Fit
     if (diff > 0) clauses.push([`${lead} 낮고`, `${lead} 낮습니다`])
     else clauses.push([`${lead} 높아 전술을 바꾸면 주전감이고`, `${lead} 높습니다. 전술을 바꾸면 주전감입니다`])
   } else if (basis.kind === 'keeper') {
-    clauses.push([`골키퍼가 ${basis.total}명이라 ${GOALKEEPERS_KEPT + 1}번째 이후이고(현재 능력 순)`, `골키퍼가 ${basis.total}명이라 ${GOALKEEPERS_KEPT + 1}번째 이후입니다(현재 능력 순)`])
+    clauses.push([`골키퍼가 ${basis.total}명이라 ${K.GOALKEEPERS_KEPT + 1}번째 이후이고(현재 능력 순)`, `골키퍼가 ${basis.total}명이라 ${K.GOALKEEPERS_KEPT + 1}번째 이후입니다(현재 능력 순)`])
   } else {
     stem(`현재 전술(${basis.formation})에 ${withJosa(player.name, '이/가')} 뛸 자리가 없고 역할 기준을 몰라 적합도 위험을 보통(0.5)으로 보았`, '고', '습니다')
   }
@@ -684,7 +660,7 @@ function surplusReason(player: FirstTeamPlayer, scored: SurplusScore, basis: Fit
   }
   if (player.age !== null) {
     const room = player.ca !== null && player.pa !== null ? player.pa - player.ca : null
-    if (player.age >= STAGNATION_AGE_FULL && room !== null) {
+    if (player.age >= K.STAGNATION_AGE_FULL && room !== null) {
       // 28세 이상은 PA가 남아 있어도 크기 어렵다(두 문장이 겹치면 하나만)
       stem(room <= 5 ? `${player.age}세로 앞으로 클 여지가 거의 없` : `${player.age}세로 잠재 능력이 남아 있어도 이 나이에는 크기 어렵`, '고', '습니다')
     } else if (room !== null && room <= 5) {
@@ -747,7 +723,7 @@ function prospectVerdict(args: {
   // (2) 전술에 뛸 자리가 없다
   if (!norms || zMin === null) {
     // 역할 기준 분포가 없으면 예전처럼 클 여지만 본다(대표 기울기와 σ)
-    return hasGrowthRoom(age, ca, pa, REPRESENTATIVE_BETA, REPRESENTATIVE_SIGMA) ? { ok: true, gain: growthGain(age, ca, pa, REPRESENTATIVE_BETA), lead: '' } : null
+    return hasGrowthRoom(age, ca, pa, K.REPRESENTATIVE_BETA, K.REPRESENTATIVE_SIGMA) ? { ok: true, gain: growthGain(age, ca, pa, K.REPRESENTATIVE_BETA), lead: '' } : null
   }
   let best: { margin: number; gain: number } | null = null
   for (const role of ROLES) {
@@ -761,8 +737,8 @@ function prospectVerdict(args: {
     const gain = growthGain(age, ca, pa, beta, goalkeeper)
     for (const position of role.positions) {
       const rating = ratingOf(position)
-      if (rating < TEMPORARY_MIN_RATING) continue
-      const margin = (result.score + gain - norm.mu) / norm.sigma - posPenaltySigma(rating) - (zMin - STARTER_TOLERANCE_SIGMAS)
+      if (rating < K.TEMPORARY_MIN_RATING) continue
+      const margin = (result.score + gain - norm.mu) / norm.sigma - posPenaltySigma(rating) - (zMin - K.STARTER_TOLERANCE_SIGMAS)
       if (!best || margin > best.margin) best = { margin, gain }
     }
   }
@@ -790,7 +766,7 @@ export function surplusReport(args: {
   /** 이 점수 미만은 보여 주지 않는다(기본 SURPLUS_MIN_SHOWN) */
   minScore?: number
 }): { rows: SurplusRow[]; prospects: ProspectRow[] } {
-  const { players, rows, columns, analysis, roleWeights, norms, wageModel, loanedIn = new Set<number>(), minScore = SURPLUS_MIN_SHOWN } = args
+  const { players, rows, columns, analysis, roleWeights, norms, wageModel, loanedIn = new Set<number>(), minScore = K.SURPLUS_MIN_SHOWN } = args
   const used = new Set<number>()
   for (const slot of analysis.slots) {
     if (slot.slot.starter) used.add(slot.slot.starter.idx)
@@ -820,7 +796,7 @@ export function surplusReport(args: {
     return list.length === 1 && list[0] === 'GK'
   }
   const keepers = players.filter(isKeeper).sort((a, b) => (b.ca ?? 0) - (a.ca ?? 0))
-  const kept = new Set(keepers.slice(0, GOALKEEPERS_KEPT).map((player) => player.uid))
+  const kept = new Set(keepers.slice(0, K.GOALKEEPERS_KEPT).map((player) => player.uid))
   const keeperIds = new Set(keepers.map((player) => player.uid))
 
   const surplus: SurplusRow[] = []
@@ -866,7 +842,7 @@ export function surplusReport(args: {
             if (!result) continue
             for (const position of role.positions) {
               const rating = ratingOf(position)
-              if (rating < TEMPORARY_MIN_RATING) continue
+              if (rating < K.TEMPORARY_MIN_RATING) continue
               const z = zOf(norm, result.score) - posPenaltySigma(rating)
               if (!bestRole || z > bestRole.z) {
                 bestRole = { roleLabel: role.label, z }
@@ -876,7 +852,7 @@ export function surplusReport(args: {
         }
         if (bestRole && zMin !== null) {
           basis = { kind: 'noSlot', formation: analysis.formation.label, roleLabel: bestRole.roleLabel, zMin, zBest: bestRole.z }
-          fitRisk = fitRiskOf(Math.max(0, zMin - bestRole.z) + NO_SLOT_PREMIUM)
+          fitRisk = fitRiskOf(Math.max(0, zMin - bestRole.z) + K.NO_SLOT_PREMIUM)
         } else {
           basis = { kind: 'unknown', formation: analysis.formation.label }
           fitRisk = null
@@ -949,8 +925,6 @@ function goodForm(wins: number, losses: number, games: number): boolean {
   return (losses === 0 && wins * 2 >= games) || (losses <= games / 5 && wins >= (games * 4) / 5)
 }
 
-/** 최근 경기 어조(좋음·위험)를 매기려면 점수를 읽은 경기가 이만큼은 있어야 한다. 그보다 적으면 참고(info)다 */
-export const FORM_MIN_GAMES = 3
 
 /** 규칙으로 쓰는 짧은 브리핑. 자료가 없는 문장은 건너뛴다(없는 사실을 만들지 않는다). */
 export function buildBrief(input: BriefInput): BriefLine[] {
@@ -993,7 +967,7 @@ export function buildBrief(input: BriefInput): BriefLine[] {
     const goals = scored.length === played.length ? ` (${scored.reduce((s, m) => s + m.goalsFor!, 0)}득점 ${scored.reduce((s, m) => s + m.goalsAgainst!, 0)}실점)` : ''
     const record = [w > 0 ? `${w}승` : '', d > 0 ? `${d}무` : '', l > 0 ? `${l}패` : ''].filter(Boolean).join(' ')
     // 읽은 경기가 적으면(3경기 미만) 좋음·위험으로 단정하지 않는다: 1경기 1패를 "위험"으로 쓰지 않는다(4회차)
-    const tone: Tone = played.length < FORM_MIN_GAMES ? 'info' : goodForm(w, l, played.length) ? 'good' : l * 2 >= played.length ? 'bad' : 'info'
+    const tone: Tone = played.length < K.FORM_MIN_GAMES ? 'info' : goodForm(w, l, played.length) ? 'good' : l * 2 >= played.length ? 'bad' : 'info'
     lines.push({ id: 'form', text: `최근 ${played.length}경기 ${record}${goals}입니다.`, tone })
   }
 

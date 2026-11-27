@@ -15,9 +15,9 @@ import {
 import { buildSnapshot, emptySnapshot, type ClubSnapshot, type GameFields } from '@shared/club'
 import { FIELD_BY_ID, FIELDS } from '@shared/fields'
 import { footValues, formatPounds, hiddenAttributes, isGoalkeeper, visibleAttributes } from '@shared/playerView'
-import { POSITION_KEYS, PLAYABLE_RATING, positionsLabel } from '@shared/positions'
+import { POSITION_KEYS, positionsLabel } from '@shared/positions'
 import { FALLBACK_NORM, type RoleNorms } from '@shared/norms'
-import { recommend, squadMoney, tierRanker, TRAIT_WEIGHTS, type RecommendContext, type RecommendInput, type TraitId, type Traits } from '@shared/recommend'
+import { recommend, squadMoney, tierRanker, type RecommendContext, type RecommendInput, type TraitId, type Traits } from '@shared/recommend'
 import { ROLE_BY_ID, ROLES } from '@shared/roles'
 import { analyseTactic, loanEndFrom, slotBench } from '@shared/tactic'
 import type { SeasonMatch, SeasonResult, SeasonTableRow } from '@shared/season'
@@ -36,6 +36,7 @@ import {
   type EditorPlayer,
   type PlayerProfile
 } from '@shared/world'
+import { K } from '@shared/ledger'
 
 /**
  * 브라우저 미리보기(`npm run web`)용으로 지어낸 선수들. 실제 앱에서는 세이브에서 읽는다.
@@ -71,7 +72,7 @@ const PLAYERS: MockPlayer[] = Array.from({ length: 150 }, (_, i) => {
   const level = mine ? 62 + random() * 22 : 38 + random() * 52
   const age = 16 + Math.floor(random() * 19)
   const positions = POSITION_KEYS.map(() => 1)
-  for (const spot of SPOTS[i % SPOTS.length]) positions[spot] = spot === SPOTS[i % SPOTS.length][0] ? 20 : PLAYABLE_RATING
+  for (const spot of SPOTS[i % SPOTS.length]) positions[spot] = spot === SPOTS[i % SPOTS.length][0] ? 20 : K.PLAYABLE_RATING
   const attributes = SAVE_ATTRIBUTE_ORDER.map(() => Math.max(5, Math.min(100, Math.round(level + (random() - 0.5) * 36))))
   const ca = Math.round(level * 1.9 + 20)
   const pa = Math.min(200, ca + Math.round(random() * (age <= 21 ? 45 : 6)))
@@ -119,7 +120,7 @@ export function mockCandidates(query: CandidateQuery, empty: boolean): Candidate
   const slotFound = analysis?.slots[query.slot?.index ?? -1] ?? null
   const role = ROLE_BY_ID[slotFound ? slotFound.slot.roleId : query.roleId]
   const slots = (slotFound ? [slotFound.slot.position] : role.positions).map((key) => POSITION_KEYS.indexOf(key))
-  const eligible = (player: MockPlayer): boolean => slots.some((slot) => player.positions[slot] >= PLAYABLE_RATING)
+  const eligible = (player: MockPlayer): boolean => slots.some((slot) => player.positions[slot] >= K.PLAYABLE_RATING)
   const weights = Object.entries(role.weights)
   const total = weights.reduce((sum, [, weight]) => sum + weight, 0)
   const scoreOf = (player: MockPlayer): number =>
@@ -162,7 +163,7 @@ export function mockCandidates(query: CandidateQuery, empty: boolean): Candidate
   const inputOf = (player: MockPlayer, score: number): RecommendInput => {
     const free = player.club === '자유 계약'
     const traits = {} as Traits
-    for (const id of Object.keys(TRAIT_WEIGHTS) as TraitId[]) traits[id] = shownValue(player.attributes[ATTRIBUTE_INDEX.get(id)!])
+    for (const id of Object.keys(K.TRAIT_WEIGHTS) as TraitId[]) traits[id] = shownValue(player.attributes[ATTRIBUTE_INDEX.get(id)!])
     return {
       category: query.category,
       goalkeeper,

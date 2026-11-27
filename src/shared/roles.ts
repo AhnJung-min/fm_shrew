@@ -1,3 +1,4 @@
+import { K } from './ledger'
 import type { ColumnInfo, PlayerRow } from './types'
 import { SAVE_ATTRIBUTE_ORDER, shownValue } from './world'
 
@@ -117,6 +118,14 @@ export interface RoleScore {
 }
 
 /**
+ * 값이 있는 능력치의 가중치 합(covered)이 전체(total)의 K.ROLE_COVERAGE_MIN(60%) 이상이어야 적합도를 판단한다.
+ * 표 경로(scoreRole)와 세이브 경로(savedRoleScore)가 같은 규칙을 쓰도록 하나로 둔다(F-08).
+ */
+export function hasEnoughCoverage(covered: number, total: number): boolean {
+  return total > 0 && covered / total >= K.ROLE_COVERAGE_MIN
+}
+
+/**
  * 역할 적합도. 가중치가 걸린 능력치 가운데 값이 있는 것만으로 계산하고,
  * 가진 값이 가중치 합의 60%에 못 미치면 판단하지 않는다(null).
  */
@@ -134,7 +143,7 @@ export function scoreRole(attrs: Record<string, AttributeValue>, weights: Record
     sum += attr.value * weight
     if (attr.ranged) uncertain = true
   }
-  if (total === 0 || covered / total < 0.6) return null
+  if (!hasEnoughCoverage(covered, total)) return null
   return { score: toRoleScore(sum, covered), uncertain }
 }
 
@@ -170,10 +179,18 @@ export function prepareRole(roleId: string, overrides: Record<string, Record<str
 /**
  * 세이브에 저장된 능력치(1~100, 선수마다 능력치 수만큼 이어짐)로 역할 적합도를 구한다.
  * 저장값을 게임 표시값(1~20)으로 바꿔 계산하므로 표(squadTable)의 값으로 scoreRole을 부른 것과 같은 수가 나온다.
+ * 저장값이 1 미만이거나 없는 능력치는 값이 없는 것으로 보고, 표 경로와 같은 60% 규칙(hasEnoughCoverage)으로 가린다(null).
+ * 세이브에는 능력치 54개가 다 있으므로 읽은 선수의 결과는 이 규칙이 생기기 전과 같다.
  */
-export function savedRoleScore(attributes: ArrayLike<number>, offset: number, role: PreparedRole): number {
-  if (role.total === 0) return 0
+export function savedRoleScore(attributes: ArrayLike<number>, offset: number, role: PreparedRole): number | null {
   let sum = 0
-  for (const [at, weight] of role.pairs) sum += shownValue(attributes[offset + at]) * weight
-  return toRoleScore(sum, role.total)
+  let covered = 0
+  for (const [at, weight] of role.pairs) {
+    const stored = attributes[offset + at]
+    if (!(stored >= 1)) continue
+    sum += shownValue(stored) * weight
+    covered += weight
+  }
+  if (!hasEnoughCoverage(covered, role.total)) return null
+  return toRoleScore(sum, covered)
 }
