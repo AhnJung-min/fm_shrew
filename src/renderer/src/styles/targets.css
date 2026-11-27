@@ -3,47 +3,83 @@
   색은 app.css의 토큰만 쓰고, 등급은 항상 글자(강력 추천, 추천, 고려, 보류 / 시급, 보강 권장…)와 숫자를 함께 보인다.
 */
 
+/* ---------- 한 화면 안에서 위쪽 도구가 표를 밀어내지 않게 ---------- */
+
+/* 도구 줄과 표를 한 덩어리로 스크롤한다. 창이 낮으면 표를 쥐어짜지 않고 이 덩어리가 스크롤된다 */
+.targets-scroll {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+.targets-scroll > .table-wrap {
+  flex: 1 0 380px;
+}
+.toolbar.compact {
+  gap: 6px 14px;
+  padding-top: 6px;
+  padding-bottom: 6px;
+}
+.toolbar .note-idle {
+  display: inline-flex;
+  margin: 0;
+  align-items: center;
+  gap: 8px;
+  color: var(--text-2);
+  font-size: var(--fs-micro);
+}
+.toolbar .note-idle .dot {
+  margin-top: 0;
+}
+.note-warn {
+  color: var(--warn);
+  font-size: var(--fs-micro);
+}
+
 /* ---------- 보강할 자리 고르기 ---------- */
 
 .slot-bar {
-  padding: 10px 28px 12px;
+  padding: 8px 28px;
   border-bottom: 1px solid var(--line);
-}
-.slot-bar-head {
-  display: flex;
-  align-items: baseline;
-  flex-wrap: wrap;
-  gap: 4px 12px;
-  margin-bottom: 8px;
-}
-.slot-bar-head strong {
-  font-size: 15px;
-}
-.slot-bar-head span {
-  font-size: 13px;
 }
 .slot-picker {
   display: flex;
   flex-wrap: wrap;
+  align-items: center;
   gap: 6px;
 }
+.slot-title {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 8px;
+  margin-right: 4px;
+}
+.slot-title strong {
+  font-size: 15px;
+}
+.slot-title .faint {
+  font-size: var(--fs-micro);
+}
 .slot-chip {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 1px;
-  min-width: 96px;
-  padding: 5px 10px;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  height: 32px;
+  padding: 0 10px;
   border: 1px solid var(--line-strong);
   border-radius: var(--radius-s);
   background: transparent;
   color: var(--text);
-  font-size: 13px;
-  text-align: left;
+  font-size: 13.5px;
   cursor: pointer;
 }
 .slot-chip:hover {
   background: var(--hover);
+}
+.slot-chip:active {
+  background: var(--raised);
 }
 .slot-chip[aria-pressed='true'] {
   border-color: var(--accent);
@@ -55,12 +91,12 @@
 }
 .slot-chip-need {
   color: var(--text-2);
-  font-size: 12px;
+  font-size: var(--fs-micro);
   white-space: nowrap;
 }
 .slot-chip-need b {
   color: var(--text);
-  font-size: 13px;
+  font-size: 13.5px;
 }
 .slot-chip.urgent .slot-chip-need em {
   color: var(--bad);
@@ -76,14 +112,25 @@
   font-weight: 600;
 }
 .slot-chip.manual {
-  justify-content: center;
-  min-width: 0;
   border-style: dashed;
 }
-.slot-line {
-  margin: 8px 0 0;
+/* 자세히: 접어 두면 한 단어, 펼치면 그 줄 전체를 차지한다 */
+.slot-more summary {
+  cursor: pointer;
+  padding: 4px 6px;
   color: var(--text-2);
-  font-size: 13.5px;
+  font-size: var(--fs-small);
+}
+.slot-more[open] {
+  flex-basis: 100%;
+}
+.slot-more-body {
+  display: grid;
+  gap: 6px;
+  max-width: 78ch;
+  padding: 4px 6px 4px;
+  color: var(--text-2);
+  font-size: var(--fs-small);
 }
 
 /* ---------- 표 칸 ---------- */
@@ -96,13 +143,13 @@
   width: 100%;
 }
 .reco-num {
-  min-width: 30px;
+  min-width: 28px;
   text-align: right;
   font-weight: 700;
 }
 .reco-bar {
   flex: none;
-  width: 44px;
+  width: 40px;
   height: 8px;
   border-radius: 4px;
   background: var(--raised);
@@ -114,14 +161,27 @@
   border-radius: 4px;
   background: var(--text-3);
 }
+/* 등급은 막대 색과 글자를 함께 쓴다. 최고 등급은 금색, 고려·보류는 경고처럼 보이지 않게 흐린 글자색 */
 .reco-bar.top i {
-  background: var(--accent);
+  background: var(--gold);
 }
 .reco-bar.good i {
   background: var(--good);
 }
-.reco-bar.maybe i {
-  background: var(--warn);
+.reco-word {
+  flex: none;
+  width: 3.7em;
+  color: var(--text-3);
+  font-size: var(--fs-micro);
+  text-align: left;
+}
+.reco-word.top {
+  color: var(--gold);
+  font-weight: 700;
+}
+.reco-word.good {
+  color: var(--good);
+  font-weight: 600;
 }
 .club-cell {
   display: flex;
@@ -184,7 +244,7 @@
   padding: 8px 28px 14px;
   border-bottom: 1px solid var(--line-strong);
   background: var(--surface);
-  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.28);
+  box-shadow: 0 10px 24px color-mix(in srgb, var(--bg) 70%, transparent);
 }
 .reco-sum {
   margin: 0 0 4px;
@@ -212,13 +272,14 @@
   font-size: 20px;
 }
 .reco-total.top {
-  color: var(--accent);
+  color: var(--gold);
 }
 .reco-total.good {
   color: var(--good);
 }
-.reco-total.maybe {
-  color: var(--warn);
+.reco-total.maybe,
+.reco-total.low {
+  color: var(--text-3);
 }
 .reco-tier {
   padding: 1px 8px;
@@ -309,6 +370,21 @@
 }
 .reco-weights tr.off {
   color: var(--text-3);
+}
+
+/* 좁은 창: 표에 줄을 더 보이려고 덜 급한 안내 한 줄씩을 접는다(세이브 이름은 사이드바에, 게임 꺼짐 안내는 "자세히"에 있다) */
+@media (max-width: 1180px) {
+  .page-head .head-sub,
+  .toolbar .note-idle {
+    display: none;
+  }
+  .slot-picker {
+    gap: 4px;
+  }
+  .slot-chip {
+    gap: 6px;
+    padding: 0 8px;
+  }
 }
 
 @media (max-width: 860px) {

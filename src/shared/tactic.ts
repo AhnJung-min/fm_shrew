@@ -65,7 +65,7 @@ export const NEED_FACTOR_LABEL: Record<NeedFactorId, string> = {
 }
 
 export const NEED_FACTOR_HELP: Record<NeedFactorId, string> = {
-  quality: '주전의 적합도가 같은 역할의 상위권 선수들(평균 μ점)에 견줘 얼마나 낮은가. 역할마다 점수 눈금이 달라 표준편차로 재고, 주전의 포지션 숙련이 20보다 낮으면 그만큼 뺀 점수로 봅니다.',
+  quality: '주전의 적합도가 같은 역할의 상위권 선수들(평균 μ점)에 견줘 얼마나 낮은가. 역할마다 점수 눈금이 달라 같은 역할 선수들의 보통 점수 차이로 재고, 주전의 포지션 숙련이 20보다 낮으면 그만큼 뺀 점수로 봅니다.',
   depth: '이 자리를 뛸 수 있는 후보가 몇 명이고, 첫 후보가 주전과 얼마나 차이 나는가.',
   age: '주전이 31세 이상(골키퍼는 34세 이상)이면 곧 내려갈 것으로 봅니다.',
   contract: '주전의 계약이 12개월 안에 끝나는가. 가까울수록 위험합니다.'
@@ -569,8 +569,8 @@ function needOf(args: {
   const z = zOf(norm, eff)
   risks.quality.risk = clamp01((QUALITY_Z_GOOD - z) / QUALITY_Z_SPAN)
   const base = normSource === 'world' ? '같은 역할 상위권 선수들의 평균' : '우리 팀 주전들의 평균'
-  const penalty = starter.score - eff > 0.05 ? ` 포지션 숙련이 ${starter.rating}이라 적합도 ${starter.score}점에서 ${round1(starter.score - eff)}점(${round1(posPenaltySigma(starter.rating) * 100) / 100} 표준편차) 빼고 견주었습니다.` : ''
-  risks.quality.note = `주전 ${name}의 적합도 ${round1(eff)}점은 ${base}(${round1(norm.mu)}점)보다 ${Math.abs(round1(eff - norm.mu))}점 ${eff >= norm.mu ? '높고' : '낮고'}, 이 역할의 보통 점수 차이(표준편차 ${round1(norm.sigma)}점)로 보면 ${zWords(z)}.${penalty}`
+  const penalty = starter.score - eff > 0.05 ? ` 포지션 숙련이 ${starter.rating}이라 적합도 ${starter.score}점에서 ${round1(starter.score - eff)}점 빼고 견주었습니다.` : ''
+  risks.quality.note = `주전 ${name}의 적합도 ${round1(eff)}점은 ${base}(${round1(norm.mu)}점)보다 ${Math.abs(round1(eff - norm.mu))}점 ${eff >= norm.mu ? '높고' : '낮고'}, 이 역할의 보통 점수 차이(${round1(norm.sigma)}점)로 보면 ${zWords(z)}.${penalty}`
   risks.quality.phrase = `주전 ${name}의 적합도(${round1(eff)}점)는 ${normSource === 'world' ? '이 역할 상위권' : '팀 주전'} 평균(${round1(norm.mu)}점)보다 ${eff >= norm.mu ? '조금 높은 수준입니다' : z >= -1 ? '조금 낮습니다' : '크게 낮습니다'}`
 
   // 후보 두께

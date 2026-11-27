@@ -337,6 +337,104 @@ function Cards(props: {
         )}
       </Card>
 
+      <Card
+        wide
+        id="dash-recommend"
+        title="영입 추천"
+        hint="지금 전술에서 보강이 가장 급한 자리의 즉시 전력 후보 3명입니다. 추천 점수는 능력, 나이, 비용 부담, 영입 난이도를 합친 값입니다."
+        source={sourceOf(saveSource, abilitySource, '계약·몸값', '능력')}
+        action={
+          recommend.slot && (
+            <button className="btn" onClick={() => onFindTargets({ formation: recommend.slot!.formation, index: recommend.slot!.index })}>
+              목록 열기
+            </button>
+          )
+        }
+      >
+        {recommend.slot && (
+          <p className="rec-slot">
+            <MetaLine
+              items={[
+                <strong key="slot">
+                  {recommend.slot.label} ({recommend.slot.roleLabel})
+                </strong>,
+                <span key="need">
+                  보강 필요도 <span className="num">{recommend.slot.need}</span>점({recommend.slot.levelLabel})
+                </span>,
+                <span key="tier" className="faint">
+                  등급: {TIER_MEANING.starter}
+                </span>,
+                <span key="now" className="faint num">
+                  {benchLine(recommend.slot.bench, recommend.slot.groupSlots)}
+                </span>
+              ]}
+            />
+          </p>
+        )}
+        {!recommend.ok || recommend.rows.length === 0 ? (
+          <Empty>{recommend.message ?? '추천할 선수를 찾지 못했습니다.'}</Empty>
+        ) : (
+          <ul className="rec-cards">
+            {recommend.rows.map((row) => {
+              return (
+                <li key={row.uid} className="rec-card">
+                  <div className="rec-top">
+                    <PlayerFace uid={row.uid} name={row.name} size={44} />
+                    <div className="rec-who">
+                      <strong>{row.name}</strong>
+                      <span className="faint">
+                        <MetaLine items={[row.age !== null ? `${row.age}세` : '', row.position]} />
+                      </span>
+                    </div>
+                    <div className="rec-total">
+                      <strong className="num">{Math.round(row.total)}</strong>
+                      <span className={`rec-tier tier-${row.tier}`}>{RECOMMEND_TIER_LABEL[row.tier]}</span>
+                    </div>
+                  </div>
+                  <div className="rec-club">
+                    <ClubLogo uid={row.clubUid} size={20} />
+                    <span>{row.club || '소속 확인 못 함'}</span>
+                    {row.loanedTo && <span className="faint">임대 중: {row.loanedTo}</span>}
+                    {row.realism.low && (
+                      <span className="tag warn" title={row.realism.reasons.join(' / ')}>
+                        {REALISM_LABEL}
+                      </span>
+                    )}
+                  </div>
+                  {row.realism.low && <p className="faint">{row.realism.reasons.join('. ')}. 등급은 고려까지로 제한했습니다.</p>}
+                  <p className="faint num">
+                    <MetaLine
+                      items={[
+                        `현재 능력 ${row.ca}`,
+                        `잠재 ${row.pa}`,
+                        row.gap !== null && `주전과 적합도 ${row.gap > 0 ? '+' : ''}${row.gap.toFixed(1)}`
+                      ]}
+                    />
+                  </p>
+                </li>
+              )
+            })}
+          </ul>
+        )}
+      </Card>
+
+      <Card
+        wide
+        id="dash-contracts"
+        title="계약 만료 예정"
+        hint={`오늘부터 1년 안, 그 뒤 1년 안에 계약이 끝나는 1군 선수입니다.${contracts.wageWithin1y ? ` 1년 안에 끝나는 계약의 주급 합계는 ${pounds(contracts.wageWithin1y)}입니다.` : ''}`}
+        source={saveSource}
+      >
+        {contracts.known === 0 ? (
+          <Empty>계약 만료일을 확인 못 함</Empty>
+        ) : (
+          <div className="dash-two">
+            {contractList('1년 이내', contracts.within1y, '1년 안에 끝나는 계약이 없습니다.')}
+            {contractList('1~2년', contracts.within2y, '1~2년 사이에 끝나는 계약이 없습니다.')}
+          </div>
+        )}
+      </Card>
+
       <div className="dash-wide">
         <GameCards link={link} />
       </div>
@@ -432,23 +530,6 @@ function Cards(props: {
               <MetaLine items={[`평균 ${squad.ages.average}세`, `나이를 아는 선수 ${squad.ages.known}명 기준`]} />
             </p>
           </>
-        )}
-      </Card>
-
-      <Card
-        wide
-        id="dash-contracts"
-        title="계약 만료 예정"
-        hint={`오늘부터 1년 안, 그 뒤 1년 안에 계약이 끝나는 1군 선수입니다.${contracts.wageWithin1y ? ` 1년 안에 끝나는 계약의 주급 합계는 ${pounds(contracts.wageWithin1y)}입니다.` : ''}`}
-        source={saveSource}
-      >
-        {contracts.known === 0 ? (
-          <Empty>계약 만료일을 확인 못 함</Empty>
-        ) : (
-          <div className="dash-two">
-            {contractList('1년 이내', contracts.within1y, '1년 안에 끝나는 계약이 없습니다.')}
-            {contractList('1~2년', contracts.within2y, '1~2년 사이에 끝나는 계약이 없습니다.')}
-          </div>
         )}
       </Card>
 
@@ -563,7 +644,7 @@ function Cards(props: {
       <Card
         id="dash-overpaid"
         title="주급 과다 의심 TOP 5"
-        hint="같은 리그 선수들의 주급을 현재 능력과 나이로 맞춘 식에서 1 표준편차 넘게 높은 1군 선수입니다. 임대로 들어온 선수는 뺍니다. 기대보다 얼마나 높은지(σ) 순서입니다."
+        hint="같은 리그에서 능력과 나이가 비슷한 선수의 기대 주급보다 눈에 띄게 많이 받는 1군 선수입니다. 임대로 들어온 선수는 뺍니다. 기대 주급의 몇 배인지 순서입니다."
         source={sourceOf(saveSource, abilitySource, '주급', '현재 능력')}
         action={
           <button className="btn ghost" onClick={onGoSquad}>
@@ -574,7 +655,7 @@ function Cards(props: {
         {!overpaid.ok ? (
           <Empty>{overpaid.message}</Empty>
         ) : overpaid.rows.length === 0 ? (
-          <Empty>기준(기대보다 {OVERPAID_Z}σ 높음)을 넘게 받는 선수가 없습니다.</Empty>
+          <Empty>기대 주급을 눈에 띄게 넘겨 받는 선수가 없습니다.</Empty>
         ) : (
           <ol className="rank">
             {overpaid.rows.map((row) => (
@@ -585,114 +666,39 @@ function Cards(props: {
                     <MetaLine items={metaItems(row)} />
                   </span>
                   <span className="dash-grow" />
-                  <span className="rank-score num" title="기대 주급보다 표준편차의 몇 배 높은가(z)">
-                    +{row.z.toFixed(1)}
-                    <small>σ</small>
+                  <span className="rank-score num" title="같은 리그에서 능력과 나이가 비슷한 선수의 기대 주급의 몇 배를 받는가">
+                    {row.ratio.toFixed(2)}
+                    <small>배</small>
                   </span>
                 </div>
                 <p className="num">
                   {withJosa(`주급 ${pounds(row.wage)}`, '은/는')} 같은 리그에서 현재 능력 {row.ca}
-                  {row.age !== null ? `, ${row.age}세` : ''}인 선수의 기대 주급 {pounds(row.expected)}의 {row.ratio.toFixed(2)}배(+{row.z.toFixed(1)}σ)입니다
-                  {row.strong ? `(강한 의심: ${OVERPAID_Z_STRONG}σ 이상)` : ''}. 기대보다 {pounds(row.excess)} 많습니다.
+                  {row.age !== null ? `, ${row.age}세` : ''}인 선수의 기대 주급 {pounds(row.expected)}의 {row.ratio.toFixed(2)}배입니다
+                  {row.strong ? '(강한 의심)' : ''}. 기대보다 {pounds(row.excess)} 많습니다.
                 </p>
               </li>
             ))}
           </ol>
         )}
         {overpaid.model && (
-          <p className="dash-note num">
-            기준선: 주급의 로그 = {overpaid.model.a.toFixed(2)} + {overpaid.model.b.toFixed(3)} × 현재 능력 {overpaid.model.c1 < 0 ? '−' : '+'}{' '}
-            {Math.abs(overpaid.model.c1).toFixed(2)} × [21세 미만] {overpaid.model.c2 < 0 ? '−' : '+'} {Math.abs(overpaid.model.c2).toFixed(2)} × [30세 이상] (설명력 R²{' '}
-            {overpaid.model.r2.toFixed(2)}, 잔차 표준편차 {overpaid.model.s.toFixed(2)}).
-            {overpaid.model.scope === 'league'
-              ? ` 내 리그 ${overpaid.model.teams}개 팀의 선수 ${overpaid.model.n.toLocaleString()}명 기준.`
-              : ` 순위표를 읽지 못해 구단이 있는 모든 남자 선수 ${overpaid.model.n.toLocaleString()}명 기준.`}
-            {` 의심: 기대 주급의 ${Math.exp(overpaid.model.s * OVERPAID_Z).toFixed(2)}배(+${OVERPAID_Z}σ) 이상, 강한 의심: ${Math.exp(overpaid.model.s * OVERPAID_Z_STRONG).toFixed(2)}배(+${OVERPAID_Z_STRONG}σ) 이상.`}
-            {overpaid.total > overpaid.rows.length && ` 기준을 넘는 선수는 모두 ${overpaid.total}명입니다.`}
-          </p>
+          <details className="dash-fold how">
+            <summary>
+              <span>기대 주급을 어떻게 구했나</span>
+            </summary>
+            <p className="dash-note num">
+              기준선: 주급의 로그 = {overpaid.model.a.toFixed(2)} + {overpaid.model.b.toFixed(3)} × 현재 능력 {overpaid.model.c1 < 0 ? '−' : '+'}{' '}
+              {Math.abs(overpaid.model.c1).toFixed(2)} × [21세 미만] {overpaid.model.c2 < 0 ? '−' : '+'} {Math.abs(overpaid.model.c2).toFixed(2)} × [30세 이상] (설명력 R²{' '}
+              {overpaid.model.r2.toFixed(2)}, 잔차 표준편차 {overpaid.model.s.toFixed(2)}).
+              {overpaid.model.scope === 'league'
+                ? ` 내 리그 ${overpaid.model.teams}개 팀의 선수 ${overpaid.model.n.toLocaleString()}명 기준.`
+                : ` 순위표를 읽지 못해 구단이 있는 모든 남자 선수 ${overpaid.model.n.toLocaleString()}명 기준.`}
+              {` 의심: 기대 주급의 ${Math.exp(overpaid.model.s * OVERPAID_Z).toFixed(2)}배(+${OVERPAID_Z}σ) 이상, 강한 의심: ${Math.exp(overpaid.model.s * OVERPAID_Z_STRONG).toFixed(2)}배(+${OVERPAID_Z_STRONG}σ) 이상.`}
+              {overpaid.total > overpaid.rows.length && ` 기준을 넘는 선수는 모두 ${overpaid.total}명입니다.`}
+            </p>
+          </details>
         )}
       </Card>
 
-      <Card
-        wide
-        id="dash-recommend"
-        title="영입 추천"
-        hint="지금 전술에서 보강이 가장 급한 자리의 즉시 전력 후보 3명입니다. 추천 점수는 능력, 나이, 비용 부담, 영입 난이도를 합친 값입니다."
-        source={sourceOf(saveSource, abilitySource, '계약·몸값', '능력')}
-        action={
-          recommend.slot && (
-            <button className="btn" onClick={() => onFindTargets({ formation: recommend.slot!.formation, index: recommend.slot!.index })}>
-              목록 열기
-            </button>
-          )
-        }
-      >
-        {recommend.slot && (
-          <p className="rec-slot">
-            <MetaLine
-              items={[
-                <strong key="slot">
-                  {recommend.slot.label} ({recommend.slot.roleLabel})
-                </strong>,
-                <span key="need">
-                  보강 필요도 <span className="num">{recommend.slot.need}</span>점({recommend.slot.levelLabel})
-                </span>,
-                <span key="tier" className="faint">
-                  등급: {TIER_MEANING.starter}
-                </span>,
-                <span key="now" className="faint num">
-                  {benchLine(recommend.slot.bench, recommend.slot.groupSlots)}
-                </span>
-              ]}
-            />
-          </p>
-        )}
-        {!recommend.ok || recommend.rows.length === 0 ? (
-          <Empty>{recommend.message ?? '추천할 선수를 찾지 못했습니다.'}</Empty>
-        ) : (
-          <ul className="rec-cards">
-            {recommend.rows.map((row) => {
-              return (
-                <li key={row.uid} className="rec-card">
-                  <div className="rec-top">
-                    <PlayerFace uid={row.uid} name={row.name} size={44} />
-                    <div className="rec-who">
-                      <strong>{row.name}</strong>
-                      <span className="faint">
-                        <MetaLine items={[row.age !== null ? `${row.age}세` : '', row.position]} />
-                      </span>
-                    </div>
-                    <div className="rec-total">
-                      <strong className="num">{Math.round(row.total)}</strong>
-                      <span className={`rec-tier tier-${row.tier}`}>{RECOMMEND_TIER_LABEL[row.tier]}</span>
-                    </div>
-                  </div>
-                  <div className="rec-club">
-                    <ClubLogo uid={row.clubUid} size={20} />
-                    <span>{row.club || '소속 확인 못 함'}</span>
-                    {row.loanedTo && <span className="faint">임대 중: {row.loanedTo}</span>}
-                    {row.realism.low && (
-                      <span className="tag warn" title={row.realism.reasons.join(' / ')}>
-                        {REALISM_LABEL}
-                      </span>
-                    )}
-                  </div>
-                  {row.realism.low && <p className="faint">{row.realism.reasons.join('. ')}. 등급은 고려까지로 제한했습니다.</p>}
-                  <p className="faint num">
-                    <MetaLine
-                      items={[
-                        `현재 능력 ${row.ca}`,
-                        `잠재 ${row.pa}`,
-                        row.gap !== null && `주전과 적합도 ${row.gap > 0 ? '+' : ''}${row.gap.toFixed(1)}`
-                      ]}
-                    />
-                  </p>
-                </li>
-              )
-            })}
-          </ul>
-        )}
-      </Card>
     </>
   )
 }

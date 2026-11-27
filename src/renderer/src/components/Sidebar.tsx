@@ -63,8 +63,15 @@ export function Sidebar(props: { route: Route; onNavigate: (route: Route) => voi
     : game.pluginOld
       ? 'FM을 다시 켜야 합니다(플러그인 옛 버전)'
       : game.loaded
-        ? `FM 연결됨 · ${game.team}`
-        : 'FM 연결됨 · 메인 메뉴'
+        ? `FM 연결됨 (${game.team})`
+        : 'FM 연결됨 (메인 메뉴)'
+
+  // FM이 꺼져 있거나 세이브 파일 값을 쓰는 것은 평소 상태라 중립 점으로 두고, 옛 플러그인 같은 진짜 문제만 주황으로 알린다
+  const gameDot = game.connected && !game.pluginOld ? 'on' : game.connected ? 'warn' : 'idle'
+  const saveDot = data.save && data.source === 'game' ? 'on' : data.save && game.connected ? 'warn' : 'idle'
+  const saveLine = data.save
+    ? `${data.save.name}: ${data.source === 'game' ? '게임의 지금 값을 쓰는 중' : '세이브에 저장된 값을 쓰는 중'}`
+    : '적용한 세이브 없음'
 
   return (
     <aside className="sidebar">
@@ -117,11 +124,11 @@ export function Sidebar(props: { route: Route; onNavigate: (route: Route) => voi
 
       <button className="status-card" title={data.note || '시작 화면에서 자세히 보기'} onClick={() => onNavigate('home')}>
         <span className="status-row">
-          <span className={`dot ${game.connected && !game.pluginOld ? 'on' : game.connected ? 'warn' : 'off'}`} />
+          <span className={`dot ${gameDot}`} role="img" aria-label={gameLine} title={gameLine} />
           <span>{gameLine}</span>
         </span>
         <span className="status-row">
-          <span className={`dot ${data.save ? (data.source === 'game' ? 'on' : 'warn') : 'off'}`} />
+          <span className={`dot ${saveDot}`} role="img" aria-label={saveLine} title={saveLine} />
           <span>
             {data.save ? (
               <>

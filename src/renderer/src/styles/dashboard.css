@@ -7,6 +7,8 @@
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(min(100%, 440px), 1fr));
   gap: var(--sp-4);
+  /* 칸마다 제 높이만큼만 차지한다(옆 칸이 길어도 빈 면이 늘어나지 않게) */
+  align-items: start;
   align-content: start;
   max-width: 1680px;
 }
@@ -27,12 +29,13 @@
 }
 .dash-card-head {
   display: flex;
+  flex-wrap: wrap;
   align-items: flex-start;
   gap: var(--sp-3);
   padding: 18px 20px 0;
 }
 .dash-card-head > div {
-  flex: 1;
+  flex: 1 1 240px;
   min-width: 0;
 }
 .dash-card h2 {
@@ -134,8 +137,9 @@
 }
 .dash-list li {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: 10px;
+  gap: 0 10px;
   min-height: 36px;
   padding: 4px 0;
   border-bottom: 1px solid var(--line);
@@ -480,6 +484,11 @@
   }
 }
 @media (max-width: 760px) {
+  .band > summary {
+    grid-template-columns: 76px minmax(24px, 1fr) 44px 40px;
+    gap: var(--sp-2);
+    padding: 8px 10px;
+  }
   .brief li {
     grid-template-columns: minmax(0, 1fr);
     gap: 6px;

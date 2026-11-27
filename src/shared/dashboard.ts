@@ -587,12 +587,12 @@ function surplusReason(player: FirstTeamPlayer, scored: SurplusScore, basis: Fit
   }
   if (basis.kind === 'slot') {
     if (basis.gap >= 0.5) {
-      stem(`가장 가까운 ${basis.label} 자리에서도 첫 후보 ${basis.benchmarkName}보다 적합도가 ${basis.gap.toFixed(1)}점(약 ${(basis.gap / basis.sigma).toFixed(1)} 표준편차) 낮`, '고', '습니다')
+      stem(`가장 가까운 ${basis.label} 자리에서도 첫 후보 ${basis.benchmarkName}보다 적합도가 ${basis.gap.toFixed(1)}점(이 역할의 보통 점수 차이의 약 ${(basis.gap / basis.sigma).toFixed(1)}배) 낮`, '고', '습니다')
     } else stem(`${basis.label} 자리 첫 후보 ${basis.benchmarkName}와 실력은 비슷하지만 그 자리가 이미 찼`, '고', '습니다')
     if (basis.penaltyPoints >= 0.05) stem(`그 자리 포지션 숙련이 ${basis.rating}이라 ${basis.penaltyPoints.toFixed(1)}점 뺐`, '고', '습니다')
   } else if (basis.kind === 'noSlot') {
     const diff = basis.zMin - basis.zBest
-    const lead = `지금 ${basis.formation}에는 ${withJosa(player.name, '이/가')} 뛸 자리가 없습니다. 가장 잘 맞는 역할(${basis.roleLabel})로 보면 주전 가운데 가장 약한 선수보다 ${Math.abs(diff).toFixed(1)} 표준편차`
+    const lead = `지금 ${basis.formation}에는 ${withJosa(player.name, '이/가')} 뛸 자리가 없습니다. 가장 잘 맞는 역할(${basis.roleLabel})로 보면 주전 가운데 가장 약한 선수보다 이 역할의 보통 점수 차이의 ${Math.abs(diff).toFixed(1)}배만큼`
     if (diff > 0) clauses.push([`${lead} 낮고`, `${lead} 낮습니다`])
     else clauses.push([`${lead} 높아 전술을 바꾸면 주전감이고`, `${lead} 높습니다. 전술을 바꾸면 주전감입니다`])
   } else if (basis.kind === 'keeper') {
@@ -601,7 +601,7 @@ function surplusReason(player: FirstTeamPlayer, scored: SurplusScore, basis: Fit
     stem(`현재 전술(${basis.formation})에 ${withJosa(player.name, '이/가')} 뛸 자리가 없고 역할 기준을 몰라 적합도 위험을 보통(0.5)으로 보았`, '고', '습니다')
   }
   if (wage && wage.z >= 0.5 && player.wage) {
-    stem(`${withJosa(`주급 ${formatPounds(player.wage)}`, '은/는')} 같은 능력 선수의 기대 주급(${formatPounds(Math.round(wage.expected))})의 ${wage.ratio.toFixed(1)}배(+${wage.z.toFixed(1)}σ)`, '이고', '입니다')
+    stem(`${withJosa(`주급 ${formatPounds(player.wage)}`, '은/는')} 같은 능력 선수의 기대 주급(${formatPounds(Math.round(wage.expected))})의 ${wage.ratio.toFixed(1)}배`, '이고', '입니다')
   }
   if (player.age !== null) {
     const room = player.ca !== null && player.pa !== null ? player.pa - player.ca : null
@@ -743,7 +743,7 @@ export function surplusReport(args: {
         ...asPlayer(player),
         room,
         gain: round1(gain),
-        reason: `${player.age}세, 현재 능력 ${player.ca}에 잠재 능력 ${player.pa}으로 ${room}만큼 더 큽니다. 다 크면 적합도가 약 ${gain.toFixed(1)}점(${(gain / growthNorm.sigma).toFixed(1)} 표준편차) 오를 것으로 봅니다. 1군에서 뛸 자리는 없어 임대로 경기를 뛰게 하는 편이 낫습니다.`
+        reason: `${player.age}세, 현재 능력 ${player.ca}에 잠재 능력 ${player.pa}으로 ${room}만큼 더 큽니다. 다 크면 적합도가 약 ${gain.toFixed(1)}점 오를 것으로 봅니다. 1군에서 뛸 자리는 없어 임대로 경기를 뛰게 하는 편이 낫습니다.`
       })
       continue
     }

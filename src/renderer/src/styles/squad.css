@@ -103,14 +103,15 @@
   gap: 10px;
 }
 
+/* 자리 하나 = 상자 하나. 안은 글자 줄들이고, 선수 카드·보강 필요도 상자를 따로 두지 않는다 */
 .tp-slot {
   flex: 1 1 0;
   min-width: 0;
   max-width: 200px;
   display: flex;
   flex-direction: column;
-  gap: 5px;
-  padding: 8px;
+  gap: 4px;
+  padding: 8px 10px;
   border: 1px solid var(--line-strong);
   border-radius: var(--radius-m);
   background: var(--bg);
@@ -124,7 +125,7 @@
 }
 .tp-pos {
   color: var(--text-2);
-  font-size: 12px;
+  font-size: var(--fs-micro);
   line-height: 1.3;
   white-space: nowrap;
   overflow: hidden;
@@ -135,13 +136,14 @@
   display: flex;
   flex-direction: column;
   align-items: flex-start;
-  gap: 5px;
-  width: 100%;
+  gap: 4px;
+  width: calc(100% + 8px);
   min-width: 0;
-  padding: 6px 8px;
-  border: 1px solid var(--line);
-  border-radius: var(--radius-s);
-  background: var(--raised);
+  margin: 0 -4px;
+  padding: 2px 4px;
+  border: 0;
+  border-radius: var(--radius-xs);
+  background: transparent;
   color: var(--text);
   text-align: left;
   cursor: pointer;
@@ -178,7 +180,7 @@ button.tp-card:hover {
   height: 22px;
   padding: 0 7px;
   border-radius: 6px;
-  font-size: 12px;
+  font-size: var(--fs-micro);
   white-space: nowrap;
 }
 .tp-fit b {
@@ -203,7 +205,7 @@ button.tp-card:hover {
 }
 .tp-ca {
   color: var(--text-2);
-  font-size: 12px;
+  font-size: var(--fs-micro);
   white-space: nowrap;
 }
 .tp-ca b {
@@ -211,15 +213,21 @@ button.tp-card:hover {
   font-size: 14px;
 }
 
+/* 역할 고르기: 상자 없이 밑줄만 있는 글자 칸 */
 .tp-role {
   width: 100%;
   height: 28px;
+  padding-left: 0;
+  border-width: 0 0 1px;
+  border-radius: 0;
+  background: transparent;
+  color: var(--text-2);
   font-size: 13px;
   text-overflow: ellipsis;
 }
 .tp-role-fixed {
   height: 28px;
-  padding: 0 2px;
+  padding: 0;
   overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
@@ -231,7 +239,7 @@ button.tp-card:hover {
   display: flex;
   flex-wrap: wrap;
   gap: 2px 8px;
-  font-size: 12px;
+  font-size: var(--fs-micro);
   font-weight: 600;
 }
 .tp-flags .bad {
@@ -269,7 +277,16 @@ button.tp-card:hover {
 .tp-brank {
   flex: none;
   color: var(--text-3);
-  font-size: 11px;
+  font-size: var(--fs-micro);
+}
+.tactic-more summary {
+  cursor: pointer;
+  color: var(--text-2);
+  font-size: var(--fs-small);
+}
+.tactic-more p {
+  margin: 6px 0 0;
+  font-size: 13px;
 }
 .tp-bname {
   flex: 1;
@@ -337,11 +354,30 @@ button.tp-card:hover {
   border-radius: var(--radius-m);
   background: var(--surface);
 }
+/* 살펴볼 카드는 테두리를 주의색으로(색 줄 대신 전체 테두리). 글자 "살펴볼 것"이 함께 뜻을 알린다 */
 .insight.attention {
-  border-left: 4px solid var(--warn);
+  border-color: var(--warn);
 }
 .insight.missing {
   border-style: dashed;
+}
+/* 알릴 것이 없는 카드: 한 줄 */
+.insight.quiet {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: baseline;
+  gap: 4px 12px;
+  flex-wrap: wrap;
+  padding: 6px 14px;
+  border-color: var(--line);
+}
+.insight.quiet .insight-finding {
+  margin: 0;
+  color: var(--text-2);
+  font-size: 13.5px;
+}
+.insight.quiet h3 {
+  font-size: 14px;
 }
 .insight header {
   display: flex;
@@ -358,7 +394,7 @@ button.tp-card:hover {
 .insight-tone {
   flex: none;
   color: var(--warn);
-  font-size: 12px;
+  font-size: var(--fs-micro);
   font-weight: 600;
 }
 .insight.missing .insight-tone {
@@ -410,7 +446,7 @@ button.tp-card:hover {
 .insight-lines-title {
   margin: 0 0 2px;
   color: var(--text-3);
-  font-size: 12px;
+  font-size: var(--fs-micro);
 }
 .insight-lines {
   display: grid;
@@ -461,7 +497,7 @@ button.insight-line:hover {
   margin: 6px 0 0;
   padding: 0 8px;
   color: var(--text-3);
-  font-size: 12px;
+  font-size: var(--fs-micro);
 }
 
 /* ---------- 전술 분석: 보강 필요도 ---------- */
@@ -473,12 +509,12 @@ button.insight-line:hover {
   align-items: baseline;
   gap: 2px 6px;
   width: 100%;
-  padding: 3px 6px;
-  border: 1px solid var(--line-strong);
-  border-radius: var(--radius-s);
+  padding: 2px 0;
+  border: 0;
+  border-radius: var(--radius-xs);
   background: transparent;
   color: var(--text-2);
-  font-size: 12px;
+  font-size: var(--fs-micro);
   line-height: 1.3;
   text-align: left;
   cursor: pointer;
@@ -492,11 +528,15 @@ button.insight-line:hover {
   font-weight: 600;
 }
 .tp-need:hover {
-  background: var(--hover);
+  color: var(--text);
+  text-decoration: underline;
+  text-underline-offset: 3px;
 }
 .tp-need[aria-pressed='true'] {
-  border-color: var(--accent);
-  background: var(--accent-soft);
+  color: var(--text);
+  font-weight: 700;
+  text-decoration: underline;
+  text-underline-offset: 3px;
 }
 .tp-need.urgent em,
 .need-badge.urgent em {
@@ -526,7 +566,7 @@ button.insight-line:hover {
   border: 1px solid var(--line-strong);
   border-radius: 12px;
   color: var(--text-2);
-  font-size: 12px;
+  font-size: var(--fs-micro);
   white-space: nowrap;
 }
 .need-badge b {
@@ -625,7 +665,7 @@ button.insight-line:hover {
 .need-row-role {
   flex: 1;
   min-width: 0;
-  font-size: 12px;
+  font-size: var(--fs-micro);
 }
 .need-row-reason {
   color: var(--text-2);
@@ -736,7 +776,7 @@ button.insight-line:hover {
 .option-role {
   flex: none;
   color: var(--text-3);
-  font-size: 12px;
+  font-size: var(--fs-micro);
 }
 .option-score {
   flex: none;

@@ -560,7 +560,7 @@ const unknown = (reason: string): Part => ({ fit: UNKNOWN_FIT, assumed: true, no
 export function fitNoteOf(adjust: FitAdjust, rating: number | null, age: number | null): string {
   const pieces: string[] = []
   if (adjust.positionPoints > 0.05 && rating !== null) {
-    pieces.push(`포지션 숙련 ${rating}이라 적합도에서 ${fixed1(adjust.positionPoints)}점(${fixed2(adjust.positionSigma)} 표준편차) 뺐습니다`)
+    pieces.push(`포지션 숙련 ${rating}이라 적합도에서 ${fixed1(adjust.positionPoints)}점 뺐습니다`)
   }
   if (adjust.agePoints > 0 && age !== null) {
     pieces.push(`${age}세라 내년 하락을 감안해 ${fixed1(adjust.agePoints)}점 뺐습니다`)
@@ -595,7 +595,7 @@ function immediatePart(input: RecommendInput, ctx: RecommendContext, adjust: Fit
     drop > 0
       ? ` ${ctx.starter.name ? withJosa(ctx.starter.name, '이/가') : '주전이'} ${ctx.starter.age}세라 내년 하락을 감안해 기준을 ${fixed1(drop)}점 낮춰(${fixed1(ctx.starter.score - drop)}점) 견주었습니다.`
       : ''
-  const scale = ` 이 역할에서 점수 차이의 보통 크기(표준편차)는 ${fixed1(norm.sigma)}점입니다.`
+  const scale = ` 이 역할에서 점수 차이의 보통 크기는 ${fixed1(norm.sigma)}점입니다.`
   if (!ctx.backup) return { fit, assumed: false, note: `${versus}. 두 번째 선수가 없어 주전과만 견주었습니다.${aging}${scale}${weighting}` }
   const second = f - ctx.backup.score
   return {

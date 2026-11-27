@@ -215,8 +215,8 @@ export function readGameScene(nodes: UiNode[]): GameScene | null {
   return {
     panel,
     screen: screenOf(panel),
-    situation: heading.join(' · '),
-    speaker: [...new Set(speaker.length > 0 ? speaker : asker)].join(' · '),
+    situation: heading.join(', '),
+    speaker: [...new Set(speaker.length > 0 ? speaker : asker)].join(', '),
     question: (question.length > 0 ? question : asked).join('\n'),
     options,
     facts

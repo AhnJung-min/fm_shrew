@@ -213,10 +213,13 @@ export function TacticsPitch(props: {
           </div>
         ))}
       </div>
-      <p className="muted tp-help">
-        위쪽이 공격 방향입니다. 적합도는 자리 역할에 필요한 능력치로 계산한 0~100점이고, 보강 필요도는 그 자리에 선수를 더 데려와야 하는 정도입니다.
-        선수를 누르면 상세 정보가, 보강 필요도를 누르면 그 자리의 분석이 열립니다.
-      </p>
+      <details className="tactic-more tp-help">
+        <summary>보는 법(위쪽이 공격 방향)</summary>
+        <p className="muted">
+          적합도는 자리 역할에 필요한 능력치로 계산한 0~100점이고, 보강 필요도는 그 자리에 선수를 더 데려와야 하는 정도입니다.
+          선수를 누르면 상세 정보가, 보강 필요도를 누르면 그 자리의 분석이 열립니다.
+        </p>
+      </details>
     </div>
   )
 }

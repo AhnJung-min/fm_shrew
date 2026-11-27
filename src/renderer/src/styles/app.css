@@ -374,6 +374,10 @@ textarea:focus-visible {
 .dot.off {
   background: var(--bad);
 }
+/* 꺼져 있음은 평소 상태라 알림색을 쓰지 않는다(옛 플러그인이나 쓰기 실패만 주황·빨강) */
+.dot.idle {
+  background: var(--text-3);
+}
 .dot.warn {
   background: var(--warn);
 }
@@ -460,25 +464,40 @@ textarea:focus-visible {
   background: var(--raised);
   color: var(--text-3);
 }
+/* 약한 단추: 배경은 비우지만 테두리는 남겨 단추로 보이게 한다 */
 .btn.ghost {
-  border-color: transparent;
+  border-color: var(--line);
   background: transparent;
   color: var(--text-2);
 }
 .btn.ghost:hover:not(:disabled) {
   background: var(--hover);
-  border-color: transparent;
+  border-color: var(--line-strong);
   color: var(--text);
 }
 .btn.ghost:disabled {
-  border-color: transparent;
+  border-color: var(--line);
+}
+/* 누르는 순간: 한 칸 눌리고 바탕이 어두워진다 */
+.btn:active:not(:disabled) {
+  background: var(--bg);
+  transform: translateY(1px);
+}
+.btn.primary:active:not(:disabled) {
+  background: var(--text-2);
+  border-color: var(--text-2);
 }
 .btn.icon {
   width: 36px;
   padding: 0;
   justify-content: center;
 }
+/* 되돌릴 수 없는 단추(키 지우기, 사본 지우기): 평소에도 위험색 글자로 알린다 */
+.btn.danger {
+  color: var(--bad);
+}
 .btn.danger:hover:not(:disabled) {
+  border-color: var(--bad);
   color: var(--bad);
 }
 
@@ -553,6 +572,9 @@ input[type='radio'] {
 .chip:hover {
   color: var(--text);
   border-color: var(--text-3);
+}
+.chip:active {
+  background: var(--raised);
 }
 .chip .faint {
   color: inherit;
@@ -678,6 +700,11 @@ input[type='radio'] {
   min-width: 0;
 }
 
+/* <small>의 기본 크기는 12.5px보다 작아져서 바닥을 맞춘다(자기 크기를 정한 부품은 그것이 이긴다) */
+small {
+  font-size: var(--fs-micro);
+}
+
 kbd {
   display: inline-block;
   min-width: 22px;
@@ -714,6 +741,14 @@ kbd {
   padding: 48px 16px;
   color: var(--text-2);
   text-align: center;
+}
+.empty-actions {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: var(--sp-3);
+  margin-top: var(--sp-4);
 }
 .empty strong {
   display: block;
@@ -1182,7 +1217,7 @@ kbd {
 }
 .radar-tick {
   fill: var(--text-3);
-  font-size: 11px;
+  font-size: var(--fs-micro);
 }
 .radar-label {
   fill: var(--text-2);
@@ -1314,6 +1349,18 @@ kbd {
   flex: none;
   margin-top: 3px;
 }
+/* FM이 꺼져 있는 것처럼 평소에 있는 상태의 안내: 중립 점과 보조 글자색(경고색은 진짜 문제에만) */
+.note-idle {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin: 6px 0;
+  color: var(--text-2);
+  font-size: 13.5px;
+}
+.note-idle .dot {
+  margin-top: 8px;
+}
 
 /* ---------- 토크 도우미: 설정 ---------- */
 
@@ -1434,6 +1481,19 @@ a {
   min-height: 0;
 }
 
+/* 1180px보다 좁으면 표 옆에 붙이지 않고 오른쪽에 얹는다(전술판 옆 패널과 같은 기준). 표를 쥐어짜지 않는다 */
+@media (max-width: 1179px) {
+  .table-wrap > .drawer {
+    position: fixed;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    width: min(372px, calc(100vw - 56px));
+    z-index: 10;
+    box-shadow: -12px 0 28px color-mix(in srgb, var(--bg) 80%, transparent);
+  }
+}
+
 .drawer-head {
   display: flex;
   align-items: flex-start;
@@ -1547,7 +1607,17 @@ a {
   }
 }
 
-/* 백업 */
+/* 백업: 위아래 패널 사이에 간격을 둔다 */
+.backups-body {
+  display: grid;
+  gap: var(--sp-4);
+  align-content: start;
+}
+.backups-body > .backup-notice,
+.backups-body > .chat-caution {
+  margin: 0;
+}
+
 .backup-controls {
   display: flex;
   flex-wrap: wrap;

@@ -21,6 +21,7 @@ import {
 } from '@shared/world'
 import { api } from '@/api'
 import { ClubLogo } from '@/components/ClubLogo'
+import { MetaLine } from '@/components/MetaLine'
 import { PlayerDrawer } from '@/components/PlayerDrawer'
 import { PlayerTable, sortRows, type SortState } from '@/components/PlayerTable'
 import { RecommendPanel } from '@/components/RecommendPanel'
@@ -34,7 +35,7 @@ const info = (header: string, field: string, label: string, numeric: boolean): C
 
 const NAME = info('이름', 'name', '이름', false)
 const KIND: ColumnInfo = { ...info('유형', 'candidateKind', '이 선수가 드는 유형(영입 현실성이 낮으면 표지가 붙습니다)', false), width: 250 }
-const RECO: ColumnInfo = { ...info('추천 점수', 'recommend', TERM_HELP.recommend, true), width: 118 }
+const RECO: ColumnInfo = { ...info('추천 점수', 'recommend', TERM_HELP.recommend, true), width: 160 }
 const SCORE = info('적합도', 'roleScore', TERM_HELP.fit, true)
 const GAP = info('주전 대비', 'starterGap', '이 자리(역할) 내 주전과의 적합도 차이', true)
 const AGE = info('나이', 'age', '나이', true)
@@ -84,7 +85,7 @@ function toRow(row: CandidateRow, idx: number, market: PlayerMarket | undefined)
   const cells: Record<string, CellValue> = {
     [NAME.header]: text(row.name),
     [RECO.header]: number(row.recommend.total, String(Math.round(row.recommend.total))),
-    [KIND.header]: text(row.categories.length > 0 ? row.categories.map((category) => CATEGORY_LABEL[category]).join(' · ') : '어느 유형에도 들지 않음'),
+    [KIND.header]: text(row.categories.length > 0 ? row.categories.map((category) => CATEGORY_LABEL[category]).join(', ') : '어느 유형에도 들지 않음'),
     [SCORE.header]: number(row.score, String(Math.round(row.score))),
     [GAP.header]: number(row.gap, row.gap === null ? '' : `${row.gap > 0 ? '+' : ''}${row.gap.toFixed(1)}`),
     [AGE.header]: number(row.age),
@@ -289,6 +290,7 @@ export function Targets(props: {
           <span className={`reco-bar ${tier.id}`} aria-hidden="true">
             <i style={{ width: `${candidate.recommend.total}%` }} />
           </span>
+          <span className={`reco-word ${tier.id}`}>{tier.label}</span>
         </span>
       )
     }
@@ -338,187 +340,223 @@ export function Targets(props: {
     )
   }
 
+  const gameOff = !link.game.connected
+  const sourceLabel = link.data.source === 'game' ? '게임의 지금 값' : '세이브에 저장된 값'
+  const matchedLine = result?.ok
+    ? search.trim()
+      ? `이름이 맞는 선수 ${result.matched.toLocaleString()}명`
+      : result.matched > result.rows.length
+        ? `${result.matched.toLocaleString()}명 중 위에서 ${result.rows.length}명`
+        : `${result.matched.toLocaleString()}명`
+    : ''
+
   return (
     <>
       <header className="page-head">
         <h1>영입 후보</h1>
-        <span className="page-sub">
-          {result?.saveName
-            ? `“${result.saveName}”의 모든 구단 선수 · ${link.data.source === 'game' ? '게임의 지금 값' : '세이브에 저장된 값'}`
-            : ''}
+        <span className="page-sub head-sub">
+          {result?.saveName ? <MetaLine items={[`“${result.saveName}”의 모든 구단 선수`, sourceLabel]} /> : ''}
         </span>
         <div className="spacer" />
         {result?.ok && <span className="page-sub num">{benchLine(result.bench, result.group?.slots ?? 1)}</span>}
       </header>
 
-      {analysis && (
-        <div className="slot-bar">
-          <div className="slot-bar-head">
-            <strong>보강할 자리</strong>
-            <span className="muted">
-              {analysis.formation.label} 전술에서 보강 필요도가 높은 자리부터 늘어놓았습니다. 자리를 고르면 그 자리의 주전과 두 번째 선수를 기준으로 후보를 찾고, 같은 포지션·역할의 자리가 여럿이면 가장 약한 주전을 기준으로 합니다.
-            </span>
-          </div>
-          <div className="slot-picker" role="group" aria-label="보강할 자리">
-            {analysis.groupsByNeed.map((each) => (
+      <div className="targets-scroll">
+        {analysis && (
+          <div className="slot-bar">
+            <div className="slot-picker" role="group" aria-label="보강할 자리">
+              <span className="slot-title">
+                <strong>보강할 자리</strong>
+                <span className="faint">숫자는 보강 필요도</span>
+              </span>
+              {analysis.groupsByNeed.map((each) => (
+                <button
+                  key={each.id}
+                  className={`slot-chip ${each.level}`}
+                  aria-pressed={activeSlot?.id === each.id}
+                  title={`${each.label}(${each.roleLabel}). ${TERM_HELP.need} ${each.reason}`}
+                  aria-label={`${each.label}, 보강 필요도 ${Math.round(each.need)} ${each.levelLabel}`}
+                  onClick={() => setSlotChoice(each.slots[0])}
+                >
+                  <span className="slot-chip-name">{each.label}</span>
+                  <span className="slot-chip-need">
+                    <b className="num">{Math.round(each.need)}</b> <em>{each.levelLabel}</em>
+                  </span>
+                </button>
+              ))}
               <button
-                key={each.id}
-                className={`slot-chip ${each.level}`}
-                aria-pressed={activeSlot?.id === each.id}
-                title={`${each.label}(${each.roleLabel}). ${TERM_HELP.need} ${each.reason}`}
-                onClick={() => setSlotChoice(each.slots[0])}
+                className="slot-chip manual"
+                aria-pressed={activeSlot === null}
+                title="전술과 상관없이 아무 역할이나 골라 찾습니다."
+                onClick={() => setSlotChoice('manual')}
               >
-                <span className="slot-chip-name">{each.label}</span>
-                <span className="slot-chip-need">
-                  보강 필요도 <b className="num">{Math.round(each.need)}</b> <em>{each.levelLabel}</em>
-                </span>
+                직접 고르기
+              </button>
+              <details className="slot-more">
+                <summary>자세히</summary>
+                <div className="slot-more-body">
+                  <p>
+                    {analysis.formation.label} 전술에서 보강 필요도가 높은 자리부터 늘어놓았습니다. 자리를 고르면 그 자리의 주전과 두 번째 선수를 기준으로 후보를 찾고, 같은
+                    포지션·역할의 자리가 여럿이면 가장 약한 주전을 기준으로 합니다. 역할은 스쿼드 전술판에서 바꿀 수 있습니다.
+                  </p>
+                  {activeSlot && (
+                    <p>
+                      <b>
+                        {activeSlot.label}({activeSlot.roleLabel})
+                      </b>
+                      : {activeSlot.reason}
+                    </p>
+                  )}
+                  <p className="muted">
+                    지금 유형 “{CATEGORY_LABEL[category]}”: {CATEGORY_HELP[category]}.
+                  </p>
+                  {gameOff && (
+                    <p className="muted">
+                      게임이 꺼져 있어 몸값과 주급은 세이브에 적힌 값(파운드)을 원화로 바꿔(1파운드 = 1,920원) 보여 줍니다. FM을 켜고 세이브를 불러오면 게임이 보여 주는 값으로 바뀝니다.
+                    </p>
+                  )}
+                </div>
+              </details>
+            </div>
+          </div>
+        )}
+        <div className="toolbar compact">
+          {activeSlot === null && (
+            <label className="inline-field">
+              <span className="muted">역할</span>
+              <select className="field" value={roleId} onChange={(event) => setRoleId(event.target.value)}>
+                {ROLES.map((role) => (
+                  <option key={role.id} value={role.id}>
+                    {role.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
+          {activeSlot && (
+            <span className="page-sub" title={activeSlot.reason}>
+              역할: {ROLE_BY_ID[activeSlot.roleId]?.label}
+            </span>
+          )}
+          <div className="chips" role="group" aria-label="유형">
+            {CATEGORIES.map((each) => (
+              <button
+                key={each}
+                className="chip"
+                aria-pressed={category === each}
+                title={CATEGORY_HELP[each]}
+                onClick={() => setCategory(each)}
+              >
+                {CATEGORY_LABEL[each]}
+                {result?.ok && <span className="num faint"> {result.counts[each].toLocaleString()}</span>}
               </button>
             ))}
-            <button
-              className="slot-chip manual"
-              aria-pressed={activeSlot === null}
-              title="전술과 상관없이 아무 역할이나 골라 찾습니다."
-              onClick={() => setSlotChoice('manual')}
-            >
-              직접 고르기
-            </button>
           </div>
-          {activeSlot && (
-            <p className="slot-line">
-              {activeSlot.label} · {activeSlot.roleLabel}: {activeSlot.reason} 역할은 스쿼드 전술판에서 바꿀 수 있습니다.
-            </p>
+          <label className="inline-field">
+            <input
+              className="field num"
+              type="number"
+              min={15}
+              max={45}
+              placeholder="나이"
+              aria-label="나이 상한"
+              value={maxAge}
+              onChange={(event) => setMaxAge(event.target.value)}
+              style={{ width: 76 }}
+            />
+            <span className="muted">세 이하</span>
+          </label>
+          <label className="search-box">
+            <Search size={15} />
+            <input
+              className="field"
+              placeholder="이름으로 찾기"
+              aria-label="이름으로 찾기"
+              value={search}
+              onChange={(event) => setSearch(event.target.value)}
+            />
+          </label>
+        </div>
+        <div className="toolbar compact">
+          <label className="inline-field" title={activeSlot ? '이 자리(포지션)를 뛸 수 있는 선수만 봅니다.' : '이 역할의 자리에서 뛸 수 있는 선수만 봅니다.'}>
+            <input type="checkbox" checked={onlyEligible} onChange={(event) => setOnlyEligible(event.target.checked)} />
+            <span>{activeSlot ? '이 자리를 뛸 수 있는 선수만' : '이 역할의 자리에서 뛸 수 있는 선수만'}</span>
+          </label>
+          <label className="inline-field" title="세이브에서 소속 구단을 알아내지 못한 선수들입니다.">
+            <input type="checkbox" checked={includeUnknownClub} onChange={(event) => setIncludeUnknownClub(event.target.checked)} />
+            <span>구단 모르는 선수도</span>
+          </label>
+          <label className="inline-field" title="계약이 1년 안에 끝나는 선수만 봅니다. 이적료 없이, 또는 싸게 데려올 수 있는 선수들입니다.">
+            <input type="checkbox" checked={expiringSoon} onChange={(event) => setExpiringSoon(event.target.checked)} />
+            <span>계약 1년 이내만</span>
+          </label>
+          {marketNote &&
+            (gameOff ? (
+              <span className="note-idle" title={marketNote}>
+                <span className="dot idle" aria-hidden="true" />
+                FM이 꺼져 있어 세이브 값으로 보여 줍니다
+              </span>
+            ) : (
+              <span className="note-warn">{marketNote}</span>
+            ))}
+          <div className="spacer" />
+          <span className="page-sub num" title={search.trim() ? '유형 자격과 상관없이 보여 줍니다' : CATEGORY_HELP[category]}>
+            {matchedLine}
+          </span>
+        </div>
+
+        {result?.ok && (
+          <RecommendPanel
+            row={selectedCandidate}
+            category={category}
+            baseline={result.baseline ?? null}
+            need={result.need ?? null}
+            ranked={result.ranked ?? null}
+            norm={result.norm ?? null}
+          />
+        )}
+
+        <div className="table-wrap">
+          {result === null || (loading && rows.length === 0) ? (
+            <div className="empty" style={{ flex: 1 }}>
+              <strong>선수를 고르는 중입니다</strong>
+            </div>
+          ) : sorted.length === 0 ? (
+            <div className="empty" style={{ flex: 1 }}>
+              <strong>조건에 맞는 선수가 없습니다</strong>
+              {category === 'free'
+                ? `이 세이브에는 이 자리에 맞는 소속 없는 선수가 없습니다${caGate !== null ? `(현재 능력 ${Math.round(caGate)} 이상이고 적합도가 주전 수준 근처인 선수가 없음)` : ''}. 유형을 “전체”로 바꾸거나 역할·나이 조건을 풀어 보세요.`
+                : '유형을 “전체”로 바꾸거나 역할·나이 조건을 풀어 보세요. 이름으로 찾으면 유형 자격과 상관없이 보여 줍니다.'}
+            </div>
+          ) : (
+            <PlayerTable
+              columns={COLUMNS}
+              rows={sorted}
+              density={settings.density}
+              sort={sort}
+              onSort={setSort}
+              selectedIdx={selectedIdx}
+              onSelect={(row) => setSelectedIdx(selectedIdx === row.idx ? null : row.idx)}
+              renderCell={renderCell}
+            />
+          )}
+          {selected && (
+            <PlayerDrawer
+              columns={COLUMNS}
+              row={selected}
+              uid={selectedUid}
+              onClose={() => setSelectedIdx(null)}
+              action={
+                selectedUid !== null && (
+                  <button className="btn" onClick={() => onEdit(selectedUid)}>
+                    <PencilRuler size={15} />
+                    에디터에서 열기
+                  </button>
+                )
+              }
+            />
           )}
         </div>
-      )}
-      <div className="toolbar">
-        {activeSlot === null && (
-          <label className="inline-field">
-            <span className="muted">역할</span>
-            <select className="field" value={roleId} onChange={(event) => setRoleId(event.target.value)}>
-              {ROLES.map((role) => (
-                <option key={role.id} value={role.id}>
-                  {role.label}
-                </option>
-              ))}
-            </select>
-          </label>
-        )}
-        {activeSlot && <span className="page-sub">역할: {ROLE_BY_ID[activeSlot.roleId]?.label}</span>}
-        <div className="chips" role="group" aria-label="유형">
-          {CATEGORIES.map((each) => (
-            <button
-              key={each}
-              className="chip"
-              aria-pressed={category === each}
-              title={CATEGORY_HELP[each]}
-              onClick={() => setCategory(each)}
-            >
-              {CATEGORY_LABEL[each]}
-              {result?.ok && <span className="num faint"> {result.counts[each].toLocaleString()}</span>}
-            </button>
-          ))}
-        </div>
-        <label className="inline-field">
-          <input
-            className="field num"
-            type="number"
-            min={15}
-            max={45}
-            placeholder="나이"
-            aria-label="나이 상한"
-            value={maxAge}
-            onChange={(event) => setMaxAge(event.target.value)}
-            style={{ width: 76 }}
-          />
-          <span className="muted">세 이하</span>
-        </label>
-        <label className="search-box">
-          <Search size={15} />
-          <input
-            className="field"
-            placeholder="이름으로 찾기"
-            aria-label="이름으로 찾기"
-            value={search}
-            onChange={(event) => setSearch(event.target.value)}
-          />
-        </label>
-      </div>
-      <div className="toolbar">
-        <label className="inline-field">
-          <input type="checkbox" checked={onlyEligible} onChange={(event) => setOnlyEligible(event.target.checked)} />
-          <span>{activeSlot ? '이 자리(포지션)를 뛸 수 있는 선수만' : '이 역할의 자리에서 뛸 수 있는 선수만'}</span>
-        </label>
-        <label className="inline-field" title="세이브에서 소속 구단을 알아내지 못한 선수들입니다.">
-          <input type="checkbox" checked={includeUnknownClub} onChange={(event) => setIncludeUnknownClub(event.target.checked)} />
-          <span>구단을 알아내지 못한 선수도</span>
-        </label>
-        <label className="inline-field" title="계약이 1년 안에 끝나는 선수만 봅니다. 이적료 없이, 또는 싸게 데려올 수 있는 선수들입니다.">
-          <input type="checkbox" checked={expiringSoon} onChange={(event) => setExpiringSoon(event.target.checked)} />
-          <span>계약이 1년 안에 끝나는 선수만</span>
-        </label>
-        {marketNote && <span className="muted">{marketNote}</span>}
-        <div className="spacer" />
-        <span className="page-sub num">
-          {result?.ok &&
-            (search.trim()
-              ? `이름이 맞는 선수 ${result.matched.toLocaleString()}명(유형 자격과 상관없이 보여 줍니다)`
-              : result.matched > result.rows.length
-                ? `${CATEGORY_HELP[category]}: ${result.matched.toLocaleString()}명 중 위에서 ${result.rows.length}명`
-                : `${CATEGORY_HELP[category]}: ${result.matched.toLocaleString()}명`)}
-        </span>
-      </div>
-
-      {result?.ok && (
-        <RecommendPanel
-          row={selectedCandidate}
-          category={category}
-          baseline={result.baseline ?? null}
-          need={result.need ?? null}
-          ranked={result.ranked ?? null}
-          norm={result.norm ?? null}
-        />
-      )}
-
-      <div className="table-wrap">
-        {result === null || (loading && rows.length === 0) ? (
-          <div className="empty" style={{ flex: 1 }}>
-            <strong>선수를 고르는 중입니다</strong>
-          </div>
-        ) : sorted.length === 0 ? (
-          <div className="empty" style={{ flex: 1 }}>
-            <strong>조건에 맞는 선수가 없습니다</strong>
-            {category === 'free'
-              ? `이 세이브에는 이 자리에 맞는 소속 없는 선수가 없습니다${caGate !== null ? `(현재 능력 ${Math.round(caGate)} 이상이고 적합도가 주전 수준 근처인 선수가 없음)` : ''}. 유형을 “전체”로 바꾸거나 역할·나이 조건을 풀어 보세요.`
-              : '유형을 “전체”로 바꾸거나 역할·나이 조건을 풀어 보세요. 이름으로 찾으면 유형 자격과 상관없이 보여 줍니다.'}
-          </div>
-        ) : (
-          <PlayerTable
-            columns={COLUMNS}
-            rows={sorted}
-            density={settings.density}
-            sort={sort}
-            onSort={setSort}
-            selectedIdx={selectedIdx}
-            onSelect={(row) => setSelectedIdx(selectedIdx === row.idx ? null : row.idx)}
-            renderCell={renderCell}
-          />
-        )}
-        {selected && (
-          <PlayerDrawer
-            columns={COLUMNS}
-            row={selected}
-            uid={selectedUid}
-            onClose={() => setSelectedIdx(null)}
-            action={
-              selectedUid !== null && (
-                <button className="btn" onClick={() => onEdit(selectedUid)}>
-                  <PencilRuler size={15} />
-                  에디터에서 열기
-                </button>
-              )
-            }
-          />
-        )}
       </div>
     </>
   )

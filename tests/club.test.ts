@@ -119,7 +119,7 @@ describe('구단', () => {
 describe('징계', () => {
   it('남은 경기 수가 있으면 그것으로 판단한다', () => {
     expect(suspensionOf({ banLeft: '0', banReason: '레드카드' }).suspended).toBe(false)
-    expect(suspensionOf({ banLeft: '2', banReason: '레드카드' })).toEqual({ suspended: true, text: '레드카드 · 2경기 남음' })
+    expect(suspensionOf({ banLeft: '2', banReason: '레드카드' })).toEqual({ suspended: true, text: '레드카드, 2경기 남음' })
   })
 
   it('남은 경기 수를 모르면 사유 글자로 판단하되 "없음"은 징계가 아니다', () => {

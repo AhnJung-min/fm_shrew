@@ -190,9 +190,9 @@ describe('포지션 숙련은 적합도에서 뺀다', () => {
     const accomplished = recommend(input({ roleScore: 74, roleRating: 16 }), context()).total
     expect(accomplished).toBeGreaterThan(natural)
   })
-  it('설명에 얼마나 뺐는지 적는다(1.0점, 0.32 표준편차)', () => {
+  it('설명에 얼마나 뺐는지 적는다(1.0점)', () => {
     const result = recommend(input({ roleScore: 70, roleRating: 16 }), context({ norm: { ...FALLBACK_NORM, sigma: 3.15 } }))
-    expect(result.fitNote).toContain('포지션 숙련 16이라 적합도에서 1.0점(0.32 표준편차) 뺐습니다')
+    expect(result.fitNote).toContain('포지션 숙련 16이라 적합도에서 1.0점 뺐습니다')
     expect(result.fit.effective).toBeCloseTo(70 - 3.15 * 0.32, 5)
   })
   it('숙련도를 모르면 감점하지 않고 그렇게 적는다', () => {

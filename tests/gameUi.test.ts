@@ -74,8 +74,8 @@ describe('readGameScene: 토크 장면 찾기', () => {
     const scene = readGameScene(parseTree(TEAM_TALK))!
     expect(scene.panel).toBe('TeamTalkPanel')
     expect(scene.screen).toBe('team_talk')
-    expect(scene.situation).toBe('팀 대화 · 상대 팀')
-    expect(scene.speaker).toBe('선수단 · 20명의 선수')
+    expect(scene.situation).toBe('팀 대화, 상대 팀')
+    expect(scene.speaker).toBe('선수단, 20명의 선수')
     expect(scene.question).toBe('')
     expect(scene.options).toEqual([
       { text: '행운을 빈다.', tone: '', ref: 18 },

@@ -8,6 +8,7 @@ import { analyseTactic } from '@shared/tactic'
 import type { ColumnGroup, ColumnInfo, PlayerRow, Settings, SquadResult } from '@shared/types'
 import { api } from '@/api'
 import { ClubLogo } from '@/components/ClubLogo'
+import { MetaLine } from '@/components/MetaLine'
 import { DepthChart } from '@/components/DepthChart'
 import { PlayerDrawer } from '@/components/PlayerDrawer'
 import { PlayerTable, sortRows, type SortState } from '@/components/PlayerTable'
@@ -172,7 +173,7 @@ export function Squad(props: {
         <h1>스쿼드</h1>
         <span className="page-sub">
           {data.save && <ClubLogo uid={snapshot?.ok ? snapshot.clubUid : undefined} size={18} />}
-          {data.save ? ` ${data.club || data.save.name} · ${data.source === 'game' ? '게임의 지금 값' : '세이브에 저장된 값'}` : ''}
+          {data.save && <MetaLine items={[data.club || data.save.name, data.source === 'game' ? '게임의 지금 값' : '세이브에 저장된 값']} />}
         </span>
         <div className="segmented" role="group" aria-label="보기 방식">
           <button aria-pressed={view === 'table'} onClick={() => setView('table')}>

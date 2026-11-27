@@ -2,6 +2,7 @@ import { CircleAlert, FolderOpen, History, RotateCcw, Trash2 } from 'lucide-reac
 import { useCallback, useEffect, useState } from 'react'
 import type { BackupEntry, BackupList, Settings } from '@shared/types'
 import { api } from '@/api'
+import { MetaLine } from '@/components/MetaLine'
 import { formatBytes, formatTime } from '@/lib/format'
 
 const KEEP_CHOICES = [3, 5, 10, 20, 30]
@@ -68,7 +69,7 @@ export function Backups(props: { settings: Settings; onChange: (patch: Partial<S
         </button>
       </header>
 
-      <div className="page-body">
+      <div className="page-body backups-body">
         <section className="panel">
           <div className="panel-body backup-controls">
             <label className="inline-field">
@@ -90,7 +91,7 @@ export function Backups(props: { settings: Settings; onChange: (patch: Partial<S
               </select>
             </label>
             <span className="muted">
-              사본 {entries.length}개 · {formatBytes(list?.totalBytes ?? 0)}
+              <MetaLine items={[`사본 ${entries.length}개`, formatBytes(list?.totalBytes ?? 0)]} />
             </span>
             {list && (
               <button className="btn ghost" onClick={() => void api.openPath(list.dir)} title={list.dir}>
@@ -150,7 +151,7 @@ export function Backups(props: { settings: Settings; onChange: (patch: Partial<S
                         {busy === entry.id ? '처리 중…' : '복원'}
                       </button>
                       <button
-                        className="btn ghost"
+                        className="btn ghost danger"
                         disabled={busy !== null}
                         onClick={() => void remove(entry)}
                         title="이 사본 지우기"

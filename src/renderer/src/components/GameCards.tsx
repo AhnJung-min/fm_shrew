@@ -170,7 +170,7 @@ function Group(props: { title: string; empty: string; players: PlayerHealth[]; d
 
 const injuryDetail = (player: PlayerHealth): string => {
   const name = player.injury ?? '부상(종류를 게임에서 읽지 못함)'
-  return player.injuryReturn ? `${name} · 복귀까지 ${player.injuryReturn}` : `${name} · 복귀 시기를 게임에서 읽지 못함`
+  return player.injuryReturn ? `${name}, 복귀까지 ${player.injuryReturn}` : `${name}, 복귀 시기를 게임에서 읽지 못함`
 }
 
 function Health(props: { snapshot: ClubSnapshot }) {
@@ -180,8 +180,8 @@ function Health(props: { snapshot: ClubSnapshot }) {
   const known = report.answered > 0
   const rating = (player: PlayerHealth): string => {
     const average = player.rating === null ? UNKNOWN : `평균 평점 ${player.rating.toFixed(2)}`
-    const games = player.appearances === null ? '' : ` · ${player.appearances}경기`
-    const last = player.lastRating === null ? '' : ` · 최근 ${player.lastRating.toFixed(1)}`
+    const games = player.appearances === null ? '' : `, ${player.appearances}경기`
+    const last = player.lastRating === null ? '' : `, 최근 ${player.lastRating.toFixed(1)}`
     return `${average}${games}${last}`
   }
   return (
@@ -291,10 +291,10 @@ export function GameCards(props: { link: LinkStatus }) {
 
   if (!connected) {
     return (
-      <section className="dash-card game-cards" aria-label="구단 현황">
-        <h2>구단 재정·시설과 선수단 건강</h2>
-        <p className="gc-off">이 정보는 FM이 켜져 있을 때 게임에서 읽어 옵니다. FM을 켜고 세이브를 불러오면 여기에 채워집니다.</p>
-      </section>
+      <p className="note-idle game-cards-off" aria-label="구단 현황">
+        <span className="dot idle" aria-hidden="true" />
+        구단 재정·시설과 선수단 건강은 FM을 켜고 세이브를 불러오면 여기에 채워집니다.
+      </p>
     )
   }
 

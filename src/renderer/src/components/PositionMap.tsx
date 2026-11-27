@@ -55,11 +55,11 @@ export function PositionMap(props: {
               onClick={edit ? () => document.getElementById(`pm-in-${key}`)?.focus() : undefined}
             >
               <title>{`${POSITION_NAME[key]}: ${rating} (${POSITION_LEVEL_LABEL[level]})`}</title>
-              <circle r="18" />
-              <text y="-2" className="pm-code">
+              <circle r="19" />
+              <text y="-3" className="pm-code">
                 {key}
               </text>
-              <text y="10" className="pm-rate">
+              <text y="12" className="pm-rate">
                 {rating}
               </text>
             </g>

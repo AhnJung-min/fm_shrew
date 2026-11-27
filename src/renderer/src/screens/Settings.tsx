@@ -20,6 +20,7 @@ export function Settings(props: {
     <>
       <header className="page-head">
         <h1>설정</h1>
+        <span className="page-sub">화면 색, 게임 안 직접 답변에 쓰는 AI 키, 역할 가중치를 정합니다.</span>
       </header>
       <div className="page-body">
         <div className="settings">

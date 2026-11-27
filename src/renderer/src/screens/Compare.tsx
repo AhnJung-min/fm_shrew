@@ -56,6 +56,7 @@ export function Compare(props: {
       <>
         <header className="page-head">
           <h1>선수 비교</h1>
+          <span className="page-sub">내 팀 선수를 최대 {MAX_COMPARE}명까지 나란히 놓고 성향과 능력치를 비교합니다.</span>
         </header>
         <div className="page-body">
           <div className="empty">
@@ -78,35 +79,40 @@ export function Compare(props: {
   const available = snapshot?.rows.filter((row) => !idxs.includes(row.idx)) ?? []
   const full = idxs.length >= MAX_COMPARE
 
+  const picker = (
+    <select
+      className="field"
+      aria-label="비교에 넣을 선수"
+      value=""
+      disabled={full || !snapshot}
+      onChange={(event) => onIdxs([...idxs, Number(event.target.value)])}
+      style={{ maxWidth: 240 }}
+    >
+      <option value="">{full ? `${MAX_COMPARE}명까지 비교합니다` : '선수 넣기'}</option>
+      {available.map((row) => (
+        <option key={row.idx} value={row.idx}>
+          {row.name}
+        </option>
+      ))}
+    </select>
+  )
+
   return (
     <>
       <header className="page-head">
         <h1>선수 비교</h1>
-        <select
-          className="field"
-          aria-label="비교에 넣을 선수"
-          value=""
-          disabled={full || !snapshot}
-          onChange={(event) => onIdxs([...idxs, Number(event.target.value)])}
-          style={{ maxWidth: 240 }}
-        >
-          <option value="">{full ? `${MAX_COMPARE}명까지 비교합니다` : '선수 넣기'}</option>
-          {available.map((row) => (
-            <option key={row.idx} value={row.idx}>
-              {row.name}
-            </option>
-          ))}
-        </select>
+        <span className="page-sub">내 팀 선수를 최대 {MAX_COMPARE}명까지 나란히 놓고 성향과 능력치를 비교합니다.</span>
+        {players.length > 0 && picker}
       </header>
 
       <div className="page-body">
         {players.length === 0 ? (
           <div className="empty">
             <strong>비교할 선수를 넣어 주세요</strong>
-            위의 “선수 넣기”에서 고르거나, 스쿼드 표에서 선수를 누른 뒤 “비교에 담기”를 누릅니다. {MAX_COMPARE}명까지
-            됩니다.
-            <div style={{ marginTop: 14 }}>
-              <button className="btn" onClick={onGoSquad}>
+            아래에서 고르거나, 스쿼드 표에서 선수를 누른 뒤 “비교에 담기”를 누릅니다. {MAX_COMPARE}명까지 됩니다.
+            <div className="empty-actions">
+              {picker}
+              <button className="btn primary" onClick={onGoSquad}>
                 스쿼드로 가기
               </button>
             </div>

@@ -256,7 +256,7 @@ describe('정리 후보 고르기(3회차)', () => {
     expect(row.fit).toBe('noSlot')
     // 점수 50, μ 60, σ 3 → z -3.33 - 숙련 감점 0. 최약 주전 z 0. 갭 3.33 + 0.5 → 위험 1
     expect(row.parts.fit).toBe(50)
-    expect(row.reason).toContain('표준편차 낮')
+    expect(row.reason).toContain('보통 점수 차이의')
   })
 
   it('골키퍼 5명: 상위 3명은 대상이 아니고 4·5번째는 위험 1이며 이유에 "4번째 이후"가 있다', () => {
@@ -353,7 +353,7 @@ describe('정리 후보 고르기(목업 선수단)', () => {
     const scores = report.rows.map((row) => row.score)
     expect(scores).toEqual([...scores].sort((a, b) => b - a))
     for (const row of report.rows) expect(row.reason.endsWith('.')).toBe(true)
-    for (const row of report.rows.filter((each) => each.fit === 'slot' && each.fitGap !== null && each.fitGap >= 0.5)) expect(row.reason).toContain('표준편차')
+    for (const row of report.rows.filter((each) => each.fit === 'slot' && each.fitGap !== null && each.fitGap >= 0.5)) expect(row.reason).toContain('보통 점수 차이의')
   })
 
   it('임대 유망주는 정리 후보와 겹치지 않고, 클 여지가 있다(나이 ≤ 23, PA - CA ≥ 10, 이득 ≥ 0.5σ)', () => {

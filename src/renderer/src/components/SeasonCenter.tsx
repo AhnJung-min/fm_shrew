@@ -1,5 +1,6 @@
 import { CircleAlert } from 'lucide-react'
 import { ClubLogo } from '@/components/ClubLogo'
+import { MetaLine } from '@/components/MetaLine'
 import type { SeasonDate, SeasonMatch, SeasonResult } from '@shared/season'
 
 const WEEKDAY = ['일', '월', '화', '수', '목', '금', '토']
@@ -52,8 +53,7 @@ function NextMatch(props: { match: SeasonMatch; today?: SeasonDate }) {
         <strong className="next-opponent">{opponentName(match)}</strong>
       </div>
       <div className="next-when num">
-        {dateText(match.date, today)}
-        {match.time ? ` ${match.time}` : ''} · {competition(match)}
+        <MetaLine items={[`${dateText(match.date, today)}${match.time ? ` ${match.time}` : ''}`, competition(match)]} />
       </div>
     </div>
   )

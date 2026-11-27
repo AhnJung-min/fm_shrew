@@ -243,7 +243,7 @@ export function suspensionOf(fields: GameFields): { suspended: boolean; text: st
   if (left !== null) {
     const count = isPlainNumber(left) ? Number(left) : null
     const suspended = count !== null ? count > 0 : !NOTHING.test(left)
-    return { suspended, text: suspended ? [reason, count !== null ? `${count}경기 남음` : left].filter(Boolean).join(' · ') || null : null }
+    return { suspended, text: suspended ? [reason, count !== null ? `${count}경기 남음` : left].filter(Boolean).join(', ') || null : null }
   }
   if (reason !== null && !NOTHING.test(reason)) return { suspended: true, text: reason }
   return { suspended: false, text: null }

@@ -179,8 +179,8 @@ function PlayerCard(props: {
           켜져 있는 게임에서 읽은 지금 값입니다. 숫자 칸에서 위·아래 화살표 키를 누르면 1씩 바뀝니다.
         </p>
       ) : (
-        <p className="chat-caution" role="status">
-          <CircleAlert size={15} />
+        <p className="note-idle" role="status">
+          <span className="dot idle" aria-hidden="true" />
           {player.sourceNote} 이 상태에서는 고친 값을 게임에 넣을 수 없습니다.
         </p>
       )}

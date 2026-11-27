@@ -3,6 +3,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { NEEDED_PLUGIN, type LinkStatus, type SaveFileInfo } from '@shared/game'
 import type { AppStatus } from '@shared/types'
 import { api } from '@/api'
+import { MetaLine } from '@/components/MetaLine'
 import type { Route } from '@/components/Sidebar'
 import { formatBytes, formatTime } from '@/lib/format'
 
@@ -68,7 +69,7 @@ export function Home(props: { status: AppStatus | null; link: LinkStatus; onNavi
               </div>
               <div className="panel-body">
                 <p className="start-line">
-                  <span className={`dot ${game.connected ? 'on' : 'off'}`} />
+                  <span className={`dot ${game.pluginOld ? 'warn' : game.connected ? 'on' : 'idle'}`} aria-hidden="true" />
                   <span>{gameLine}</span>
                 </p>
                 {game.connected && !game.pluginOld && <p className="faint num">게임 안 플러그인 {game.pluginVersion}</p>}
@@ -121,7 +122,7 @@ export function Home(props: { status: AppStatus | null; link: LinkStatus; onNavi
                             {applied === save.path && <span className="tag squad">적용됨</span>}
                             <span className="spacer" />
                             <span className="muted num">
-                              {formatTime(save.savedAt)} 저장 · {formatBytes(save.bytes)}
+                              <MetaLine items={[`${formatTime(save.savedAt)} 저장`, formatBytes(save.bytes)]} />
                             </span>
                           </label>
                         </li>

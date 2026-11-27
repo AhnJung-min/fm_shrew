@@ -111,7 +111,7 @@ export function depthCard(analysis: TacticAnalysis | null, formationLabel: strin
     (each): InsightLine => ({
       idx: each.slot.starter?.idx ?? null,
       name: each.slot.starter?.name ?? each.label,
-      detail: `${each.label} · 보강 필요도 ${Math.round(each.need)}(${each.levelLabel}) · ${each.reason}`
+      detail: `${each.label}: 보강 필요도 ${Math.round(each.need)}(${each.levelLabel}). ${each.reason}`
     })
   )
   return {
@@ -186,7 +186,7 @@ export function prospectsCard(players: InsightPlayer[], hasPotential: boolean): 
     (player): InsightLine => ({
       idx: player.idx,
       name: player.name,
-      detail: `${player.age}세 · 현재 ${player.ca} → 잠재 ${player.pa} (+${player.pa! - player.ca!})`
+      detail: `${player.age}세, 현재 ${player.ca} → 잠재 ${player.pa} (+${player.pa! - player.ca!})`
     })
   )
   return {
@@ -213,7 +213,7 @@ export function coreCard(players: InsightPlayer[], hasAbility: boolean): Insight
     (player): InsightLine => ({
       idx: player.idx,
       name: player.name,
-      detail: `현재 능력 ${player.ca}${player.age !== null ? ` · ${player.age}세` : ''}`
+      detail: `현재 능력 ${player.ca}${player.age !== null ? `, ${player.age}세` : ''}`
     })
   )
   const last = top[top.length - 1]
@@ -263,7 +263,7 @@ export function expiringCard(players: InsightPlayer[], today: Ymd | undefined, h
     return {
       idx: player.idx,
       name: player.name,
-      detail: [dateText(player.contractEnd!), left, player.wage ? `주급 ${player.wage}` : ''].filter(Boolean).join(' · ')
+      detail: [dateText(player.contractEnd!), left, player.wage ? `주급 ${player.wage}` : ''].filter(Boolean).join(', ')
     }
   })
   return {

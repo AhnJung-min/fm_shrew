@@ -9,6 +9,15 @@ const TONE_WORD: Record<InsightCard['tone'], string> = {
 function Card(props: { card: InsightCard; onPick: (idx: number) => void }) {
   const { card, onPick } = props
   const biggest = Math.max(1, ...(card.bars ?? []).map((bar) => bar.count))
+  // 알릴 것이 없는 카드는 한 줄로 접는다(카드 틀과 빈 칸을 아낀다)
+  if (card.lines.length === 0 && !card.bars) {
+    return (
+      <article className={`insight quiet ${card.tone}`} aria-labelledby={`insight-${card.id}`} title={card.note}>
+        <h3 id={`insight-${card.id}`}>{card.title}</h3>
+        <p className="insight-finding">{card.finding}</p>
+      </article>
+    )
+  }
   return (
     <article className={`insight ${card.tone}`} aria-labelledby={`insight-${card.id}`}>
       <header>
