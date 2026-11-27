@@ -83,20 +83,32 @@ export function footSummary(left: number, right: number): FootSummary {
 
 /**
  * 1파운드가 몇 원인가. 세이브의 금액은 게임의 기준 통화인 파운드로 적혀 있고, 게임은 화면에 원화로 바꿔 보여 준다.
- * 게임이 원화로 보여 준 주급("주급 4.5억 원", "주급 4억 원")과 같은 선수들의 세이브 주급(파운드)을 견주면
- * 두 선수 모두 1,906~1,936원 사이에 들어 그 가운데 값을 쓴다(게임 표시가 0.1억 단위로 반올림돼 있어 ±1% 정도의 오차).
+ * 켜져 있는 게임(플러그인 /people, /club)에서 확인했다(2026-11-27):
+ * - 기준 통화 주급 4,000 → "주급 750만 원", 8,000 → "1,500만 원", 120,000 → "2.25억 원", 200,000 → "3.75억 원"(모두 정확히 1,875배)
+ * - 구단 주급 총액 4,676,749 → "주급 87.73억 원"(1,875.9배, 유효숫자 네 자리)
+ * 게임은 큰 금액을 "4.75억"처럼 둥글게 보여 주므로(0.25억 단위 등) 선수 한두 명의 표시로 환율을 맞추면 틀린다(처음에 1,920으로 잘못 잡았다).
  */
-export const WON_PER_POUND = 1920
+export const WON_PER_POUND = 1875
+/** 화면 안내 문구에 쓰는 환율 */
+export const WON_RATE_TEXT = `1파운드 = ${WON_PER_POUND.toLocaleString('en-US')}원`
 
-/** 원화 금액을 게임과 같은 꼴로: 1,130억 원, 46.1억 원, 4.5억 원, 960만 원 */
+/** 원화 금액을 게임과 같은 꼴로: 1,130억 원, 46.9억 원, 3.75억 원, 960만 원(게임처럼 10억 미만은 소수 둘째 자리까지) */
 export function formatWon(won: number): string {
   const size = Math.abs(won)
   const sign = won < 0 ? '-' : ''
   const comma = (n: number): string => n.toLocaleString('en-US')
+  const trim = (text: string): string => text.replace(/\.?0+$/, '')
   if (size >= 1e10) return `${sign}${comma(Math.round(size / 1e8))}억 원`
-  if (size >= 1e8) return `${sign}${(size / 1e8).toFixed(1).replace(/\.0$/, '')}억 원`
+  if (size >= 1e9) return `${sign}${trim((size / 1e8).toFixed(1))}억 원`
+  if (size >= 1e8) return `${sign}${trim((size / 1e8).toFixed(2))}억 원`
   if (size >= 1e4) return `${sign}${comma(Math.round(size / 1e4))}만 원`
   return `${sign}${comma(Math.round(size))}원`
+}
+
+/** 게임의 몸값 범위 "1,560억 원 - 2,350억 원"을 표에 맞게 "1,560~2,350억 원"으로 줄인다(단위가 다르거나 범위가 아니면 그대로) */
+export function shortRange(text: string): string {
+  const match = text.match(/^([\d.,]+)\s*(억|만)\s*원\s*-\s*([\d.,]+)\s*(억|만)\s*원$/)
+  return match && match[2] === match[4] ? `${match[1]}~${match[3]}${match[2]} 원` : text
 }
 
 /** 파운드 금액(세이브·계산에 쓰는 값)을 원화로 바꿔 짧게 적는다. 모르면 빈 글자. 이름은 옛것이다 */

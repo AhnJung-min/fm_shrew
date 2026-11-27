@@ -4,6 +4,7 @@ import type { LinkStatus } from '@shared/game'
 import { api } from '@/api'
 import { PlayerFace } from '@/components/PlayerFace'
 import '@/styles/gamecards.css'
+import { WON_RATE_TEXT } from '@shared/playerView'
 
 /** 이 시간마다 게임에 다시 묻는다(앱 쪽에서도 몇 분 기억해 두므로 게임에 부담은 거의 없다) */
 const REFRESH_MS = 3 * 60_000
@@ -124,7 +125,7 @@ function Finances(props: { snapshot: ClubSnapshot }) {
         ))}
       </dl>
       {props.snapshot.finances.some((item) => item.converted) ? (
-        <p className="gc-note">게임이 단위 없이 알려 준 금액은 게임의 기준 통화(파운드)로 보고 원화로 바꿔(1파운드 = 1,920원) 적었습니다. 게임 화면의 금액과 조금 다를 수 있습니다.</p>
+        <p className="gc-note">게임이 단위 없이 알려 준 금액은 게임의 기준 통화(파운드)로 보고 원화로 바꿔({WON_RATE_TEXT}) 적었습니다. 게임 화면의 금액과 조금 다를 수 있습니다.</p>
       ) : null}
       <Source at={props.snapshot.readAt} />
     </section>

@@ -1,7 +1,7 @@
 import { X } from 'lucide-react'
 import { useEffect, useState, type ReactNode } from 'react'
 import { GROUP_LABEL } from '@shared/fields'
-import { footSummary, formatDate, growthRoom, HIDDEN_HELP, hiddenBand } from '@shared/playerView'
+import { footSummary, formatDate, growthRoom, HIDDEN_HELP, hiddenBand, WON_RATE_TEXT } from '@shared/playerView'
 import type { CellValue, ColumnGroup, ColumnInfo, PlayerRow } from '@shared/types'
 import type { PlayerProfile, SaveAttributeId } from '@shared/world'
 import { api } from '@/api'
@@ -199,7 +199,7 @@ function Profile(props: { profile: PlayerProfile; rangeOf: (id: string) => CellV
         <p className="pl-note">
           {profile.moneyFrom === 'game'
             ? '몸값과 주급은 게임이 보여 주는 금액입니다.'
-            : '몸값과 주급은 세이브에 적힌 기준 금액(파운드)을 원화로 바꿔(1파운드 = 1,920원) 보여 줍니다.'}
+            : `몸값과 주급은 세이브에 적힌 기준 금액(파운드)을 원화로 바꿔(${WON_RATE_TEXT}) 보여 줍니다.`}
         </p>
       </section>
 

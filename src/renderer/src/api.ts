@@ -1,6 +1,7 @@
 import type { LinkStatus, SaveFileInfo } from '@shared/game'
 import type { Api, BackupEntry, Settings } from '@shared/types'
 import { mockCandidates, mockClub, mockDashboard, mockEditorList, mockEditorPlayer, mockProfile, mockSeason, mockSquad } from './lib/mockWorld'
+import { WON_RATE_TEXT } from '@shared/playerView'
 
 declare global {
   interface Window {
@@ -114,8 +115,8 @@ function createMockApi(): Api {
     // 세이브 전체: 미리보기에서는 지어낸 선수들로 화면만 보여 준다
     worldCandidates: async (query) => mockCandidates(query, applied === null),
     worldMarket: async (uids) => {
-      if (gameOff) return { ok: false, message: '게임이 꺼져 있어 몸값과 주급은 세이브에 적힌 값(파운드)을 원화로 바꿔(1파운드 = 1,920원) 보여 줍니다.', players: [] }
-      if (oldPlugin) return { ok: false, message: '몸값과 주급은 세이브에 적힌 값(파운드)을 원화로 바꿔(1파운드 = 1,920원) 보여 줍니다. 게임이 보여 주는 금액과 나라·구단 이름은 FM을 완전히 껐다가 다시 켜면 채워집니다.', players: [] }
+      if (gameOff) return { ok: false, message: `게임이 꺼져 있어 몸값과 주급은 세이브에 적힌 값(파운드)을 원화로 바꿔(${WON_RATE_TEXT}) 보여 줍니다.`, players: [] }
+      if (oldPlugin) return { ok: false, message: `몸값과 주급은 세이브에 적힌 값(파운드)을 원화로 바꿔(${WON_RATE_TEXT}) 보여 줍니다. 게임이 보여 주는 금액과 나라·구단 이름은 FM을 완전히 껐다가 다시 켜면 채워집니다.`, players: [] }
       await new Promise((resolve) => setTimeout(resolve, 400))
       const nations = ['대한민국', '브라질', '프랑스', '잉글랜드', '아르헨티나', '독일']
       return {

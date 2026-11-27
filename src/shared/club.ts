@@ -157,21 +157,36 @@ export function facilitiesOf(fields: GameFields | null): FacilityItem[] {
   })
 }
 
-function moneyOf(shown: unknown, raw: unknown, label: string, id: FinanceId): FinanceItem {
+function moneyOf(shown: unknown, raw: unknown, label: string, id: FinanceId, prefix = ''): FinanceItem {
   const display = cleanText(shown)
   const plain = cleanText(raw)
   const sort = numberOf(raw) ?? numberOf(shown)
   if (display !== null) return { id, label, text: display, converted: false, sort }
   if (plain === null) return { id, label, text: null, converted: false, sort: null }
-  if (isPlainNumber(plain)) return { id, label, text: poundsText(Number(plain)), converted: true, sort }
+  if (isPlainNumber(plain)) return { id, label, text: `${prefix}${poundsText(Number(plain))}`, converted: true, sort }
   return { id, label, text: plain, converted: false, sort }
+}
+
+/** 숫자만으로 된 글자는 천 단위 쉼표를 넣는다(60400 → 60,400) */
+function grouped(text: string | null): string | null {
+  return text !== null && /^\d+$/.test(text) ? Number(text).toLocaleString('en-US') : text
+}
+
+/** 게임의 수용 인원 글자("6.1276만석 전부 좌석")를 읽기 쉽게("61,276석, 전부 좌석") */
+export function capacityText(text: string | null): string | null {
+  if (text === null) return null
+  const match = text.match(/^([\d.]+)\s*만\s*석?\s*(.*)$/)
+  if (!match) return grouped(text)
+  const seats = Math.round(Number(match[1]) * 10_000).toLocaleString('en-US')
+  return match[2] ? `${seats}석, ${match[2]}` : `${seats}석`
 }
 
 export function financesOf(fields: GameFields | null): FinanceItem[] {
   const f = fields ?? {}
   return [
     moneyOf(undefined, f.transferBudget, '이적 예산', 'transferBudget'),
-    moneyOf(undefined, f.wageBudget, '임금 예산', 'wageBudget'),
+    // 임금 예산은 게임에서 주급 기준이다(같은 응답의 지출·남은 예산 글자가 "주급 …"으로 온다)
+    moneyOf(undefined, f.wageBudget, '임금 예산', 'wageBudget', '주급 '),
     moneyOf(f.wageSpendText, f.wageSpend, '지금 쓰는 임금', 'wageSpend'),
     moneyOf(f.wageRemainingText, f.wageRemaining, '남은 임금 예산', 'wageRemaining'),
     { ...moneyOf(undefined, f.balance, '구단 잔고', 'balance'), note: cleanText(f.balanceStatus) }
@@ -186,9 +201,9 @@ export function profileOf(fields: GameFields | null): ClubProfile {
     division: cleanText(f.division),
     leaguePosition: cleanText(f.leaguePosition),
     stadium: cleanText(f.stadium),
-    capacity: cleanText(f.capacity),
-    averageAttendance: cleanText(f.averageAttendance),
-    seasonTickets: cleanText(f.seasonTickets),
+    capacity: capacityText(cleanText(f.capacity)),
+    averageAttendance: grouped(cleanText(f.averageAttendance)),
+    seasonTickets: grouped(cleanText(f.seasonTickets)),
     founded: cleanText(f.founded)
   }
 }
@@ -236,14 +251,20 @@ export interface PlayerHealth {
 /** "없음"을 뜻하는 말(징계 글자가 이것이면 징계가 아니다) */
 const NOTHING = /^(0|none|no ban|n\/a|없음|해당 없음|-)$/i
 
-/** 징계 중인지, 그리고 보여 줄 글자 */
+/**
+ * 징계 중인지, 그리고 보여 줄 글자.
+ * 켜진 게임에서 확인(2026-11-27): 징계가 없는 선수도 게임은 이유 -1과 기본 기간 글자("1경기", "2경기")를 돌려준다.
+ * 그래서 이유가 -1이면 기간 글자와 상관없이 징계가 아니다. 이유가 숫자(게임 안의 번호)면 글자로는 보여 주지 않는다.
+ */
 export function suspensionOf(fields: GameFields): { suspended: boolean; text: string | null } {
   const left = cleanText(fields.banLeft)
   const reason = cleanText(fields.banReason)
+  if (reason !== null && /^-1$/.test(reason)) return { suspended: false, text: null }
+  const reasonText = reason !== null && !isPlainNumber(reason) ? reason : null
   if (left !== null) {
     const count = isPlainNumber(left) ? Number(left) : null
     const suspended = count !== null ? count > 0 : !NOTHING.test(left)
-    return { suspended, text: suspended ? [reason, count !== null ? `${count}경기 남음` : left].filter(Boolean).join(', ') || null : null }
+    return { suspended, text: suspended ? [reasonText, count !== null ? `${count}경기 남음` : left].filter(Boolean).join(', ') || null : null }
   }
   if (reason !== null && !NOTHING.test(reason)) return { suspended: true, text: reason }
   return { suspended: false, text: null }

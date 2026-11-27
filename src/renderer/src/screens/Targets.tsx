@@ -1,7 +1,7 @@
 import { PencilRuler, Search } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { FIELDS } from '@shared/fields'
-import { formatPounds as pounds } from '@shared/playerView'
+import { formatPounds as pounds, shortRange, WON_RATE_TEXT } from '@shared/playerView'
 import { RECOMMEND_TIER_LABEL, REALISM_LABEL, TERM_HELP } from '@shared/recommend'
 import { ROLE_BY_ID, ROLES } from '@shared/roles'
 import { analyseTactic } from '@shared/tactic'
@@ -47,12 +47,12 @@ const VALUE: ColumnInfo = {
   ...info(
     '몸값',
     'value',
-    '게임이 보여 주는 몸값(스카우트하지 않은 선수는 범위가 넓다). 게임에 묻기 전이나 FM이 꺼져 있을 때는 세이브에 적힌 기준 몸값을 원화로 바꾼 값(1파운드 = 1,920원)',
+    `게임이 보여 주는 몸값(스카우트하지 않은 선수는 범위가 넓다). 게임에 묻기 전이나 FM이 꺼져 있을 때는 세이브에 적힌 기준 몸값을 원화로 바꾼 값(${WON_RATE_TEXT})`,
     true
   ),
   width: 156
 }
-const WAGE: ColumnInfo = { ...info('주급', 'wage', '지금 받는 주급. 게임에 묻기 전이나 FM이 꺼져 있을 때는 세이브에 적힌 값을 원화로 바꾼 값(1파운드 = 1,920원)', true), width: 116 }
+const WAGE: ColumnInfo = { ...info('주급', 'wage', `지금 받는 주급. 게임에 묻기 전이나 FM이 꺼져 있을 때는 세이브에 적힌 값을 원화로 바꾼 값(${WON_RATE_TEXT})`, true), width: 116 }
 const STATUS = info('입지', 'squadStatus', '계약에 적힌 팀 내 입지(구단이 약속한 역할)', false)
 const CONTRACT = info('계약 만료', 'contractEnd', '계약이 끝나는 날', true)
 const NATION = info('국적', 'nation', '국적', false)
@@ -94,7 +94,7 @@ function toRow(row: CandidateRow, idx: number, market: PlayerMarket | undefined)
     [CLUB.header]: text(row.club || market?.club || '알 수 없음'),
     // 정렬은 어느 쪽이든 같은 기준 몸값(파운드)으로 한다
     [VALUE.header]: market?.value
-      ? sortable(market.value, market.valueSort ?? row.value ?? undefined)
+      ? sortable(shortRange(market.value), market.valueSort ?? row.value ?? undefined)
       : row.value !== null
         ? { raw: pounds(row.value), num: row.value }
         : text(''),
@@ -415,7 +415,7 @@ export function Targets(props: {
                   </p>
                   {gameOff && (
                     <p className="muted">
-                      게임이 꺼져 있어 몸값과 주급은 세이브에 적힌 값(파운드)을 원화로 바꿔(1파운드 = 1,920원) 보여 줍니다. FM을 켜고 세이브를 불러오면 게임이 보여 주는 값으로 바뀝니다.
+                      게임이 꺼져 있어 몸값과 주급은 세이브에 적힌 값(파운드)을 원화로 바꿔({WON_RATE_TEXT}) 보여 줍니다. FM을 켜고 세이브를 불러오면 게임이 보여 주는 값으로 바뀝니다.
                     </p>
                   )}
                 </div>

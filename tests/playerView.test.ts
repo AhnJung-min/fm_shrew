@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   footSummary,
   formatPounds,
+  shortRange,
   growthRoom,
   hiddenAttributes,
   hiddenBand,
@@ -46,14 +47,20 @@ describe('hiddenBand', () => {
 
 describe('formatPounds', () => {
   it('파운드 금액을 원화로 바꿔 게임과 같은 꼴로 쓰고 모르면 빈 글자', () => {
-    // 1파운드 = WON_PER_POUND(1,920)원
-    expect(formatPounds(25_000_000)).toBe('480억 원')
-    expect(formatPounds(600_000_000)).toBe('11,520억 원')
-    expect(formatPounds(2_400_000)).toBe('46.1억 원')
-    expect(formatPounds(180_000)).toBe('3.5억 원')
-    expect(formatPounds(208_334)).toBe('4억 원')
-    expect(formatPounds(5_000)).toBe('960만 원')
-    expect(formatPounds(3)).toBe('5,760원')
+    // 1파운드 = WON_PER_POUND(1,875)원. 켜진 게임에서 확인한 값: 기준 통화 4,000 → 750만 원, 200,000 → 3.75억 원
+    expect(formatPounds(4_000)).toBe('750만 원')
+    expect(formatPounds(200_000)).toBe('3.75억 원')
+    expect(formatPounds(120_000)).toBe('2.25억 원')
+    expect(formatPounds(180_000)).toBe('3.38억 원')
+    expect(formatPounds(25_000_000)).toBe('469억 원')
+    expect(formatPounds(600_000_000)).toBe('11,250억 원')
+    expect(formatPounds(2_400_000)).toBe('45억 원')
+    expect(formatPounds(213_334)).toBe('4억 원')
+    expect(formatPounds(5_000)).toBe('938만 원')
+    expect(formatPounds(3)).toBe('5,625원')
+    expect(shortRange('1,560억 원 - 2,350억 원')).toBe('1,560~2,350억 원')
+    expect(shortRange('970억 원')).toBe('970억 원')
+    expect(shortRange('900만 원 - 1.2억 원')).toBe('900만 원 - 1.2억 원')
     expect(formatPounds(0)).toBe('')
     expect(formatPounds(null)).toBe('')
   })

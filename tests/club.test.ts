@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   buildSnapshot,
+  capacityText,
   cleanText,
   facilitiesOf,
   financesOf,
@@ -57,10 +58,10 @@ describe('글자 읽기', () => {
   })
 
   it('금액을 짧게', () => {
-    expect(poundsText(3_200_000)).toBe('61.4억 원')
-    expect(poundsText(45_000_000)).toBe('864억 원')
-    expect(poundsText(62_000)).toBe('1.2억 원')
-    expect(poundsText(-1_500_000)).toBe('-28.8억 원')
+    expect(poundsText(3_200_000)).toBe('60억 원')
+    expect(poundsText(45_000_000)).toBe('844억 원')
+    expect(poundsText(62_000)).toBe('1.16억 원')
+    expect(poundsText(-1_500_000)).toBe('-28.1억 원')
   })
 
   it('별 숫자를 막대 길이로', () => {
@@ -108,11 +109,11 @@ describe('구단', () => {
   it('재정: 게임이 준 글자를 먼저, 숫자만 있으면 파운드로 보고 원화로 적는다', () => {
     const items = financesOf({ transferBudget: '3200000', wageBudget: '€1.5M', wageSpend: '1388000', wageSpendText: '€1.39M', balance: '-2500000', balanceStatus: '위험' })
     const by = Object.fromEntries(items.map((item) => [item.id, item]))
-    expect(by.transferBudget).toMatchObject({ text: '61.4억 원', converted: true, sort: 3_200_000 })
+    expect(by.transferBudget).toMatchObject({ text: '60억 원', converted: true, sort: 3_200_000 })
     expect(by.wageBudget).toMatchObject({ text: '€1.5M', converted: false, sort: 1_500_000 })
     expect(by.wageSpend).toMatchObject({ text: '€1.39M', converted: false })
     expect(by.wageRemaining).toMatchObject({ text: null, sort: null })
-    expect(by.balance).toMatchObject({ text: '-48억 원', note: '위험' })
+    expect(by.balance).toMatchObject({ text: '-46.9억 원', note: '위험' })
   })
 })
 
@@ -229,11 +230,33 @@ describe('buildSnapshot', () => {
     })
     expect(snapshot.ok).toBe(true)
     expect(snapshot.profile?.division).toBe('1부')
-    expect(snapshot.finances[0].text).toBe('38.4억 원')
+    expect(snapshot.finances[0].text).toBe('37.5억 원')
     expect(snapshot.players).toHaveLength(2)
     expect(snapshot.players[0].injured).toBe(true)
     expect(snapshot.players[1].read).toBe(false)
     expect(snapshot.report?.answered).toBe(1)
     expect(snapshot.paths).toEqual({ division: 'Division.Name', injured: 'IsInjured' })
+  })
+})
+
+describe('켜진 게임에서 확인한 것(2026-11-27, 플러그인 0.11.0)', () => {
+  it('징계: 이유가 -1이면 기본 기간 글자("1경기")가 와도 징계가 아니다', () => {
+    expect(suspensionOf({ banReason: '-1', banLeft: '1경기', suspensions: '0' })).toEqual({ suspended: false, text: null })
+    expect(suspensionOf({ banReason: '-1', banLeft: '2경기' }).suspended).toBe(false)
+    expect(suspensionOf({ banReason: '3', banLeft: '2' })).toEqual({ suspended: true, text: '2경기 남음' })
+  })
+
+  it('구단 프로필: 수용 인원 "6.1276만석"은 61,276석으로, 숫자에는 쉼표', () => {
+    expect(capacityText('6.1276만석 전부 좌석')).toBe('61,276석, 전부 좌석')
+    expect(capacityText('54074')).toBe('54,074')
+    const profile = profileOf({ averageAttendance: '60400', seasonTickets: '30000', capacity: '6.1276만석' })
+    expect(profile.averageAttendance).toBe('60,400')
+    expect(profile.seasonTickets).toBe('30,000')
+    expect(profile.capacity).toBe('61,276석')
+  })
+
+  it('임금 예산은 주급으로 적는다(게임의 지출·남은 예산 글자가 주급이다)', () => {
+    const by = Object.fromEntries(financesOf({ wageBudget: '5507680' }).map((item) => [item.id, item]))
+    expect(by.wageBudget.text).toBe('주급 103억 원')
   })
 })
