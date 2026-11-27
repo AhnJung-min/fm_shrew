@@ -451,6 +451,52 @@ internal static unsafe class GameData
         }
     }
 
+    /// <summary>걸어 둔 경로의 지금 값(게임 나무에서 바로 읽는다). 값이 도착하지 않았으면 null. 메인 스레드에서 부른다.</summary>
+    private static Il2CppSystem.Object Held(string path)
+    {
+        // 나무에 없는 경로를 Get하면 게임 쪽에서 예외가 나므로, 우리가 걸어 두었고 값이 온 경로만 읽는다
+        if (!Has(path)) return null;
+        var bindings = Tree();
+        if (bindings == null) return null;
+        var value = bindings.Get(Span(path));
+        return value == null || value.IsNull ? null : value.Get();
+    }
+
+    /// <summary>값이 게임 날짜(FM.GamePlugin.GameDate)면 "yyyy-MM-dd". 날짜 풀이는 게임의 함수(ToDateTime)에 맡긴다.</summary>
+    public static string DateOf(string path)
+    {
+        try
+        {
+            var held = Held(path);
+            if (held == null || Il2.ClassName(Il2.ClassOf(held.Pointer)) != "FM.GamePlugin.GameDate") return null;
+            var when = FM.GamePlugin.GameDate.ToDateTime(held.Unbox<FM.GamePlugin.GameDate>());
+            return $"{when.Year:D4}-{when.Month:D2}-{when.Day:D2}";
+        }
+        catch (Exception error)
+        {
+            Plugin.Logger.LogWarning($"game data: date {path}: {error.Message}");
+            return null;
+        }
+    }
+
+    /// <summary>값이 사람·팀 같은 기록 참조면 그 순번(앱이 쓰는 팀 번호와 같다). 아니면 null.</summary>
+    public static int? RecordIndexOf(string path)
+    {
+        try
+        {
+            var reference = Held(path)?.TryCast<SI.Interop.InteropReference>();
+            if (reference == null || !reference.TryGetValue(RecordPairId, out int record)) return null;
+            var mask = FM.UI.DatabaseRecordReference.IndexMask;
+            if (mask <= 0) mask = 0x00FFFFFF;
+            return record & mask;
+        }
+        catch (Exception error)
+        {
+            Plugin.Logger.LogWarning($"game data: record {path}: {error.Message}");
+            return null;
+        }
+    }
+
     /// <summary>개발용. 걸어 둔 경로와 지금 값을 적는다.</summary>
     public static string Dump()
     {

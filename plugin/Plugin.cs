@@ -12,7 +12,7 @@ namespace FmBojwagwan.Bridge;
 public class Plugin : BasePlugin
 {
     public const string Id = "fm.bojwagwan.bridge";
-    public const string Version = "0.12.0";
+    public const string Version = "0.13.0";
 
     internal static ManualLogSource Logger = null!;
 
@@ -24,7 +24,7 @@ public class Plugin : BasePlugin
             BridgeFiles.Prepare();
             Server.Start();
             AddComponent<BridgeBehaviour>();
-            Log.LogInfo($"FM Bojwagwan Bridge {Version} ready on {Server.Host}:{Server.Port}");
+            Log.LogInfo($"FM Bojwagwan Bridge {Version} ready on {Server.Host}:{Server.Port}" + (Server.DevEndpoints ? " (dev endpoints on)" : ""));
         }
         catch (Exception error)
         {
@@ -43,6 +43,7 @@ public class BridgeBehaviour : MonoBehaviour
         MainThread.Pump();
         TalkBox.Tick();
         MatchCards.Tick();
+        RatingsRecorder.Tick();
         LiveState.Tick();
         Watcher.Tick();
     }

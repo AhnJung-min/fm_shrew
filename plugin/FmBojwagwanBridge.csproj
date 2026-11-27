@@ -5,6 +5,7 @@
     게임과 BepInEx가 설치된 폴더의 어셈블리를 그대로 참조한다(따로 내려받는 것은 .NET 6 참조 팩뿐이다).
     게임 폴더가 기본 위치가 아니면:  dotnet build -p:GameDir="D:\...\Football Manager 26"
     빌드한 뒤 게임 폴더에 넣으려면:  dotnet build -c Release -p:Deploy=true
+    게임 구조를 조사하는 개발용 창구까지 넣으려면:  -p:DevEndpoints=true (일반 배포본에는 넣지 않는다)
   -->
   <PropertyGroup>
     <TargetFramework>net6.0</TargetFramework>
@@ -22,6 +23,10 @@
     <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
     <GameDir Condition="'$(GameDir)' == ''">C:\Program Files (x86)\Steam\steamapps\common\Football Manager 26</GameDir>
     <PluginDir>$(GameDir)\BepInEx\plugins\FmBojwagwanBridge</PluginDir>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(DevEndpoints)' == 'true'">
+    <DefineConstants>$(DefineConstants);DEV_ENDPOINTS</DefineConstants>
   </PropertyGroup>
 
   <ItemGroup>
@@ -45,6 +50,8 @@
     <GameReference Include="$(GameDir)\BepInEx\interop\SI.UI.dll" />
     <GameReference Include="$(GameDir)\BepInEx\interop\SI.Interop.dll" />
     <GameReference Include="$(GameDir)\BepInEx\interop\FM.UI.dll" />
+    <!-- 게임 날짜(GameDate)를 달력 날짜로 풀 때 -->
+    <GameReference Include="$(GameDir)\BepInEx\interop\FM.GamePlugin.dll" />
     <Reference Include="@(GameReference)" Private="false" />
   </ItemGroup>
 

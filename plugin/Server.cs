@@ -7,6 +7,7 @@ namespace FmBojwagwan.Bridge;
 
 /// <summary>
 /// 이 PC 안에서만 열리는 작은 HTTP 서버. 요청마다 암호(토큰)를 확인하고, 브라우저에서 온 요청은 받지 않는다.
+/// 게임 구조를 조사하는 개발용 창구는 -p:DevEndpoints=true로 빌드한 것에만 들어 있다(일반 배포본에는 없다).
 /// </summary>
 internal static class Server
 {
@@ -14,6 +15,12 @@ internal static class Server
 
     public static int Port { get; private set; }
     public static string Host { get; private set; } = "127.0.0.1";
+
+#if DEV_ENDPOINTS
+    public const bool DevEndpoints = true;
+#else
+    public const bool DevEndpoints = false;
+#endif
 
     private static HttpListener listener;
     private static byte[] token = Array.Empty<byte>();
@@ -70,9 +77,11 @@ internal static class Server
     {
         var status = 200;
         string body;
+        var path = "/";
         try
         {
             var request = context.Request;
+            path = request.Url?.AbsolutePath ?? "/";
             if (request.Headers["Origin"] != null) throw new HttpError(403, "browser requests are not allowed");
             var given = request.Headers["X-Bridge-Token"] ?? request.QueryString["token"] ?? "";
             if (!CryptographicOperations.FixedTimeEquals(Encoding.ASCII.GetBytes(given), token))
@@ -84,7 +93,7 @@ internal static class Server
                 sent = reader.ReadToEnd();
             }
             // 모든 선수의 지금 값은 양이 많아 글이 아니라 바이트 덩어리로 준다
-            if (request.Url?.AbsolutePath == "/live/all")
+            if (path == "/live/all")
             {
                 var packed = LiveMemory.All(request.QueryString["rescan"] is "1" or "true");
                 context.Response.StatusCode = 200;
@@ -94,7 +103,7 @@ internal static class Server
                 context.Response.Close();
                 return;
             }
-            body = Route(request.Url?.AbsolutePath ?? "/", request.QueryString, sent);
+            body = Route(path, request.QueryString, sent);
         }
         catch (HttpError error)
         {
@@ -108,8 +117,10 @@ internal static class Server
         }
         catch (Exception error)
         {
+            // 응답에는 요약만 싣고, 자세한 내용은 BepInEx 기록에 남긴다(개편 N-03)
             status = 500;
-            body = error.ToString();
+            body = Summary(error);
+            Plugin.Logger.LogWarning($"request {path} failed: {error}");
         }
 
         try
@@ -125,6 +136,35 @@ internal static class Server
         {
             // 받는 쪽이 먼저 끊었다
         }
+    }
+
+    /// <summary>예외의 종류와 첫 줄만(게임 쪽 호출 경로나 메모리 주소를 응답에 싣지 않는다).</summary>
+    private static string Summary(Exception error)
+    {
+        var inner = error.InnerException ?? error;
+        var line = (inner.Message ?? "").Split('\n')[0].Trim();
+        if (line.Length > 160) line = line[..160];
+        return $"{inner.GetType().Name}: {line}";
+    }
+
+    /// <summary>
+    /// 지금 게임이 네트워크(온라인) 게임인지. 게임이 알려 주는 game.IsOnlineGame을 읽는다.
+    /// 1초 안에 알 수 없으면 false(막지 않는다)로 보고 기록에 남긴다.
+    /// </summary>
+    private static bool OnlineGame()
+    {
+        for (var i = 0; i < 10; i++)
+        {
+            var text = MainThread.Run(() =>
+            {
+                GameData.Want("game.IsOnlineGame");
+                return GameData.Text("game.IsOnlineGame") ?? "";
+            });
+            if (text.Length > 0) return text == "True";
+            Thread.Sleep(100);
+        }
+        Plugin.Logger.LogWarning("live edit: could not tell whether this is an online game");
+        return false;
     }
 
     private static string Route(string path, NameValueCollection query, string sent)
@@ -149,7 +189,7 @@ internal static class Server
             case "/talk/reply":
                 return TalkBox.Reply(Number("seq", 0), sent);
 
-            // 화면 구조
+            // 화면 구조(직접 답변이 지금 화면을 알 때 쓴다)
             case "/tree":
                 return MainThread.Run(() => UiTree.Dump(new UiTree.Options
                 {
@@ -159,10 +199,31 @@ internal static class Server
                     WithPaths = Flag("paths"),
                     RootId = Number("root", 0)
                 }));
+
+            // 에디터의 실시간 반영: 켜져 있는 게임의 메모리에서 선수 기록을 읽고 고친다(이 스레드에서 돈다)
+            case "/live/player":
+                return LiveMemory.Player(Need("uid"));
+            case "/live/set":
+                // 네트워크 게임에서는 쓰지 않는다(개편 N-03)
+                if (OnlineGame()) throw new HttpError(403, "online game: editor writes are off");
+                return LiveMemory.Set(Need("uid"), query["positions"], query["attributes"], query["ca"], query["pa"]);
+            // 선수의 몸값·주급·계약·국적, 팀·나라의 이름: 게임에 물어 받아 온다(이 스레드에서 기다린다)
+            case "/people":
+                return PersonInfo.People(Need("uids"));
+            case "/names":
+                return PersonInfo.Names(Need("kind"), Need("ids"));
+            // 내 구단의 프로필·시설·재정, 1군 선수들의 건강과 경기력(게임에 물어 받아 온다)
+            case "/club":
+                return ClubInfo.Club(Need("team"));
+            case "/health":
+                return ClubInfo.Health(Need("uids"), query["team"]);
+
+#if DEV_ENDPOINTS
+            // ── 아래는 개발용 창구(게임 구조 조사). -p:DevEndpoints=true로 빌드한 것에만 있다 ──
             case "/dump":
                 return MainThread.Run(() => Watcher.DumpToFile(query["tag"] ?? "manual"));
 
-            // 게임 객체 조회(개발용)
+            // 게임 객체 조회
             case "/inspect":
                 return MainThread.Run(() => Il2.Inspect(Need("id"), Flag("values"), Flag("deep")));
             case "/get":
@@ -180,19 +241,19 @@ internal static class Server
                     return "ok";
                 });
 
-            // 게임이 화면에 넣어 주는 값들(개발용, 읽기만)
+            // 게임이 화면에 넣어 주는 값들(읽기만)
             case "/data":
                 return MainThread.Run(() => DataTree.Dump(query["path"], Number("depth", 3), Number("max", 600)), 30_000);
             case "/datadump":
                 return MainThread.Run(() => Watcher.DumpDataToFile(query["tag"] ?? "manual"), 30_000);
 
-            // 대상마다 달라고 할 수 있는 항목 이름(개발용, 읽기만)
+            // 대상마다 달라고 할 수 있는 항목 이름(읽기만)
             case "/props":
                 return MainThread.Run(() => DataNames.Props(Need("type"), query["match"]), 60_000);
             case "/owners":
                 return MainThread.Run(() => DataNames.Owners(Need("match"), Il2.Classes("^FM[.]UI[.][A-Za-z0-9]+Reference$", 3000)), 60_000);
 
-            // 화면에 없는 값을 게임에 청해 보기(개발용)
+            // 화면에 없는 값을 게임에 청해 보기
             case "/bind":
                 return MainThread.Run(() => DataProbe.Bind(Need("path")));
             case "/bound":
@@ -201,25 +262,10 @@ internal static class Server
                 return MainThread.Run(() => DataProbe.Alias(Need("name"), Need("from"), Number("index", -1)));
             case "/probe/clear":
                 return MainThread.Run(DataProbe.Clear);
-            // 에디터의 실시간 반영: 켜져 있는 게임의 메모리에서 선수 기록을 읽고 고친다(이 스레드에서 돈다)
-            case "/live/player":
-                return LiveMemory.Player(Need("uid"));
-            case "/live/set":
-                return LiveMemory.Set(Need("uid"), query["positions"], query["attributes"], query["ca"], query["pa"]);
-            // 선수의 몸값·주급·계약·국적, 팀·나라의 이름: 게임에 물어 받아 온다(이 스레드에서 기다린다)
-            case "/people":
-                return PersonInfo.People(Need("uids"));
-            case "/names":
-                return PersonInfo.Names(Need("kind"), Need("ids"));
-            // 내 구단의 프로필·시설·재정, 1군 선수들의 건강과 경기력(게임에 물어 받아 온다)
-            case "/club":
-                return ClubInfo.Club(Need("team"));
-            case "/health":
-                return ClubInfo.Health(Need("uids"), query["team"]);
-            // 개발용: 한 팀이나 선수에 임의의 항목 경로를 청해 본다(조건 값 ctx, 목록 list·items는 0.12.0부터)
+            // 한 팀이나 선수에 임의의 항목 경로를 청해 본다(조건 값 ctx, 목록 list·items는 0.12.0부터)
             case "/fields":
                 return ClubInfo.Fields(Need("kind"), Need("id"), Need("f"), query["team"], query["ctx"], query["list"], query["items"], Number("max", 40));
-            // 개발용: 번호로 선수를 가리키는 마디를 올린다. 그 뒤 /bind로 항목을 청해 본다
+            // 번호로 선수를 가리키는 마디를 올린다. 그 뒤 /bind로 항목을 청해 본다
             case "/alias/person":
             {
                 var name = Need("name");
@@ -227,7 +273,7 @@ internal static class Server
                 if (!uint.TryParse(Need("uid"), out var uid) || !LiveMemory.PersonIndex(uid, out var index)) return "player not found";
                 return MainThread.Run(() => GameData.PutRecord(name, GameData.RecordKind.Person, index) ? $"{name} = person {index}" : "failed");
             }
-            // 메모리 조사(개발용, 읽기만)
+            // 메모리 조사(읽기만)
             case "/mem/find":
                 return LiveMemory.Find(Need("hex"), Number("max", 20));
             case "/mem/dump":
@@ -237,13 +283,14 @@ internal static class Server
             case "/gamedata":
                 return MainThread.Run(GameData.Dump);
 
-            // 견본 카드 띄우기(개발용): kind = goal, multi, hat, best
+            // 견본 카드 띄우기: kind = goal, multi, hat, best
             case "/card/test":
                 return MainThread.Run(() => MatchCards.Test(query["kind"] ?? "goal", query["person"]));
 
             // 누르기(실험)
             case "/click":
                 return MainThread.Run(() => Clicker.Click(Number("id", 0), query["mode"] ?? "clickable"));
+#endif
 
             default:
                 throw new HttpError(404, "unknown path");

@@ -104,6 +104,13 @@ internal static unsafe class LiveMemory
     private static bool Read(long address, byte* into, int length) =>
         ReadProcessMemory(GetCurrentProcess(), (IntPtr)address, into, (IntPtr)length, out var read) && (long)read == length;
 
+    private static byte[] Copy(byte* from, int offset, int length)
+    {
+        var copy = new byte[length];
+        for (var i = 0; i < length; i++) copy[i] = from[offset + i];
+        return copy;
+    }
+
     private static bool Write(long address, byte[] from)
     {
         fixed (byte* buffer = from)
@@ -439,13 +446,35 @@ internal static unsafe class LiveMemory
             var newPa = pa ?? *(ushort*)(scratch + Lead + PaAt);
             if (newCa > newPa) throw new HttpError(400, "ca above pa");
 
-            var ok = true;
-            if (positions != null) ok &= Write(block, positions);
-            if (attributes != null) ok &= Write(block + Positions, attributes);
-            if (ca != null) ok &= Write(block + CaAt, BitConverter.GetBytes((ushort)ca.Value));
-            if (pa != null) ok &= Write(block + PaAt, BitConverter.GetBytes((ushort)pa.Value));
-            Plugin.Logger.LogInfo($"live edit: player {uid}, positions {positions != null}, attributes {attributes != null}, ca {ca}, pa {pa}, ok {ok}");
-            if (!ok) throw new HttpError(500, "write failed");
+            // 쓰기 전 값(Locate가 scratch에 읽어 둔 기록)을 남겨 두고, 중간에 실패하면 앞에서 쓴 것을 되돌린다(개편 A-15)
+            var before = scratch + Lead;
+            var steps = new List<(string Name, long At, byte[] Value, byte[] Old)>();
+            if (positions != null) steps.Add(("positions", block, positions, Copy(before, 0, Positions)));
+            if (attributes != null) steps.Add(("attributes", block + Positions, attributes, Copy(before, Positions, Attributes)));
+            if (ca != null) steps.Add(("ca", block + CaAt, BitConverter.GetBytes((ushort)ca.Value), Copy(before, CaAt, 2)));
+            if (pa != null) steps.Add(("pa", block + PaAt, BitConverter.GetBytes((ushort)pa.Value), Copy(before, PaAt, 2)));
+
+            var done = new List<(string Name, long At, byte[] Value, byte[] Old)>();
+            string failedAt = null;
+            foreach (var step in steps)
+            {
+                if (!Write(step.At, step.Value))
+                {
+                    failedAt = step.Name;
+                    break;
+                }
+                done.Add(step);
+            }
+            if (failedAt != null)
+            {
+                var restored = true;
+                for (var i = done.Count - 1; i >= 0; i--) restored &= Write(done[i].At, done[i].Old);
+                Plugin.Logger.LogWarning($"live edit: player {uid}, write failed at {failedAt}, rolled back {done.Count} part(s), restored {restored}");
+                throw new HttpError(500,
+                    "{\"error\":\"write failed\",\"failedAt\":\"" + failedAt + "\",\"rolledBack\":[" +
+                    string.Join(",", done.Select(step => "\"" + step.Name + "\"")) + "],\"restored\":" + (restored ? "true" : "false") + "}");
+            }
+            Plugin.Logger.LogInfo($"live edit: player {uid}, positions {positions != null}, attributes {attributes != null}, ca {ca}, pa {pa}, ok");
             var after = Load(uid, out _);
             return Describe(after ? 1 : 0, after);
         }
