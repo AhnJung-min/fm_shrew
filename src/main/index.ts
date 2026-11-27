@@ -1,7 +1,7 @@
 import { existsSync, mkdirSync, writeFileSync } from 'node:fs'
 import { basename, join } from 'node:path'
 import { pathToFileURL } from 'node:url'
-import { app, BrowserWindow, ipcMain, Menu, nativeImage, net, protocol, shell, Tray } from 'electron'
+import { app, BrowserWindow, ipcMain, Menu, nativeImage, net, protocol, session, shell, Tray } from 'electron'
 import type { AppStatus, Settings } from '@shared/types'
 import type { CandidateQuery, EditorEdit } from '@shared/world'
 import { BackupManager } from './backup'
@@ -9,6 +9,8 @@ import { ClubService } from './clubService'
 import { DashboardService } from './dashboardService'
 import { GameLink } from './gameLink'
 import { FaceFinder, imageRequestFrom, LogoFinder } from './graphics'
+import { isLocalRequest } from './netGuard'
+import { openableFolder } from './pathGuard'
 import { SeasonService } from './seasonService'
 import { SettingsStore } from './settings'
 import { TalkController } from './talk/controller'
@@ -110,11 +112,8 @@ function createWindow(): void {
     }
   })
 
-  // 바깥 링크는 앱 안에서 열지 않고 기본 브라우저로 보낸다
-  mainWindow.webContents.setWindowOpenHandler(({ url }) => {
-    if (/^https?:\/\//.test(url)) void shell.openExternal(url)
-    return { action: 'deny' }
-  })
+  // 새 창은 열지 않는다. 화면에 바깥 링크는 없고, 바깥 주소로는 나가지 않는다(N-08)
+  mainWindow.webContents.setWindowOpenHandler(() => ({ action: 'deny' }))
 
   const devUrl = process.env.ELECTRON_RENDERER_URL
   const route = process.env.FMB_SMOKE_ROUTE ? `#${process.env.FMB_SMOKE_ROUTE}` : ''
@@ -161,8 +160,10 @@ function registerIpc(): void {
     if (next.saveDir !== before.saveDir) await saveWatcher.start(next.saveDir)
     return next
   })
-  ipcMain.handle('shell:openPath', async (_event, path: string) => {
-    if (existsSync(path)) await shell.openPath(path)
+  ipcMain.handle('shell:openPath', async (_event, path: unknown) => {
+    // 세이브 폴더, 앱 데이터 폴더(백업 폴더가 그 안에 있다), 그 안의 폴더만 연다. 파일과 그 밖의 경로는 거절한다(N-03)
+    const folder = openableFolder(path, [settings.get().saveDir, join(app.getPath('userData'), 'backups'), app.getPath('userData')])
+    if (folder) await shell.openPath(folder)
   })
 
   // 게임 연결과 세이브 적용
@@ -249,7 +250,22 @@ if (!SMOKE_OUT && !app.requestSingleInstanceLock()) {
   app.on('second-instance', () => showWindow())
 }
 
+/** 화면(렌더러)이 이 PC 밖으로 요청을 보내거나 바깥 페이지로 옮겨 가는 것을 막는다(N-08). Claude 요청은 앱 본체가 따로 보낸다 */
+function guardOutbound(): void {
+  session.defaultSession.webRequest.onBeforeRequest((details, callback) => {
+    const local = isLocalRequest(details.url)
+    if (!local) console.warn('[net] 바깥 주소 요청을 막았습니다:', details.url)
+    callback({ cancel: !local })
+  })
+  app.on('web-contents-created', (_event, contents) => {
+    contents.on('will-navigate', (event, url) => {
+      if (!isLocalRequest(url)) event.preventDefault()
+    })
+  })
+}
+
 app.whenReady().then(async () => {
+  guardOutbound()
   // 사용자가 설치해 둔 얼굴 사진(페이스팩)과 구단 엠블럼. 파일을 읽기만 하고, 번호가 숫자일 때만 찾는다
   const graphicsDir = join(app.getPath('documents'), 'Sports Interactive', 'Football Manager 26', 'graphics')
   const finders = { face: new FaceFinder(graphicsDir), club: new LogoFinder(graphicsDir) }

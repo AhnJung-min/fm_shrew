@@ -2,6 +2,7 @@ import { existsSync, mkdirSync } from 'node:fs'
 import { copyFile, readdir, rename, rm, stat, utimes } from 'node:fs/promises'
 import { basename, join } from 'node:path'
 import type { BackupEntry, BackupList } from '@shared/types'
+import { isPlainFileName } from './pathGuard'
 
 /**
  * 세이브 자동 백업.
@@ -34,6 +35,11 @@ export function parseBackupName(fileName: string): Pick<BackupEntry, 'id' | 'sav
   const m = NAME.exec(fileName)
   if (!m) return null
   return { id: fileName, saveName: `${m[1]}.fm`, savedAt: parseStamp(m[2]).toISOString(), beforeRestore: Boolean(m[3]) }
+}
+
+/** 화면이 보낸 사본 이름이 쓸 수 있는 것인가: 폴더 이름이나 경로가 섞이지 않은, 우리 사본 모양의 이름(N-03) */
+export function isBackupId(id: unknown): id is string {
+  return isPlainFileName(id) && parseBackupName(id) !== null
 }
 
 export class BackupManager {
@@ -105,8 +111,8 @@ export class BackupManager {
    * 게임이 켜져 있으면 게임에서 그 세이브를 다시 불러와야 반영된다.
    */
   async restore(id: string): Promise<{ ok: boolean; message?: string; savePath?: string }> {
-    const parsed = parseBackupName(id)
-    const from = join(this.dir, id)
+    const parsed = isBackupId(id) ? parseBackupName(id) : null
+    const from = parsed ? join(this.dir, id) : ''
     if (!parsed || !existsSync(from)) return { ok: false, message: '사본을 찾지 못했습니다.' }
     const saveDir = this.getSaveDir()
     if (!existsSync(saveDir)) return { ok: false, message: `세이브 폴더가 없습니다: ${saveDir}` }
@@ -133,7 +139,7 @@ export class BackupManager {
   }
 
   async remove(id: string): Promise<void> {
-    if (!parseBackupName(id)) return
+    if (!isBackupId(id)) return
     await this.run(() => rm(join(this.dir, id), { force: true }))
   }
 }
