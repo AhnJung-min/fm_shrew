@@ -1,6 +1,8 @@
 import { existsSync, readdirSync, statSync } from 'node:fs'
 import { basename, join } from 'node:path'
-import { MARKET_PLUGIN, NEEDED_PLUGIN, NO_GAME, versionOlder, type ApplyResult, type GameStatus, type LinkStatus, type SaveFileInfo } from '@shared/game'
+import type { ExtendedLinkStatus } from '@shared/connect'
+import { MARKET_PLUGIN, NEEDED_PLUGIN, NO_GAME, versionOlder, type ApplyResult, type GameStatus, type SaveFileInfo } from '@shared/game'
+import { oldPluginNotice } from '@shared/pluginGates'
 import { gameNames, gameState, liveAll, NAMES_PER_REQUEST } from './talk/bridge'
 import { isSaveFile } from './watcher'
 import type { WorldService } from './worldService'
@@ -12,9 +14,8 @@ const POLL_MS = 3000
 const LIVE_EVERY_MS = 180_000
 
 const GAME_OFF = '게임이 꺼져 있어 세이브에 저장된 값을 보여 줍니다.'
-const oldPluginNote = (version: string): string =>
-  `게임에 올라가 있는 연결 플러그인이 옛 버전(${version || '알 수 없음'})이라 세이브에 저장된 값을 보여 줍니다. ` +
-  `FM을 완전히 껐다가 다시 켜면 새 버전(${NEEDED_PLUGIN})으로 바뀌고, 그때부터 게임의 지금 값을 읽고 고칠 수 있습니다.`
+/** 옛 플러그인 안내. 앱이 요구하는 버전은 shared/pluginGates.ts의 표에서 만든다(숫자를 여기 적지 않는다) */
+const oldPluginNote = (version: string): string => `${oldPluginNotice(version)} 그 전까지는 세이브에 저장된 값을 보여 줍니다.`
 
 const wait = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms))
 
@@ -37,7 +38,7 @@ export class GameLink {
   constructor(
     private readonly world: WorldService,
     private readonly saveDir: () => string,
-    private readonly notify: (status: LinkStatus) => void
+    private readonly notify: (status: ExtendedLinkStatus) => void
   ) {}
 
   /** 게임이 알려 준 내 팀 선수 이름 */
@@ -45,8 +46,8 @@ export class GameLink {
     return this.roster
   }
 
-  status(): LinkStatus {
-    return { game: this.game, data: this.world.status(), busy: this.busy }
+  status(): ExtendedLinkStatus {
+    return { game: this.game, data: this.world.status(), busy: this.busy, ...this.world.extras() }
   }
 
   private changed(): void {
@@ -133,8 +134,24 @@ export class GameLink {
         // 세이브를 다 읽었으면 바로 알린다. 게임의 지금 값을 받는 데는 몇 초 더 걸릴 수 있어, 그동안 화면이 비어 있지 않게
         this.changed()
         await this.pullLive(false)
-        const team = world.teamId === undefined ? ' 내 팀은 아직 찾지 못했습니다. 게임을 켜고 이 세이브를 불러오면 찾습니다.' : ''
-        return { ok: true, message: `“${basename(path)}”을 적용했습니다. 선수 ${world.count.toLocaleString()}명을 읽었습니다.${team}` }
+        const team = world.teamId === undefined ? ' 내 팀은 아직 모릅니다. 아래에서 내 구단을 고르거나, 게임을 켜고 이 세이브를 불러오세요.' : ''
+        const format = this.world.blocked() ? ' 세이브 형식이 바뀐 것 같아 점수 화면은 막았습니다.' : ''
+        return { ok: true, message: `“${basename(path)}”을 적용했습니다. 선수 ${world.count.toLocaleString()}명을 읽었습니다.${format}${team}` }
+      } catch (error) {
+        return { ok: false, message: error instanceof Error ? error.message : String(error) }
+      }
+    })
+  }
+
+  /** 사용자가 고른 구단을 이 세이브의 내 구단으로 정한다. 게임이 켜져 있으면 지금 값도 다시 받는다 */
+  chooseTeam(teamId: number): Promise<ApplyResult> {
+    return this.working(async () => {
+      try {
+        const result = this.world.chooseTeam(Number(teamId))
+        if (!result.ok) return result
+        this.changed()
+        await this.pullLive(false)
+        return result
       } catch (error) {
         return { ok: false, message: error instanceof Error ? error.message : String(error) }
       }
@@ -175,6 +192,8 @@ export class GameLink {
       return
     }
     this.world.retryTeam()
+    // 게임이 이 세이브의 다른 구단으로 들어가 있으면 게임이 맞다(사용자가 직접 고른 구단이 틀렸을 수 있다)
+    this.world.followGame()
     const data = this.world.status()
     // 게임이 다른 팀의 세이브를 불러와 있으면 값을 섞지 않는다
     const sameTeam = data.club.includes(this.game.team) || this.game.team.includes(data.club)

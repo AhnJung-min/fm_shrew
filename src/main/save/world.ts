@@ -1,5 +1,6 @@
 import { readFileSync } from 'node:fs'
 import { extractDatabase, extractFile, gameDateOf, openContainer } from './container'
+import { humanTeamsOf, summaryStrings } from './summary'
 import { contractInEffect, dateKey, findContracts, loanParent, signedContract } from './contracts'
 import {
   ATTRIBUTE_COUNT,
@@ -60,6 +61,12 @@ export interface ClubInfo {
   short: string
   /** 여자 구단인지(선수들의 성별 다수로 정함). 선수가 없는 구단은 고유 번호로 어림한 값 */
   women: boolean
+  /**
+   * 구단 기록의 나라 번호 칸 넷(없는 칸은 -1). 이 칸들이 어떤 나라를 뜻하는지는 아직 모른다(구단 고르기에서 나라 이름을 붙일 때만 쓴다).
+   */
+  nationFields?: number[]
+  /** 구단의 대표 팀(1군) 번호. 구단 기록의 팀 목록 첫 번호. 모르면 없다 */
+  mainTeam?: number
 }
 
 export interface SaveWorld {
@@ -109,6 +116,8 @@ export interface SaveWorld {
   teamId?: number
   /** 게임의 오늘. 내 팀을 찾았을 때만 안다 */
   gameDate: GameDate | null
+  /** 세이브의 요약에 감독이 맡은 것으로 적힌 팀 번호들(많이 겹친 순서). 못 읽었으면 없다 */
+  humanTeams?: number[]
 }
 
 interface ClubRecord extends ClubInfo {
@@ -149,8 +158,10 @@ function findClubs(db: Buffer, limit: number): ClubRecord[] {
     // 나라 번호 칸 넷: 하나 이상은 비어 있고(ffffffff) 나머지는 작은 번호다
     let empty = 0
     let small = 0
+    const nationFields: number[] = []
     for (let f = r + 13; f < r + 29; f += 4) {
       const value = db.readUInt32LE(f)
+      nationFields.push(value === NO_TEAM ? -1 : value)
       if (value === NO_TEAM) empty++
       else if (value < 5000) small++
     }
@@ -165,7 +176,7 @@ function findClubs(db: Buffer, limit: number): ClubRecord[] {
 
     const bodyAt = r + 47 + nameLength + shortLength
     // 머리의 번호(uid)는 앞 구단의 것이다. 자기 번호는 아래에서 다음 기록의 머리 번호로 채운다
-    clubs.push({ at: r, bodyAt, x, uid: 0, header: uid, name, short, women: false })
+    clubs.push({ at: r, bodyAt, x, uid: 0, header: uid, name, short, women: false, nationFields })
     r = bodyAt
   }
   for (let i = 0; i < clubs.length; i++) {
@@ -216,6 +227,7 @@ function mapTeams(db: Buffer, clubs: ClubRecord[], limit: number): Map<number, n
       const team = db.readUInt32LE(at + k * 4)
       // 대표 팀(첫 번호)은 덮어쓰고, 2군·유스 번호는 먼저 정해진 것이 없을 때만 적는다
       if (k === 0 || !teamClub.has(team)) teamClub.set(team, i)
+      if (k === 0) clubs[i].mainTeam = team
     }
   }
   return teamClub
@@ -316,7 +328,7 @@ export function buildWorld(db: Buffer, pickTeam?: (world: SaveWorld) => number |
     uids: new Uint32Array(count),
     teamIds: new Uint32Array(count),
     club: new Int32Array(count),
-    clubs: clubs.map(({ uid, name, short, women }) => ({ uid, name, short, women })),
+    clubs: clubs.map(({ uid, name, short, women, nationFields, mainTeam }) => ({ uid, name, short, women, nationFields, mainTeam })),
     ca: new Uint16Array(count),
     pa: new Uint16Array(count),
     value: new Uint32Array(count),
@@ -402,7 +414,11 @@ export function buildWorld(db: Buffer, pickTeam?: (world: SaveWorld) => number |
 export function readWorld(path: string, pickTeam?: (world: SaveWorld) => number | undefined): SaveWorld {
   const container = openContainer(readFileSync(path))
   const info = extractFile(container, 'game_info')
-  return buildWorld(extractDatabase(container), pickTeam, info ? gameDateOf(info) : null)
+  const world = buildWorld(extractDatabase(container), pickTeam, info ? gameDateOf(info) : null)
+  // 구단 고르기에서 감독이 맡았던 구단을 먼저 보여 주려고, 세이브 요약에 적힌 선수 이름으로 그 팀을 찾는다
+  const summary = extractFile(container, 'save_game_summary')
+  if (summary) world.humanTeams = humanTeamsOf(world, summaryStrings(summary))
+  return world
 }
 
 /**

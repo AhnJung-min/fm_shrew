@@ -90,7 +90,10 @@ describe('바깥으로 나갈 수 있는 길을 모두 센다(소스 검사)', (
     // 플러그인 창구의 주소는 localhost나 127.0.0.1뿐이다
     const bridge = sources.find((source) => source.file === 'main/talk/bridge.ts')!.text
     expect(bridge).toContain("raw.host === 'localhost' ? 'localhost' : '127.0.0.1'")
-    expect(bridge.match(/https?:\/\//g)).toEqual(['http://', 'http://'])
+    // 주소를 만드는 곳은 모두 못 박아 둔 bridge.host·bridge.port로 시작한다(https나 다른 주소가 끼면 실패)
+    const urls = bridge.match(/https?:\/\/[^`'"\s]*/g) ?? []
+    expect(urls.length).toBeGreaterThan(0)
+    for (const url of urls) expect(url.startsWith('http://${bridge.host}:${bridge.port}')).toBe(true)
   })
 
   it('저수준 네트워크 모듈, 웹소켓, 비콘, 바깥 링크 열기, 자동 갱신, 충돌 보고는 어디에도 없다', () => {

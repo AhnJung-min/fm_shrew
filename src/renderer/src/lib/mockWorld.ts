@@ -492,7 +492,7 @@ export function mockDashboard(empty: boolean, settings: { formation: string; slo
  * 실제 앱과 같은 변환(shared/club.ts)을 거치게 한다. 구단·경기장·금액은 모두 꾸며 낸 것이다.
  */
 export function mockClub(state: { empty: boolean; off: boolean; old: boolean }): ClubSnapshot {
-  if (state.empty) return emptySnapshot('noSave', '먼저 홈 화면에서 세이브를 골라 적용해 주세요.')
+  if (state.empty) return emptySnapshot('noSave', '먼저 시작 화면에서 세이브를 골라 적용해 주세요.')
   if (state.off) return emptySnapshot('off', 'FM이 켜져 있어야 구단 재정·시설과 선수단 건강을 읽을 수 있습니다. 게임을 켜고 세이브를 불러와 주세요.')
   if (state.old) return emptySnapshot('old', '이 정보는 게임 안 플러그인 0.11.0 이상에서 읽습니다(지금 올라가 있는 것은 0.8.0). FM을 완전히 껐다가 다시 켜 주세요.')
   const club: GameFields = {

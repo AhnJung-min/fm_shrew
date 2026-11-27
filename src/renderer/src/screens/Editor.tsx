@@ -1,6 +1,8 @@
-import { CircleAlert, RotateCcw, Search, Zap } from 'lucide-react'
+import { CircleAlert, RotateCcw, Search, Trash2, Zap } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
-import type { LinkStatus } from '@shared/game'
+import { EDITOR_FIELD_LABEL, type EditorApplyReport, type EditorPlayerResult } from '@shared/connect'
+import { versionOlder, type LinkStatus } from '@shared/game'
+import { EDITOR_SAFE_PLUGIN } from '@shared/pluginGates'
 import {
   abilityWord,
   footSummary,
@@ -18,7 +20,6 @@ import type { AttributeValue } from '@shared/roles'
 import {
   SAVE_ATTRIBUTE_ORDER,
   shownValue,
-  type EditorEdit,
   type EditorListItem,
   type EditorPlayer,
   type PlayerProfile
@@ -31,45 +32,11 @@ import { MetaLine } from '@/components/MetaLine'
 import { PlayerFace } from '@/components/PlayerFace'
 import { PositionMap } from '@/components/PositionMap'
 import { RadarChart } from '@/components/RadarChart'
+import { draftOf, editorStore, editsOf, useEditorState, type Draft } from '@/lib/editorStore'
 import { attrBand } from '@/lib/format'
 import '@/styles/player.css'
 
-/** 고치는 중인 값. 능력치는 저장값(1~100) 그대로 들고 있다 */
-interface Draft {
-  ca: number
-  pa: number
-  positions: number[]
-  attributes: number[]
-}
-
 const INDEX = new Map<string, number>(SAVE_ATTRIBUTE_ORDER.map((id, i) => [id, i]))
-
-const draftOf = (player: EditorPlayer): Draft => ({
-  ca: player.ca,
-  pa: player.pa,
-  positions: [...player.positions],
-  attributes: [...player.attributes]
-})
-
-const sameList = (a: number[], b: number[]): boolean => a.length === b.length && a.every((value, i) => value === b[i])
-
-function isChanged(player: EditorPlayer, draft: Draft): boolean {
-  return (
-    draft.ca !== player.ca ||
-    draft.pa !== player.pa ||
-    !sameList(draft.positions, player.positions) ||
-    !sameList(draft.attributes, player.attributes)
-  )
-}
-
-function toEdit(player: EditorPlayer, draft: Draft): EditorEdit {
-  const edit: EditorEdit = { uid: player.uid }
-  if (draft.ca !== player.ca) edit.ca = draft.ca
-  if (draft.pa !== player.pa) edit.pa = draft.pa
-  if (!sameList(draft.positions, player.positions)) edit.positions = draft.positions
-  if (!sameList(draft.attributes, player.attributes)) edit.attributes = draft.attributes
-  return edit
-}
 
 /** 에디터의 선수 카드: 머리말, 기본 정보, 능력, 능력치 세 줄, 숨은 능력치, 포지션 그림과 성향 그림을 한 장에 */
 function PlayerCard(props: {
@@ -353,6 +320,48 @@ function PlayerCard(props: {
   )
 }
 
+const fieldNames = (fields: EditorPlayerResult['written']): string => fields.map((field) => EDITOR_FIELD_LABEL[field]).join(', ')
+
+/** "게임에 반영" 결과: 선수마다 들어간 항목과 들어가지 않은 항목. 못 들어간 선수의 고친 값은 그대로 남아 있다 */
+function ApplyReport(props: { report: EditorApplyReport; onClose: () => void }) {
+  const { report, onClose } = props
+  const players = report.players ?? []
+  const any = players.some((player) => player.written.length > 0)
+  return (
+    <div className={report.ok ? 'backup-notice ed-report' : 'chat-caution ed-report'} role={report.ok ? 'status' : 'alert'}>
+      {!report.ok && <CircleAlert size={15} />}
+      <div>
+        <p>{report.ok ? report.message : players.length === 0 ? report.message : any ? '일부만 반영했습니다.' : '반영하지 못했습니다.'}</p>
+        {!report.ok && players.length > 0 && (
+          <ul>
+            {players.map((player) => (
+              <li key={player.uid}>
+                <strong>{player.name}</strong>{' '}
+                {player.status === 'skipped' ? (
+                  '보내지 않음(게임의 값 그대로)'
+                ) : player.status === 'written' ? (
+                  '모두 반영함'
+                ) : (
+                  <>
+                    반영 {player.written.length > 0 ? fieldNames(player.written) : '없음'} · 미반영 {fieldNames(player.failed)}
+                    {player.note && <span className="faint"> {player.note}</span>}
+                  </>
+                )}
+              </li>
+            ))}
+          </ul>
+        )}
+        {!report.ok && players.some((player) => player.status !== 'written') && (
+          <p className="faint">못 들어간 선수의 고친 값은 그대로 남아 있습니다. 다시 반영하거나 버릴 수 있습니다.</p>
+        )}
+      </div>
+      <button className="btn ghost" onClick={onClose}>
+        닫기
+      </button>
+    </div>
+  )
+}
+
 /**
  * 선수의 능력치·포지션 숙련도·현재/잠재 능력을 고쳐 켜져 있는 게임에 바로 반영한다.
  * 선수 목록은 세이브에서, 고칠 값은 게임의 지금 값에서 읽는다. 세이브 파일은 건드리지 않는다.
@@ -373,8 +382,8 @@ export function Editor(props: {
   const [player, setPlayer] = useState<EditorPlayer | null>(null)
   /** 고르는 선수의 나이·국적·몸값 같은 고치지 않는 정보(못 읽으면 없다) */
   const [info, setInfo] = useState<{ uid: number; profile: PlayerProfile | null } | null>(null)
-  /** 선수 고유 번호 → 원래 값과 고치는 중인 값 */
-  const [pending, setPending] = useState<Map<number, { player: EditorPlayer; draft: Draft }>>(new Map())
+  /** 선수 고유 번호 → 원래 값과 고치는 중인 값. 화면 밖의 저장소에 있어서 다른 화면에 갔다 와도 남는다 */
+  const { pending, report } = useEditorState()
   const [busy, setBusy] = useState(false)
   const [notice, setNotice] = useState<{ text: string; error?: boolean } | null>(null)
 
@@ -416,44 +425,48 @@ export function Editor(props: {
     }
   }, [openedUid])
 
+  // 고친 선수는 처음 고칠 때의 원래 값을 기준으로 보여 준다(게임에서 다시 읽은 값이 아니라)
+  const shownPlayer = player ? (pending.get(player.uid)?.player ?? player) : null
   const draft = useMemo<Draft | null>(() => (player ? (pending.get(player.uid)?.draft ?? draftOf(player)) : null), [player, pending])
 
   const update = (change: (draft: Draft) => void): void => {
     if (!player || !draft || player.source !== 'game') return
     const next: Draft = { ...draft, positions: [...draft.positions], attributes: [...draft.attributes] }
     change(next)
-    setPending((current) => {
-      const copy = new Map(current)
-      if (isChanged(player, next)) copy.set(player.uid, { player, draft: next })
-      else copy.delete(player.uid)
-      return copy
-    })
+    editorStore.setDraft(player, next)
   }
 
   const revert = (): void => {
-    if (!player) return
-    setPending((current) => {
-      const copy = new Map(current)
-      copy.delete(player.uid)
-      return copy
-    })
+    if (player) editorStore.revert(player.uid)
   }
 
+  const discardAll = (): void => {
+    if (window.confirm(`고친 선수 ${pending.size}명의 값을 모두 버릴까요? 게임에는 아무것도 넣지 않습니다.`)) {
+      editorStore.discardAll()
+      setNotice(null)
+    }
+  }
+
+  // 온라인 게임을 가리는 플러그인(EDITOR_SAFE_PLUGIN)보다 낮으면 앱이 온라인 게임인지 알 수 없어 확인창에 경고를 더한다
+  const cannotTellOnline = versionOlder(link.game.pluginVersion, EDITOR_SAFE_PLUGIN)
+
   const apply = async (): Promise<void> => {
-    const edits = [...pending.values()].map((each) => toEdit(each.player, each.draft))
+    const edits = editsOf(editorStore.get())
     const names = [...pending.values()].map((each) => each.player.name).join(', ')
     const ok = window.confirm(
       `${names}의 값을 지금 켜져 있는 게임에 바로 넣을까요?\n\n` +
         '세이브 파일은 건드리지 않습니다. 게임에서 저장해야 남고, 저장하지 않고 끄면 사라집니다.\n' +
-        '처음이라면 게임에서 그 선수 화면을 다시 열어 값이 맞는지 확인해 주세요.'
+        '처음이라면 게임에서 그 선수 화면을 다시 열어 값이 맞는지 확인해 주세요.' +
+        (cannotTellOnline ? '\n\n네트워크 게임에서는 쓰지 마세요.' : '')
     )
     if (!ok) return
     setBusy(true)
-    const result = await api.editorApply(edits)
+    setNotice(null)
+    const result = await api.editorApplyReport(edits)
     setBusy(false)
-    setNotice({ text: result.message, error: !result.ok })
-    // 일부만 들어갔을 수도 있으니, 성공이든 실패든 게임의 지금 값을 다시 읽는다
-    setPending(new Map())
+    // 모두 들어간 선수만 비우고, 못 들어간 선수는 고친 값을 남겨 다시 반영하거나 버릴 수 있게 한다
+    editorStore.applied(result)
+    // 게임의 지금 값을 다시 읽는다
     if (player) await open(player.uid)
   }
 
@@ -474,6 +487,12 @@ export function Editor(props: {
         </span>
         <div className="spacer" />
         {pending.size > 0 && <span className="page-sub num">고친 선수 {pending.size}명</span>}
+        {pending.size > 0 && (
+          <button className="btn ghost" disabled={busy} onClick={discardAll}>
+            <Trash2 size={15} />
+            모두 버리기
+          </button>
+        )}
         <button className="btn primary" disabled={pending.size === 0 || busy || anyProblem} onClick={() => void apply()}>
           <Zap size={16} />
           {busy ? '게임에 넣는 중…' : '게임에 반영'}
@@ -536,7 +555,8 @@ export function Editor(props: {
               {notice.text}
             </p>
           )}
-          {!player || !draft ? (
+          {report && <ApplyReport report={report} onClose={() => editorStore.dismissReport()} />}
+          {!player || !draft || !shownPlayer ? (
             <div className="empty guide">
               <strong>고칠 선수를 왼쪽에서 고르세요</strong>
               <ol className="guide-steps">
@@ -547,7 +567,7 @@ export function Editor(props: {
             </div>
           ) : (
             <PlayerCard
-              player={player}
+              player={shownPlayer}
               draft={draft}
               info={info && info.uid === player.uid ? info.profile : null}
               changed={pending.has(player.uid)}

@@ -180,7 +180,12 @@ function registerIpc(): void {
     if (result.ok) settings.set({ activeSave: String(path) })
     return result
   })
+  ipcMain.handle('link:chooseTeam', async (_event, teamId: number) => {
+    const result = await link.chooseTeam(Number(teamId))
+    return result
+  })
   ipcMain.handle('link:refresh', (_event, rescan: boolean) => link.refresh(rescan === true))
+  ipcMain.handle('world:clubs', () => world.clubs())
   ipcMain.handle('world:squad', () => world.squad())
   ipcMain.handle('world:season', () => season.season())
   ipcMain.handle('world:dashboard', () => dashboard.dashboard())

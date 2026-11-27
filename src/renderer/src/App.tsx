@@ -1,8 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { extrasOf } from '@shared/connect'
 import { NO_DATA, NO_GAME, type LinkStatus } from '@shared/game'
 import type { AppStatus, Settings as SettingsData } from '@shared/types'
 import { api } from './api'
+import { SaveProblem } from './components/SaveProblem'
 import { Sidebar, type Route } from './components/Sidebar'
+import { editorStore } from './lib/editorStore'
 import { Backups } from './screens/Backups'
 import { Compare, MAX_COMPARE } from './screens/Compare'
 import { Dashboard } from './screens/Dashboard'
@@ -33,7 +36,8 @@ const AUTO_OPEN_MS = 20_000
  */
 function dataKeyOf(link: LinkStatus): string {
   const { save, liveAt, hasTeam, namesStage } = link.data
-  return `${save?.path ?? ''}|${save?.savedAt ?? ''}|${liveAt ?? ''}|${hasTeam}|${namesStage}`
+  const { check, teamNote } = extrasOf(link)
+  return `${save?.path ?? ''}|${save?.savedAt ?? ''}|${liveAt ?? ''}|${hasTeam}|${namesStage}|${check.ok}|${teamNote}`
 }
 
 export function App() {
@@ -89,6 +93,8 @@ export function App() {
   // 다른 세이브를 적용하면 담아 둔 비교 선수는 비운다
   const savePath = link.data.save?.path ?? ''
   useEffect(() => setCompare([]), [savePath])
+  // 에디터에서 고쳐 둔 값은 다른 세이브를 적용하면 비운다(선수 번호가 다른 사람을 가리킬 수 있다)
+  useEffect(() => editorStore.scope(savePath), [savePath])
 
   const toggleCompare = (uid: number): void => {
     setCompare((current) => {
@@ -104,12 +110,16 @@ export function App() {
 
   if (!settings) return null
   const dataKey = dataKeyOf(link)
+  // 세이브 형식 점검에 걸리면 점수가 나오는 화면을 막는다(백업·설정·에디터·시작은 그대로)
+  const { check } = extrasOf(link)
+  const blockedTitle = check.ok ? null : ({ dashboard: '대시보드', squad: '스쿼드', targets: '영입 후보', compare: '선수 비교' } as Partial<Record<Route, string>>)[route]
 
   return (
     <div className="app">
       <Sidebar route={route} onNavigate={navigate} link={link} />
       <main className="main">
-        {route === 'dashboard' && (
+        {blockedTitle && <SaveProblem title={blockedTitle} check={check} onGoHome={() => navigate('home')} />}
+        {!blockedTitle && route === 'dashboard' && (
           <Dashboard
             dataKey={dataKey}
             link={link}
@@ -123,7 +133,7 @@ export function App() {
           />
         )}
         {route === 'home' && <Home status={status} link={link} onNavigate={navigate} />}
-        {route === 'squad' && (
+        {!blockedTitle && route === 'squad' && (
           <Squad
             dataKey={dataKey}
             link={link}
@@ -139,7 +149,7 @@ export function App() {
             }}
           />
         )}
-        {route === 'targets' && (
+        {!blockedTitle && route === 'targets' && (
           <Targets
             dataKey={dataKey}
             link={link}
@@ -152,7 +162,7 @@ export function App() {
             }}
           />
         )}
-        {route === 'compare' && (
+        {!blockedTitle && route === 'compare' && (
           <Compare dataKey={dataKey} idxs={compare} onIdxs={setCompare} settings={settings} onGoSquad={() => navigate('squad')} />
         )}
         {route === 'editor' && (

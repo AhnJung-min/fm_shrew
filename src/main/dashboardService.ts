@@ -26,7 +26,7 @@ import { calendar } from './save/contracts'
 import { POSITION_COUNT } from './save/reader'
 import { ageAt, NO_TEAM, SEX_FEMALE, type SaveWorld } from './save/world'
 import type { SeasonService } from './seasonService'
-import { MIN_LOANS_IN_SAVE, type WorldService } from './worldService'
+import { MIN_LOANS_IN_SAVE, NO_TEAM_MESSAGE, type WorldService } from './worldService'
 
 /** 영입 추천으로 보여 주는 후보 수 */
 const RECOMMEND_SHOWN = 3
@@ -112,9 +112,9 @@ export class DashboardService {
   dashboard(): Promise<DashboardData> {
     const world = this.deps.world.world
     if (!world || !this.deps.world.path) return Promise.resolve(fail('먼저 세이브를 골라 적용해 주세요.'))
-    if (world.teamId === undefined) {
-      return Promise.resolve(fail('이 세이브에서 내 팀을 아직 찾지 못했습니다. 게임을 켜고 이 세이브를 불러오면 내 팀을 찾습니다.'))
-    }
+    const blocked = this.deps.world.blocked()
+    if (blocked) return Promise.resolve(fail(blocked))
+    if (world.teamId === undefined) return Promise.resolve(fail(NO_TEAM_MESSAGE))
     const settings = this.deps.settings()
     // 게임의 지금 값을 받으면 능력치가 바뀌므로, 받은 시각이 달라지면 다시 계산한다
     const key = JSON.stringify([this.deps.world.status().liveAt, settings.formation, settings.slotRoles, settings.roleWeights])
