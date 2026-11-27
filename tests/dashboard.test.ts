@@ -13,6 +13,7 @@ import {
   overpaidPlayers,
   surplusReport,
   surplusScore,
+  SURPLUS_MIN_SHOWN,
   UNKNOWN_RISK,
   WAGE_Z_FULL,
   type FirstTeamPlayer
@@ -65,6 +66,38 @@ describe('주급 기준선(로그 선형 회귀, 능력 + 나이 더미)', () =>
   it('표본이 적거나 능력이 모두 같으면 만들지 않는다', () => {
     expect(fitWageModel([{ ca: 100, wage: 1000 }])).toBeNull()
     expect(fitWageModel(Array.from({ length: 40 }, () => ({ ca: 100, wage: 1000 })))).toBeNull()
+  })
+
+  it('T9. 이상치 한 번 제거: |z| > 3인 선수는 빼고 다시 맞춘다(극단값이 s를 부풀린다). 뺀 인원을 모델에 싣는다', () => {
+    const random = (() => {
+      let state = 777
+      return () => {
+        state = (state * 1103515245 + 12345) & 0x7fffffff
+        return state / 0x7fffffff
+      }
+    })()
+    // 정규에 가까운 잡음(균일 12개의 합): 표준편차 0.43
+    const normal = (): number => (Array.from({ length: 12 }, random).reduce((sum, value) => sum + value, 0) - 6) * 0.43
+    const clean = Array.from({ length: 460 }, () => {
+      const ca = 70 + Math.floor(random() * 100)
+      return { ca, age: 22 + Math.floor(random() * 10), wage: Math.exp(4 + 0.05 * ca + normal()) }
+    })
+    // 주급이 기대보다 7σ쯤 낮은 선수 셋(예: 주급이 거의 0인 선수)
+    const outliers = [100, 120, 140].map((ca) => ({ ca, age: 25, wage: Math.exp(4 + 0.05 * ca - 3.2) }))
+    const withOutliers = fitWageModel([...clean, ...outliers])!
+    const without = fitWageModel(clean)!
+    expect(without.removed).toBeLessThanOrEqual(3)
+    expect(withOutliers.removed).toBeGreaterThanOrEqual(3)
+    expect(withOutliers.removed).toBeLessThanOrEqual(8)
+    expect(withOutliers.n).toBe(clean.length + outliers.length - withOutliers.removed)
+    // 뺀 뒤의 s는 이상치가 없는 자료와 거의 같고 0.43 안팎이다. 기대 배수 e^s는 1.5 안팎
+    expect(withOutliers.s).toBeGreaterThan(0.39)
+    expect(withOutliers.s).toBeLessThan(0.47)
+    expect(Math.abs(withOutliers.s - without.s)).toBeLessThan(0.03)
+    expect(Math.exp(withOutliers.s)).toBeGreaterThan(1.45)
+    expect(Math.exp(withOutliers.s)).toBeLessThan(1.6)
+    // 잘 맞는 자료에서는 아무도 빼지 않는다
+    expect(fitWageModel(Array.from({ length: 60 }, (_, i) => ({ ca: 80 + i, wage: Math.exp(3 + 0.05 * (80 + i)) })))!.removed).toBe(0)
   })
 
   it('나이 더미의 부호를 합성 자료에서 되찾는다(21세 미만 c1 < 0, 30세 이상 c2 > 0)', () => {
@@ -130,6 +163,42 @@ describe('주급 기준선(로그 선형 회귀, 능력 + 나이 더미)', () =>
     const found = overpaidPlayers([star, small], model)
     expect(found.rows.map((row) => row.uid)).toEqual([2, 1])
     expect(found.rows[1].excess).toBeGreaterThan(found.rows[0].excess)
+  })
+})
+
+describe('정리 후보 나이·정체 항(4회차)', () => {
+  // 정리 후보 점수에서 나이 항(25점 만점)만 본다
+  const ageTerm = (age: number, ca: number, pa: number): number => surplusScore({ fitRisk: 0, wageZ: 0, age, ca, pa }).parts.age
+
+  it('T4. 35세 CA140/PA159는 25.0, 28세 CA140/PA140은 17.5, 33세 CA140/PA156은 25.0이다', () => {
+    expect(ageTerm(35, 140, 159)).toBe(25)
+    expect(ageTerm(28, 140, 140)).toBe(17.5)
+    expect(ageTerm(33, 140, 156)).toBe(25)
+  })
+  it('26세 이하는 예전 식 그대로다: 24세 CA140/PA160은 0, 24세 CA140/PA140은 10', () => {
+    expect(ageTerm(24, 140, 160)).toBe(0)
+    expect(ageTerm(24, 140, 140)).toBe(10)
+    // 27세는 정체 위험을 반쯤만 나이에 맡긴다
+    expect(ageTerm(27, 140, 140)).toBeGreaterThan(ageTerm(27, 140, 160))
+  })
+  it('T8. 속성: 28세 이상에서 나이 항은 PA와 무관하고 나이에 대해 줄지 않는다', () => {
+    for (let ca = 100; ca <= 170; ca += 10) {
+      for (let age = 28; age <= 38; age++) {
+        const terms = Array.from({ length: 26 }, (_, room) => ageTerm(age, ca, ca + room))
+        for (const term of terms) expect(term).toBeCloseTo(terms[0], 10)
+        if (age > 28) expect(ageTerm(age, ca, ca + 10)).toBeGreaterThanOrEqual(ageTerm(age - 1, ca, ca + 10) - 1e-9)
+      }
+    }
+  })
+  it('점수 하한: 30점 미만은 보여 주지 않고(SURPLUS_MIN_SHOWN), 하한을 빼면 낮은 점수도 나온다', () => {
+    expect(SURPLUS_MIN_SHOWN).toBe(30)
+    const squad = mockSquad(false)
+    const players = firstTeamPlayers(squad.rows, squad.columns)
+    const analysis = analyseTactic({ rows: squad.rows, columns: squad.columns, today: squad.today, formation: '4-2-3-1', slotRoles: {}, roleWeights: {} })!
+    const shown = surplusReport({ players, rows: squad.rows, columns: squad.columns, analysis, roleWeights: {} }).rows
+    for (const row of shown) expect(row.score).toBeGreaterThanOrEqual(SURPLUS_MIN_SHOWN)
+    const all = surplusReport({ players, rows: squad.rows, columns: squad.columns, analysis, roleWeights: {}, minScore: 0 }).rows
+    expect(all.length).toBeGreaterThanOrEqual(shown.length)
   })
 })
 
@@ -216,11 +285,12 @@ describe('정리 후보 고르기(3회차)', () => {
     return { idx, name: spec.name, ratings, cells }
   }
   const everywhere = (value: number): Spec['spots'] => ({ DL: value, DC: value, DR: value, DM: value, ML: value, MC: value, MR: value, AMC: value, ST: value, AML: value, AMR: value })
-  const report = (specs: Spec[], formation: string, extra: { loanedIn?: Set<number> } = {}) => {
+  // 점수 하한(30점)은 따로 시험하고, 여기서는 낮은 점수의 이유도 볼 수 있게 하한 없이 돌린다
+  const report = (specs: Spec[], formation: string, extra: { loanedIn?: Set<number>; minScore?: number } = {}) => {
     const rows = specs.map((spec, i) => makeRow(i + 1, spec))
     const analysis = analyseTactic({ rows, columns: base.columns, today: base.today, formation, slotRoles: {}, roleWeights: {}, norms })!
     const players = firstTeamPlayers(rows, base.columns)
-    return { analysis, result: surplusReport({ players, rows, columns: base.columns, analysis, roleWeights: {}, norms, wageModel: model, loanedIn: extra.loanedIn }), players }
+    return { analysis, result: surplusReport({ players, rows, columns: base.columns, analysis, roleWeights: {}, norms, wageModel: model, loanedIn: extra.loanedIn, minScore: extra.minScore ?? 0 }), players }
   }
   const keepersOf = (levels: number[], cas: number[]): Spec[] => levels.map((level, i) => ({ name: `골키퍼${i + 1}`, spots: { GK: 20 }, level, ca: cas[i], age: 28 }))
   // 필드 선수 16명: 모두 어느 자리든 뛴다. 점수 60(z 0)
@@ -404,6 +474,31 @@ describe('연령 구조와 계약 만료', () => {
     expect(result.wageWithin1y).toBe(3000)
     expect(contractWindows([player({ uid: 1, contractEnd: at(2026, 6, 30) })], undefined).known).toBe(0)
   })
+
+  it('이미 계약이 끝난 선수는 "12개월 안" 목록에서 빼고 따로 센다(4회차)', () => {
+    const today = { year: 2026, month: 1, day: 3 }
+    const at = (year: number, month: number, day: number) => ({ year, month, day })
+    const result = contractWindows(
+      [
+        player({ uid: 1, contractEnd: at(2025, 12, 31), wage: 700 }),
+        player({ uid: 2, contractEnd: at(2026, 1, 3), wage: 1000 }),
+        player({ uid: 3, contractEnd: at(2026, 6, 30), wage: 2000 })
+      ],
+      today
+    )
+    expect(result.expired.map((row) => row.uid)).toEqual([1])
+    expect(result.within1y.map((row) => row.uid)).toEqual([2, 3])
+    expect(result.known).toBe(3)
+    expect(result.wageWithin1y).toBe(3000)
+    const line = buildBrief({ table: null, recent: [], next: null, need: null, expiring: { known: 3, count: 2, names: ['가', '나'], expired: 1 } })[0]
+    expect(line.text).toContain('12개월 안에 계약이 끝나는 1군 선수가 2명입니다')
+    expect(line.text).toContain('이미 계약이 끝난 선수가 1명 있습니다')
+    const none = buildBrief({ table: null, recent: [], next: null, need: null, expiring: { known: 3, count: 0, names: [], expired: 1 } })[0]
+    expect(none.text).toContain('12개월 안에 계약이 끝나는 1군 선수는 없습니다')
+    expect(none.text).toContain('이미 계약이 끝난 선수가 1명')
+    expect(none.tone).toBe('info')
+    expect(buildBrief({ table: null, recent: [], next: null, need: null, expiring: { known: 3, count: 0, names: [] } })[0].tone).toBe('good')
+  })
 })
 
 describe('오늘의 브리핑', () => {
@@ -459,6 +554,18 @@ describe('오늘의 브리핑', () => {
     expect(tone(['win', 'win', 'loss'])).toBe('info')
     expect(tone(['win', 'win', 'win'])).toBe('good')
     expect(tone(['win', 'win', 'win', 'win', 'win', 'loss', 'loss', 'draw', 'win', 'win'])).toBe('info')
+  })
+
+  it('읽은 경기가 3경기 미만이면 좋음·위험 대신 참고(info)다. 1경기 1패를 위험으로 쓰지 않는다(4회차)', () => {
+    const tone = (results: Array<'win' | 'draw' | 'loss'>): string =>
+      buildBrief({ table: null, recent: results.map((result) => match({ result, goalsFor: result === 'win' ? 2 : 0, goalsAgainst: result === 'loss' ? 1 : 0 })), next: null, need: null, expiring: null })[0].tone
+    expect(tone(['loss'])).toBe('info')
+    expect(tone(['win'])).toBe('info')
+    expect(tone(['win', 'loss'])).toBe('info')
+    expect(tone(['loss', 'loss'])).toBe('info')
+    // 3경기부터는 예전 규칙
+    expect(tone(['loss', 'loss', 'win'])).toBe('bad')
+    expect(tone(['win', 'win', 'win'])).toBe('good')
   })
 
   it('자료가 없으면 그 문장을 건너뛴다', () => {

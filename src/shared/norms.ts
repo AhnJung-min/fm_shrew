@@ -18,8 +18,12 @@ export interface RoleNorm {
   beta: number
   /** 모집단의 선수 수 */
   n: number
-  /** 모집단에 든 최소 현재 능력 */
+  /** 기준 현재 능력 C*: 내 1군 상위 11명 중간값 - 10(최저 100). 모든 역할이 같은 값이다(4회차) */
   caRef: number
+  /** 표본을 채우려고 실제로 쓴 최소 현재 능력 c_r(C*보다 낮으면 표본을 넓힌 것). 없으면 caRef와 같다 */
+  poolCa?: number
+  /** 표본이 C*보다 낮은 선수까지 포함해서 생긴 평균 차이를 메우려고 μ에 더한 점수 β_hi·(C̄* - C̄_r). 없으면 0 */
+  shift?: number
 }
 
 /** 이 숙련도 이상이어야 그 역할의 자리를 뛰는 선수로 본다(positions.ts의 PLAYABLE_RATING과 같은 15) */
@@ -82,59 +86,90 @@ export function pickCaRef(abilities: ArrayLike<number>, start: number): number {
   }
 }
 
-/** 점수를 현재 능력에 단순 회귀한 기울기. 표본이 모자라거나 기울기가 0 이하이면 DEFAULT_BETA */
-export function betaFromScores(scores: ArrayLike<number>, abilities: ArrayLike<number>): number {
+/** 점수를 현재 능력에 단순 회귀한 기울기. minCa 미만은 제외. 표본이 minN 미만이거나 분산이 0이거나 기울기가 0 이하이면 null */
+function slopeOf(scores: ArrayLike<number>, abilities: ArrayLike<number>, minCa: number, minN: number): number | null {
   let n = 0
   let sumX = 0
   let sumY = 0
   for (let i = 0; i < scores.length; i++) {
-    if (abilities[i] < BETA_MIN_CA) continue
+    if (abilities[i] < minCa) continue
     n++
     sumX += abilities[i]
     sumY += scores[i]
   }
-  if (n < BETA_MIN_POPULATION) return DEFAULT_BETA
+  if (n < minN || n === 0) return null
   const meanX = sumX / n
   const meanY = sumY / n
   let covariance = 0
   let variance = 0
   for (let i = 0; i < scores.length; i++) {
-    if (abilities[i] < BETA_MIN_CA) continue
+    if (abilities[i] < minCa) continue
     covariance += (abilities[i] - meanX) * (scores[i] - meanY)
     variance += (abilities[i] - meanX) ** 2
   }
-  if (variance === 0) return DEFAULT_BETA
+  if (variance === 0) return null
   const slope = covariance / variance
-  return Number.isFinite(slope) && slope > 0 ? slope : DEFAULT_BETA
+  return Number.isFinite(slope) && slope > 0 ? slope : null
+}
+
+/** 점수를 현재 능력에 단순 회귀한 기울기(현재 능력 60 이상). 표본이 모자라거나 기울기가 0 이하이면 DEFAULT_BETA */
+export function betaFromScores(scores: ArrayLike<number>, abilities: ArrayLike<number>): number {
+  return slopeOf(scores, abilities, BETA_MIN_CA, BETA_MIN_POPULATION) ?? DEFAULT_BETA
 }
 
 /**
  * 한 역할의 기준 분포. scores·abilities는 그 역할의 자리를 뛸 수 있는(숙련 15 이상) 여자가 아닌 선수들의 적합도와 현재 능력이다.
- * startCa는 referenceCa()가 준 기준 능력의 시작값.
+ * startCa는 referenceCa()가 준 기준 능력 C*.
+ *
+ * 4회차: 모든 역할이 같은 기준 능력 C*를 쓴다(caRef = C*). 표본이 40명 모자라는 역할은 표본용 기준 c_r(pickCaRef)을 낮춰 채우되,
+ * 그 풀이 C* 이상 선수보다 약한 만큼 평균을 보정한다.
+ *   μ_r = (풀의 적합도 평균) + β_hi · (C̄* - C̄_r)       C̄_r = 풀의 평균 현재 능력, β_hi = 풀 안에서 적합도를 CA에 회귀한 기울기
+ * meanCaStar(C̄*: 모든 역할의 풀을 합쳐 C* 이상인 선수의 평균 현재 능력)를 주지 않으면 보정하지 않는다. σ는 풀의 표준편차 그대로다.
  */
-export function normFromScores(scores: ArrayLike<number>, abilities: ArrayLike<number>, startCa: number): RoleNorm {
-  const caRef = pickCaRef(abilities, startCa)
+export function normFromScores(scores: ArrayLike<number>, abilities: ArrayLike<number>, startCa: number, meanCaStar?: number): RoleNorm {
+  const poolCa = pickCaRef(abilities, startCa)
+  const beta = betaFromScores(scores, abilities)
   let n = 0
   let sum = 0
+  let sumCa = 0
   for (let i = 0; i < scores.length; i++) {
-    if (abilities[i] < caRef) continue
+    if (abilities[i] < poolCa) continue
     n++
     sum += scores[i]
+    sumCa += abilities[i]
   }
-  if (n === 0) return { ...FALLBACK_NORM, beta: betaFromScores(scores, abilities), caRef }
-  const mu = sum / n
+  if (n === 0) return { ...FALLBACK_NORM, beta, caRef: startCa, poolCa, shift: 0 }
+  const mean = sum / n
   let squares = 0
   for (let i = 0; i < scores.length; i++) {
-    if (abilities[i] < caRef) continue
-    squares += (scores[i] - mu) ** 2
+    if (abilities[i] < poolCa) continue
+    squares += (scores[i] - mean) ** 2
   }
+  const betaHi = slopeOf(scores, abilities, poolCa, BETA_MIN_POPULATION) ?? beta
+  const shift = meanCaStar === undefined ? 0 : betaHi * (meanCaStar - sumCa / n)
   return {
-    mu,
+    mu: mean + shift,
     sigma: Math.max(NORM_MIN_SIGMA, Math.sqrt(squares / n)),
-    beta: betaFromScores(scores, abilities),
+    beta,
     n,
-    caRef
+    caRef: startCa,
+    poolCa,
+    shift
   }
+}
+
+/** C̄*: 모든 역할의 풀을 합쳐(선수 중복 제거) 현재 능력이 C* 이상인 선수의 평균 현재 능력. 그런 선수가 없으면 undefined */
+export function meanCaAbove(pools: Array<{ abilities: ArrayLike<number>; ids: ArrayLike<number> }>, startCa: number): number | undefined {
+  const seen = new Set<number>()
+  let sum = 0
+  for (const pool of pools) {
+    for (let i = 0; i < pool.abilities.length; i++) {
+      if (pool.abilities[i] < startCa || seen.has(pool.ids[i])) continue
+      seen.add(pool.ids[i])
+      sum += pool.abilities[i]
+    }
+  }
+  return seen.size === 0 ? undefined : sum / seen.size
 }
 
 /** 역할 id → 기준 분포 */

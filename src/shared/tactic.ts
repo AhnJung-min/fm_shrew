@@ -570,7 +570,8 @@ function needOf(args: {
   risks.quality.risk = clamp01((QUALITY_Z_GOOD - z) / QUALITY_Z_SPAN)
   const base = normSource === 'world' ? '같은 역할 상위권 선수들의 평균' : '우리 팀 주전들의 평균'
   const penalty = starter.score - eff > 0.05 ? ` 포지션 숙련이 ${starter.rating}이라 적합도 ${starter.score}점에서 ${round1(starter.score - eff)}점(${round1(posPenaltySigma(starter.rating) * 100) / 100} 표준편차) 빼고 견주었습니다.` : ''
-  risks.quality.note = `주전 ${name}의 적합도 ${round1(eff)}점은 ${base}(${round1(norm.mu)}점)보다 ${Math.abs(round1(eff - norm.mu))}점 ${eff >= norm.mu ? '높고' : '낮고'}, 이 역할의 보통 점수 차이(표준편차 ${round1(norm.sigma)}점)로 보면 ${zWords(z)}.${penalty}`
+  const temporary = starter.temporary ? ` 숙련 ${starter.rating}이라 임시로 세웠습니다.` : ''
+  risks.quality.note = `주전 ${name}의 적합도 ${round1(eff)}점은 ${base}(${round1(norm.mu)}점)보다 ${Math.abs(round1(eff - norm.mu))}점 ${eff >= norm.mu ? '높고' : '낮고'}, 이 역할의 보통 점수 차이(표준편차 ${round1(norm.sigma)}점)로 보면 ${zWords(z)}.${penalty}${temporary}`
   risks.quality.phrase = `주전 ${name}의 적합도(${round1(eff)}점)는 ${normSource === 'world' ? '이 역할 상위권' : '팀 주전'} 평균(${round1(norm.mu)}점)보다 ${eff >= norm.mu ? '조금 높은 수준입니다' : z >= -1 ? '조금 낮습니다' : '크게 낮습니다'}`
 
   // 후보 두께
@@ -637,8 +638,11 @@ function needOf(args: {
     .map((id, i) => ({ phrase: risks[id].phrase, points: factors[i].points, assumed: risks[id].assumed }))
     .filter((each) => each.points >= REASON_MIN_POINTS && each.phrase && !each.assumed)
     .sort((a, b) => b.points - a.points)
-    .slice(0, 2)
-  const reason = top.length > 0 ? joinClauses(top.map((each) => each.phrase)) : '눈에 띄는 문제가 없습니다.'
+    // 임시 주전이면 그 사실을 맨 앞에 두고 이유는 하나만 더한다
+    .slice(0, starter.temporary ? 1 : 2)
+  const phrases = top.map((each) => each.phrase)
+  if (starter.temporary) phrases.unshift(`주전 ${withJosa(name, '이/가')} 숙련 ${starter.rating}이라 임시로 세웠습니다`)
+  const reason = phrases.length > 0 ? joinClauses(phrases) : '눈에 띄는 문제가 없습니다.'
   return { need, factors, reason }
 }
 

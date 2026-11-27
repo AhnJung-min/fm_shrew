@@ -213,6 +213,17 @@ export function benchmarkOf(starter: CandidateBench['starter'], norm: RoleNorm =
 }
 
 /**
+ * 로테이션 탭의 위쪽 경계를 숫자로 적은 한 줄(4회차): "주전 기준(76.3점)보다 0.8점(0.25 표준편차) 아래부터".
+ * 이 탭은 경계 상수(0.25σ, CA 문턱 0.85)에 민감해서(검토 4회차 7.1절) 어디서 시작하는지 보여 준다. 비교 기준 주전이 없으면 null.
+ */
+export function rotationBoundaryLine(bench: CandidateBench, norm: RoleNorm = FALLBACK_NORM, goalkeeper = false): string | null {
+  if (!bench.starter) return null
+  const { anchor } = benchmarkOf(bench.starter, norm, goalkeeper)
+  const tolerance = STARTER_TOLERANCE_SIGMAS * norm.sigma
+  return `주전 기준(${anchor.toFixed(1)}점)보다 ${tolerance.toFixed(1)}점(${STARTER_TOLERANCE_SIGMAS} 표준편차) 아래부터`
+}
+
+/**
  * 한 선수가 어느 유형에 드는지. 여러 유형에 들 수 있고, 아무 유형에도 들지 않으면 빈 목록이다.
  * 소속이 없는 선수는 위 유형에 하나라도 들 때만 free가 붙는다(free는 별도 유형이 아니라 "소속 없음" 조건이다).
  *

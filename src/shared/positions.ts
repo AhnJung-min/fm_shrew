@@ -4,6 +4,12 @@ export const POSITION_KEYS = ['GK', 'SW', 'DL', 'DC', 'DR', 'DM', 'ML', 'MC', 'M
 /** 이 값 이상이면 그 자리에서 뛸 수 있는 것으로 본다(게임의 "능숙" 이상) */
 export const PLAYABLE_RATING = 15
 
+/**
+ * 숙련이 이 값 이상 15 미만이면 그 자리를 "임시 주전"으로 세울 수 있다(4회차). 감점(posPenaltySigma 0.70~1.90σ)을 뺀 값으로 견주고,
+ * 후보(backups)가 되지는 못한다. 10 미만은 빈 자리로 둔다.
+ */
+export const TEMPORARY_MIN_RATING = 10
+
 /** 이 숙련이면 자연스러운 자리다(감점 없음) */
 export const POSITION_NATURAL = 20
 /**

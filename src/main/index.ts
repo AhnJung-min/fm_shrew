@@ -201,7 +201,11 @@ function registerIpc(): void {
     mainWindow?.webContents.send('backup:changed')
   })
 
-  ipcMain.handle('world:candidates', (_event, query: CandidateQuery) => world.candidates(query))
+  ipcMain.handle('world:candidates', async (_event, query: CandidateQuery) => {
+    // 자유 계약 선수의 주급 어림에 쓰는 리그 주급 모델을 먼저 계산해 둔다(한 번만 계산한다)
+    await dashboard.prepareWageModel()
+    return world.candidates(query)
+  })
   ipcMain.handle('world:market', (_event, uids: number[]) => world.market(Array.isArray(uids) ? uids.map(Number) : []))
   ipcMain.handle('world:profile', (_event, uid: number) => world.playerProfile(Number(uid)))
   ipcMain.handle('editor:list', (_event, search: string) => world.editorList(String(search ?? '')))
@@ -275,6 +279,8 @@ app.whenReady().then(async () => {
       }
     },
     roleWeights: () => settings.get().roleWeights,
+    // 아래에서 만드는 대시보드가 계산해 둔 리그 주급 모델(자유 계약 선수의 주급 어림). 부를 때 이미 만들어져 있다
+    wageModel: () => dashboard.currentWageModel(),
     namesDir: join(dataDir, 'names')
   })
   season = new SeasonService({

@@ -3,6 +3,7 @@ import { assignMaximum } from '../src/shared/depth'
 import { hasBatchim, joinClauses, josa, linkForm, withJosa } from '../src/shared/korean'
 import {
   betaFromScores,
+  meanCaAbove,
   DEFAULT_BETA,
   FALLBACK_NORM,
   NORM_MIN_SIGMA,
@@ -13,7 +14,7 @@ import {
   zWords,
   type RoleNorm
 } from '../src/shared/norms'
-import { AGING_DROP_PER_YEAR, benchmarkOf, categoriesOf, growthShare, hasGrowthRoom, projectedScore, type CandidateBench } from '../src/shared/world'
+import { AGING_DROP_PER_YEAR, benchmarkOf, categoriesOf, growthShare, hasGrowthRoom, projectedScore, rotationBoundaryLine, type CandidateBench } from '../src/shared/world'
 
 describe('기준 능력', () => {
   it('내 상위 11명 현재 능력의 중간값에서 10을 뺀 값이고 100 아래로는 내려가지 않는다', () => {
@@ -36,8 +37,9 @@ describe('기준 분포', () => {
     const scores = [70, 72, 74, 76, 78, 40, 30]
     const abilities = [150, 150, 150, 150, 150, 70, 61]
     const norm = normFromScores(scores, abilities, 150)
-    // 150 이상이 5명뿐이라 40명이 될 때까지 낮춰도 60에서 멈춘다: 이 경우 모두가 모집단
-    expect(norm.caRef).toBe(60)
+    // 150 이상이 5명뿐이라 40명이 될 때까지 낮춰도 60에서 멈춘다: 이 경우 모두가 표본(poolCa 60). 기준 능력 caRef는 모든 역할이 같은 150이다(4회차)
+    expect(norm.poolCa).toBe(60)
+    expect(norm.caRef).toBe(150)
     expect(norm.n).toBe(7)
     const many = normFromScores(
       Array.from({ length: 50 }, (_, i) => 70 + (i % 5) * 5),
@@ -45,6 +47,8 @@ describe('기준 분포', () => {
       150
     )
     expect(many.caRef).toBe(150)
+    expect(many.poolCa).toBe(150)
+    expect(many.shift).toBe(0)
     expect(many.n).toBe(50)
     expect(many.mu).toBeCloseTo(80, 6)
     expect(many.sigma).toBeCloseTo(Math.sqrt(50), 6)
@@ -69,6 +73,86 @@ describe('기준 분포', () => {
     expect(zWords(0.5)).toContain('조금 높습니다')
     expect(zWords(-0.5)).toContain('조금 낮습니다')
     expect(zWords(-1.5)).toContain('크게 낮습니다')
+  })
+})
+
+describe('모든 역할을 하나의 기준 능력으로(4회차)', () => {
+  // 적합도가 현재 능력의 직선(0.3·CA + 40)인 역할 둘. 한 역할은 상위권이 많고, 다른 역할은 150 이상이 얼마 없다
+  const linear = (cas: number[]): { scores: number[]; abilities: number[]; ids: number[] } => ({
+    scores: cas.map((ca) => 0.3 * ca + 40),
+    abilities: cas,
+    ids: cas.map((_, i) => i)
+  })
+  const rich = Array.from({ length: 3000 }, (_, i) => 60 + (i % 131)) // 60~190이 고르게
+  const poor = [...Array.from({ length: 1500 }, (_, i) => 60 + (i % 91)), ...Array.from({ length: 15 }, (_, i) => 150 + i)] // 60~150, 150 이상은 소수
+
+  it('meanCaAbove: 여러 역할의 풀을 합쳐 기준 능력 이상인 선수의 평균 현재 능력(같은 선수는 한 번만)', () => {
+    const a = { abilities: [160, 150, 140], ids: [1, 2, 3] }
+    const b = { abilities: [160, 170, 100], ids: [1, 4, 5] }
+    expect(meanCaAbove([a, b], 150)).toBeCloseTo((160 + 150 + 170) / 3, 10)
+    expect(meanCaAbove([a, b], 200)).toBeUndefined()
+  })
+
+  it('표본을 넓힌 역할도 caRef는 모두 같은 C*이고, poolCa·shift에 넓힌 정도와 보정량이 남는다', () => {
+    const star = 150
+    const a = linear(rich)
+    const b = linear(poor)
+    const meanStar = meanCaAbove([a, b], star)!
+    const normA = normFromScores(a.scores, a.abilities, star, meanStar)
+    const normB = normFromScores(b.scores, b.abilities, star, meanStar)
+    expect(normA.caRef).toBe(star)
+    expect(normB.caRef).toBe(star)
+    expect(normA.poolCa).toBe(star)
+    expect(normB.poolCa).toBeLessThan(star)
+    expect(normB.shift!).toBeGreaterThan(0)
+    expect(Math.abs(normA.shift!)).toBeLessThan(Math.abs(normB.shift!))
+  })
+
+  it('보정하면 풀이 넓은 역할도 "C* 이상 선수의 평균"에 맞는다: 직선 관계에서 두 역할의 μ가 같다(0.3 × C̄* + 40)', () => {
+    const star = 150
+    const a = linear(rich)
+    const b = linear(poor)
+    const meanStar = meanCaAbove([a, b], star)!
+    const normA = normFromScores(a.scores, a.abilities, star, meanStar)
+    const normB = normFromScores(b.scores, b.abilities, star, meanStar)
+    expect(normA.mu).toBeCloseTo(0.3 * meanStar + 40, 6)
+    expect(normB.mu).toBeCloseTo(0.3 * meanStar + 40, 6)
+    // 보정하지 않으면 풀이 낮은 역할의 μ가 한참 낮다(검토 4회차: 풀백·골키퍼가 0.9σ 부풀던 까닭)
+    const raw = normFromScores(b.scores, b.abilities, star)
+    expect(raw.shift).toBe(0)
+    expect(normB.mu - raw.mu).toBeGreaterThan(2)
+    // σ는 풀의 표준편차 그대로다
+    expect(normB.sigma).toBe(raw.sigma)
+  })
+
+  it('보정량은 표본이 충분한 역할에서 작다(기울기 × 평균 현재 능력 차이)', () => {
+    const star = 150
+    const a = linear(rich)
+    const meanStar = meanCaAbove([a], star)!
+    expect(meanStar).toBeGreaterThan(star)
+    const normA = normFromScores(a.scores, a.abilities, star, meanStar)
+    // 같은 풀에서 C* 이상의 평균을 쓰므로 보정이 0
+    expect(Math.abs(normA.shift!)).toBeLessThan(1e-6)
+  })
+
+  it('풀 안의 기울기를 못 구하면(표본 부족·분산 0) 그 역할의 기본 기울기로 보정한다. 선수가 없으면 대신하는 값이다', () => {
+    const flat = normFromScores(Array(50).fill(70), Array(50).fill(120), 150, 160)
+    expect(flat.shift).toBeCloseTo(DEFAULT_BETA * (160 - 120), 6)
+    const empty = normFromScores([], [], 150, 160)
+    expect(empty.n).toBe(0)
+    expect(empty.caRef).toBe(150)
+    expect(empty.shift).toBe(0)
+  })
+})
+
+describe('로테이션 탭 경계 안내(4회차)', () => {
+  const norm: RoleNorm = { mu: 74.4, sigma: 3.2, beta: 0.265, n: 49, caRef: 153 }
+  it('주전 기준 점수와 0.25 표준편차를 숫자로 적는다. 주전이 나이 들어 기준이 내려가면 그 점수를 쓴다', () => {
+    const bench: CandidateBench = { starter: { name: '주전', score: 76.3, ca: 157, age: 26 }, backup: null }
+    expect(rotationBoundaryLine(bench, norm)).toBe('주전 기준(76.3점)보다 0.8점(0.25 표준편차) 아래부터')
+    const old: CandidateBench = { starter: { name: '노장', score: 80, ca: 160, age: 33 }, backup: null }
+    expect(rotationBoundaryLine(old, norm)).toBe('주전 기준(78.0점)보다 0.8점(0.25 표준편차) 아래부터')
+    expect(rotationBoundaryLine({ starter: null, backup: null }, norm)).toBeNull()
   })
 })
 

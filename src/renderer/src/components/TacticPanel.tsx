@@ -127,7 +127,7 @@ export function TacticPanel(props: {
         </ul>
         {strongest && weakest && strongest.id !== weakest.id && (
           <p className="muted">
-            역할마다 점수 눈금이 달라, 줄은 같은 역할 상위권 평균과 견준 표준편차로 비교했습니다. 가장 강한 줄은 {strongest.label}(상위권 평균 대비 {strongest.zAverage!.toFixed(1)} 표준편차, 적합도 평균 {strongest.fitAverage}점), 가장 약한 줄은 {weakest.label}({weakest.zAverage!.toFixed(1)} 표준편차, 적합도 평균 {weakest.fitAverage}점)입니다.
+            역할마다 점수 눈금이 달라, 줄은 같은 역할 상위권 평균과 견준 표준편차로 비교했습니다. {analysis.slots[0]?.normSource === 'world' && `모든 역할을 현재 능력 ${analysis.slots[0].norm.caRef} 이상 선수의 평균에 맞췄습니다. `}가장 강한 줄은 {strongest.label}(상위권 평균 대비 {strongest.zAverage!.toFixed(1)} 표준편차, 적합도 평균 {strongest.fitAverage}점), 가장 약한 줄은 {weakest.label}({weakest.zAverage!.toFixed(1)} 표준편차, 적합도 평균 {weakest.fitAverage}점)입니다.
           </p>
         )}
       </div>

@@ -47,6 +47,13 @@ interface Cached {
   data: Promise<DashboardData>
 }
 
+/** 계산해 둔 리그 주급 모델. 세이브 자료와 게임에서 받은 시각이 같으면 다시 구하지 않는다 */
+interface CachedModel {
+  world: SaveWorld
+  liveAt: number | null
+  value: WageModelInfo | null
+}
+
 /** 선수 나이로 볼 수 없는 값(생일을 잘못 읽은 기록)은 모르는 것으로 둔다 */
 const plausibleAge = (age: number | null): number | null => (age !== null && age >= 14 && age <= 50 ? age : null)
 
@@ -58,8 +65,42 @@ const fail = (message: string): DashboardData => ({ ...NO_DASHBOARD, message })
  */
 export class DashboardService {
   private cached: Cached | null = null
+  private model: CachedModel | null = null
 
   constructor(private readonly deps: DashboardDeps) {}
+
+  /**
+   * 주급 모델(리그 선수들의 ln 주급 = a + b·CA + 나이 더미). 대시보드와 영입 후보(자유 계약 선수의 주급 어림)가 같은 모델을 쓴다.
+   * 이미 계산해 둔 것을 돌려주기만 한다(계산은 한 번). 아직 계산하지 않았으면 null이다. prepareWageModel()이 먼저 계산해 둔다.
+   */
+  currentWageModel(): WageModelInfo | null {
+    const world = this.deps.world.world
+    const kept = this.model
+    return kept && world && kept.world === world && kept.liveAt === this.deps.world.liveStamp() ? kept.value : null
+  }
+
+  /** 순위표를 읽어(몇 초 걸리지 않는다) 주급 모델을 계산해 둔다. 영입 후보를 찾기 전에 부른다 */
+  async prepareWageModel(): Promise<void> {
+    const world = this.deps.world.world
+    if (!world || world.teamId === undefined) return
+    const kept = this.model
+    if (kept && kept.world === world && kept.liveAt === this.deps.world.liveStamp()) return
+    const season = await this.deps.season.season()
+    this.wageModel(world, season.ok && season.table ? season.table : null, this.loansTrusted(world, this.myClubOf(world)))
+  }
+
+  /** 내 구단(번호). 못 찾으면 -1 */
+  private myClubOf(world: SaveWorld): number {
+    for (let k = 0; k < world.count; k++) if (world.teamIds[k] === world.teamId && world.club[k] >= 0) return world.club[k]
+    return -1
+  }
+
+  /** 임대 기록을 믿을 수 있는가: 내 구단을 알고, 세이브 전체에서 임대가 충분히 읽힌다 */
+  private loansTrusted(world: SaveWorld, myClub: number): boolean {
+    let loans = 0
+    for (let k = 0; k < world.count; k++) if (world.loanFrom[k] !== NO_TEAM) loans++
+    return myClub >= 0 && loans >= MIN_LOANS_IN_SAVE
+  }
 
   dashboard(): Promise<DashboardData> {
     const world = this.deps.world.world
@@ -141,7 +182,7 @@ export class DashboardService {
     // 임대: 선수의 소속 팀(임대받은 팀)과 원 소속 팀(world.loanFrom)이 서로 다른 구단이면 임대다
     let loansInSave = 0
     for (let k = 0; k < world.count; k++) if (world.loanFrom[k] !== NO_TEAM) loansInSave++
-    const loansTrusted = myClub >= 0 && loansInSave >= MIN_LOANS_IN_SAVE
+    const loansTrusted = this.loansTrusted(world, myClub)
     let loans: DashboardData['squad']['loans'] = null
     let loanNote: string | undefined
     if (myClub < 0) {
@@ -260,7 +301,7 @@ export class DashboardService {
       need: slot
         ? { label: slot.label, roleLabel: slot.roleLabel, need: slot.need, level: slot.level, levelLabel: slot.levelLabel, reason: slot.reason, formation: analysis!.formation.label }
         : null,
-      expiring: contracts.known > 0 ? { known: contracts.known, count: contracts.within1y.length, names: contracts.within1y.map((row) => row.name) } : null
+      expiring: contracts.known > 0 ? { known: contracts.known, count: contracts.within1y.length, names: contracts.within1y.map((row) => row.name), expired: contracts.expired.length } : null
     })
 
     return {
@@ -278,6 +319,7 @@ export class DashboardService {
       squad: { firstTeam: players.length, teams, loans, loanNote, ages },
       contracts: {
         known: contracts.known,
+        expired: contracts.expired,
         within1y: contracts.within1y,
         within2y: contracts.within2y,
         wageWithin1y: contracts.wageWithin1y
@@ -293,6 +335,12 @@ export class DashboardService {
    * 임대 중인 선수는 뺀다(주급이 원 소속 계약 값이라 지금 뛰는 팀·리그의 기준이 아니다).
    */
   private wageModel(world: SaveWorld, table: SeasonResult['table'] | null, loansTrusted: boolean): WageModelInfo | null {
+    const value = this.fitModel(world, table, loansTrusted)
+    this.model = { world, liveAt: this.deps.world.liveStamp(), value }
+    return value
+  }
+
+  private fitModel(world: SaveWorld, table: SeasonResult['table'] | null, loansTrusted: boolean): WageModelInfo | null {
     const league = table && table.length >= MIN_LEAGUE_TEAMS ? new Set(table.map((row) => row.teamId)) : null
     const collect = (only: Set<number> | null): WagePoint[] => {
       const points: WagePoint[] = []

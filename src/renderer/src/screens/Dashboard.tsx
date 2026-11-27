@@ -445,10 +445,17 @@ function Cards(props: {
         {contracts.known === 0 ? (
           <Empty>계약 만료일을 확인 못 함</Empty>
         ) : (
-          <div className="dash-two">
-            {contractList('1년 이내', contracts.within1y, '1년 안에 끝나는 계약이 없습니다.')}
-            {contractList('1~2년', contracts.within2y, '1~2년 사이에 끝나는 계약이 없습니다.')}
-          </div>
+          <>
+            <div className="dash-two">
+              {contractList('1년 이내', contracts.within1y, '1년 안에 끝나는 계약이 없습니다.')}
+              {contractList('1~2년', contracts.within2y, '1~2년 사이에 끝나는 계약이 없습니다.')}
+            </div>
+            {contracts.expired.length > 0 && (
+              <p className="dash-note">
+                이미 계약이 끝난 선수 {contracts.expired.length}명: {contracts.expired.map((row) => row.name).join(', ')}
+              </p>
+            )}
+          </>
         )}
       </Card>
 
@@ -459,7 +466,7 @@ function Cards(props: {
       <Card
         id="dash-surplus"
         title="정리 후보 TOP 5"
-        hint="지금 전술에서 선발도 첫 후보도 아닌 1군 선수 가운데 정리를 생각해 볼 만한 순서입니다."
+        hint="지금 전술에서 선발도 첫 후보도 아닌 1군 선수 가운데 정리를 생각해 볼 만한 순서입니다. 점수가 30점 이상인 선수만 보여 줍니다."
         source={sourceOf(saveSource, abilitySource)}
         action={
           <button className="btn ghost" onClick={onGoSquad}>
@@ -470,7 +477,7 @@ function Cards(props: {
         {!surplus.ok ? (
           <Empty>{surplus.message}</Empty>
         ) : surplus.rows.length === 0 ? (
-          <Empty>정리 후보로 볼 선수가 없습니다.</Empty>
+          <Empty>지금 전술에서 정리를 권할 선수는 없습니다.</Empty>
         ) : (
           <ol className="rank">
             {surplus.rows.map((row) => (
@@ -608,6 +615,7 @@ function Cards(props: {
               ? ` 내 리그 ${overpaid.model.teams}개 팀의 선수 ${overpaid.model.n.toLocaleString()}명 기준.`
               : ` 순위표를 읽지 못해 구단이 있는 모든 남자 선수 ${overpaid.model.n.toLocaleString()}명 기준.`}
             {` 의심: 기대 주급의 ${Math.exp(overpaid.model.s * OVERPAID_Z).toFixed(2)}배(+${OVERPAID_Z}σ) 이상, 강한 의심: ${Math.exp(overpaid.model.s * OVERPAID_Z_STRONG).toFixed(2)}배(+${OVERPAID_Z_STRONG}σ) 이상.`}
+            {overpaid.model.removed > 0 && ` 주급이 기대와 크게 어긋나는 선수 ${overpaid.model.removed}명(3σ 넘게 벗어남)은 빼고 다시 맞췄습니다.`}
             {overpaid.total > overpaid.rows.length && ` 기준을 넘는 선수는 모두 ${overpaid.total}명입니다.`}
           </p>
         )}

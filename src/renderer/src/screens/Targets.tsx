@@ -11,6 +11,7 @@ import {
   benchLine,
   benchmarkOf,
   CATEGORY_HELP,
+  rotationBoundaryLine,
   CATEGORY_LABEL,
   SAVE_ATTRIBUTE_ORDER,
   type CandidateCategory,
@@ -316,6 +317,8 @@ export function Targets(props: {
 
   // 자유 계약 탭이 비었을 때 이유로 보여 줄 현재 능력 문턱(즉시 전력·로테이션의 문턱과 같다)
   const caGate = result?.ok ? benchmarkOf(result.bench.starter, result.norm ?? undefined).caGate : null
+  // 로테이션 탭은 경계에 민감해서 어디서 시작하는지 숫자로 적는다
+  const rotationLine = result?.ok ? rotationBoundaryLine(result.bench, result.norm ?? undefined) : null
 
   if (result && !result.ok) {
     return (
@@ -462,9 +465,9 @@ export function Targets(props: {
           {result?.ok &&
             (search.trim()
               ? `이름이 맞는 선수 ${result.matched.toLocaleString()}명(유형 자격과 상관없이 보여 줍니다)`
-              : result.matched > result.rows.length
-                ? `${CATEGORY_HELP[category]}: ${result.matched.toLocaleString()}명 중 위에서 ${result.rows.length}명`
-                : `${CATEGORY_HELP[category]}: ${result.matched.toLocaleString()}명`)}
+              : (result.matched > result.rows.length
+                  ? `${CATEGORY_HELP[category]}: ${result.matched.toLocaleString()}명 중 위에서 ${result.rows.length}명`
+                  : `${CATEGORY_HELP[category]}: ${result.matched.toLocaleString()}명`) + (category === 'rotation' && rotationLine ? ` · ${rotationLine}` : ''))}
         </span>
       </div>
 

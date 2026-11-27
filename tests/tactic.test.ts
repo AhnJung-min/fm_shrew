@@ -503,6 +503,60 @@ describe('주전 배정(헝가리안)', () => {
   })
 })
 
+describe('4회차: 숙련 10~14는 임시 주전(T3)', () => {
+  const norms: Record<string, RoleNorm> = Object.fromEntries(ROLES.map((role) => [role.id, { mu: 60, sigma: 3, beta: 0.28, n: 100, caRef: 150 }]))
+  const withoutRightMid = (): PlayerRow[] => squad().filter((row) => row.name !== '오른미드')
+  const winger = (rating: number, level = 14): PlayerRow => player({ name: '측면공격수', position: 'AM (R)', level, age: 24, end: 20290630, ratings: { AMR: 20, MR: rating } })
+  const rightMid = (analysis: NonNullable<ReturnType<typeof analyseTactic>>) => analysis.slots.find((each) => each.slot.position === 'MR')!
+
+  it('오른쪽 미드 숙련 14 선수가 있으면 빈 자리가 아니라 임시 주전이다(필요도 100이 아니다)', () => {
+    const empty = analyseTactic(base(withoutRightMid(), { norms }))!
+    expect(rightMid(empty).slot.starter).toBeNull()
+    expect(rightMid(empty).need).toBe(100)
+
+    const rows = [...withoutRightMid(), winger(14)]
+    const analysis = analyseTactic(base(rows, { norms }))!
+    const mr = rightMid(analysis)
+    expect(mr.slot.starter?.name).toBe('측면공격수')
+    expect(mr.slot.starter?.temporary).toBe(true)
+    expect(mr.slot.starter?.rating).toBe(14)
+    // 숙련 14 감점 0.70σ를 뺀 값으로 견준다
+    expect(mr.starterEff!).toBeCloseTo(mr.starterScore! - 3 * 0.7, 5)
+    expect(mr.starterZ!).toBeCloseTo((mr.starterEff! - 60) / 3, 5)
+    expect(mr.need).toBeLessThan(100)
+    expect(mr.reason).toContain('주전 측면공격수가 숙련 14이라 임시로 세웠')
+    expect(mr.factors.find((each) => each.id === 'quality')!.note).toContain('숙련 14이라 임시로 세웠습니다')
+    // 영입 후보의 비교 주전도 그 선수다(숙련 감점을 뺀 값)
+    expect(mr.group.bench.starter?.name).toBe('측면공격수')
+    expect(mr.group.bench.starter?.score).toBeCloseTo(mr.starterEff!, 5)
+  })
+
+  it('숙련 10 미만은 여전히 빈 자리다', () => {
+    const analysis = analyseTactic(base([...withoutRightMid(), winger(9)], { norms }))!
+    expect(rightMid(analysis).slot.starter).toBeNull()
+    expect(rightMid(analysis).need).toBe(100)
+    expect(analyseTactic(base([...withoutRightMid(), winger(10)], { norms }))!.slots.find((each) => each.slot.position === 'MR')!.slot.starter?.temporary).toBe(true)
+  })
+
+  it('숙련 15 이상 선수가 있으면 능력이 더 낮아도 그쪽이 먼저다. 임시 주전은 후보가 되지 못한다', () => {
+    const natural = player({ name: '자연오른미드', position: 'M (R)', level: 11, age: 25, end: 20290630, ratings: { MR: 15 } })
+    const rows = [...withoutRightMid(), natural, winger(14, 18)]
+    const analysis = analyseTactic(base(rows, { norms }))!
+    const mr = rightMid(analysis)
+    expect(mr.slot.starter?.name).toBe('자연오른미드')
+    expect(mr.slot.starter?.temporary).toBe(false)
+    // 후보(backups)는 숙련 15 이상만: 임시 자원은 후보에 오르지 않는다
+    expect(mr.slot.backups.map((each) => each.name)).not.toContain('측면공격수')
+    expect(mr.slot.backups.every((each) => !each.temporary)).toBe(true)
+  })
+
+  it('다른 자리의 자연 주전을 빼앗지는 않는다: 임시 배정은 빈 자리를 채울 때만 이득이다', () => {
+    const slots = buildDepth([...withoutRightMid(), winger(12)], COLUMNS, FORMATION_BY_ID['4-4-2'], {}, {}, 2, norms)
+    expect(slots.filter((slot) => slot.starter).length).toBe(11)
+    expect(slots.filter((slot) => slot.starter?.temporary).map((slot) => slot.position)).toEqual(['MR'])
+  })
+})
+
 describe('2회차: 숙련 감점, 같은 자리 그룹, 줄 요약', () => {
   const norms = (patch: Record<string, number> = {}): Record<string, RoleNorm> =>
     Object.fromEntries(ROLES.map((role) => [role.id, { mu: patch[role.id] ?? 60, sigma: 3, beta: 0.28, n: 100, caRef: 150 }]))

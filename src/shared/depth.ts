@@ -1,5 +1,5 @@
 import { FALLBACK_NORM, normOf, zOf, type RoleNorms } from './norms'
-import { parsePositions, posPenaltySigma, ratingAt, RATING_UNKNOWN_ASSUMED } from './positions'
+import { parsePositions, PLAYABLE_RATING, posPenaltySigma, ratingAt, RATING_UNKNOWN_ASSUMED, TEMPORARY_MIN_RATING } from './positions'
 import { attributesOf, DEFAULT_ROLE, effectiveWeights, ROLE_BY_ID, scoreRole, type AttributeValue, type PositionKey, type RoleScore } from './roles'
 import type { ColumnInfo, PlayerRow } from './types'
 
@@ -30,6 +30,8 @@ export interface DepthPlayer {
   /** 그 자리의 포지션 숙련(1~20). 숙련 숫자를 모르면 RATING_UNKNOWN_ASSUMED */
   rating: number
   uncertain: boolean
+  /** 숙련이 15 미만(10 이상)이라 임시로 세운 주전이다. 후보에는 오르지 않는다 */
+  temporary: boolean
   /** 그 자리 역할의 기준에서 effScore가 평균보다 표준편차의 몇 배 위인가(z_eff. 기준 분포가 없으면 null) */
   z: number | null
 }
@@ -61,6 +63,8 @@ export const WEAK_GAP_SIGMAS = 1.2
  * 최대 가중 매칭은 먼저 가능한 한 많은 자리를 채우고 그다음 z 합을 최대로 만든다.
  */
 const PLAYABLE_BONUS = 1000
+/** 숙련 10~14 선수를 임시 주전으로 세울 때의 상수. 숙련 15 이상(1000)보다 낮아 같은 자리를 다투면 늘 15 이상이 먼저이고, 빈 자리(0)보다는 먼저 채운다(4회차) */
+const TEMPORARY_BONUS = 700
 /** 동점일 때 선수 idx가 작은 선수가 자리 순번이 작은 자리를 먼저 차지하도록 가중치에서 빼는 아주 작은 값 */
 const TIE_BREAK = 1e-8
 
@@ -129,11 +133,11 @@ export function assignMaximum(weight: number[][]): Array<number | null> {
 
 /**
  * 포메이션의 자리마다 주전과 후보를 정한다.
- * 주전은 "그 자리를 뛸 수 있는(숙련 15 이상) 선수"끼리만 짝지어, 자리별 z_eff(숙련 감점을 뺀 적합도가 그 역할 기준에서
+ * 주전은 "그 자리를 뛸 수 있는(숙련 15 이상) 선수"끼리 짝지어, 자리별 z_eff(숙련 감점을 뺀 적합도가 그 역할 기준에서
  * 평균보다 표준편차의 몇 배 위인가)의 합이 가장 커지는 배정이다(헝가리안 방법). 한 선수는 한 자리다.
  * 기준 분포(norms)가 없으면 z 대신 숙련 감점을 뺀 점수 그대로 합한다.
- * 뛸 선수가 없는 자리는 비운다. 같은 입력이면 늘 같은 결과이고, 동점이면 선수 idx와 자리 순번이 작은 쪽이 먼저다.
- * 후보는 주전으로 뽑히지 않은 선수 가운데 그 자리에서 숙련 감점을 뺀 점수가 높은 순이다.
+ * 숙련 10~14 선수도 임시 주전은 될 수 있다(가중치 700 + z_eff. 15 이상이 있으면 그쪽이 먼저). 10 미만뿐인 자리는 비운다. 같은 입력이면 늘 같은 결과이고, 동점이면 선수 idx와 자리 순번이 작은 쪽이 먼저다.
+ * 후보는 주전으로 뽑히지 않은 선수 가운데 그 자리에서 숙련 15 이상이고 숙련 감점을 뺀 점수가 높은 순이다.
  */
 export function buildDepth(
   rows: PlayerRow[],
@@ -170,12 +174,15 @@ export function buildDepth(
     const sigma = (known ?? FALLBACK_NORM).sigma
     const list: Entry[] = []
     for (const player of players) {
-      if (!canPlay(player.positions, slot.position)) continue
+      const natural = canPlay(player.positions, slot.position)
+      const measured = ratingAt(player.row.ratings, slot.position)
+      // 숙련 15 미만 10 이상이면 임시 주전감이다(숫자를 모르는 선수는 뛸 수 있다고 적힌 자리만)
+      if (!natural && (measured === null || measured < TEMPORARY_MIN_RATING)) continue
       const result = scoreRole(player.attrs, weights)
       if (!result) continue
-      const rating = ratingAt(player.row.ratings, slot.position) ?? RATING_UNKNOWN_ASSUMED
+      const rating = measured ?? RATING_UNKNOWN_ASSUMED
       const effScore = result.score - sigma * posPenaltySigma(rating)
-      list.push({ player, result, rating, effScore, z: known ? zOf(known, effScore) : null })
+      list.push({ player, result, rating, effScore, temporary: rating < PLAYABLE_RATING, z: known ? zOf(known, effScore) : null })
     }
     return list.sort((a, b) => b.effScore - a.effScore || b.result.score - a.result.score || a.player.row.idx - b.player.row.idx)
   })
@@ -187,7 +194,7 @@ export function buildDepth(
     for (const entry of list) {
       const rank = playerRank.get(entry.player.row.idx)!
       const value = entry.z ?? entry.effScore
-      weight[slotIndex][rank] = PLAYABLE_BONUS + value - TIE_BREAK * (rank + 1) * (slots.length - slotIndex)
+      weight[slotIndex][rank] = (entry.temporary ? TEMPORARY_BONUS : PLAYABLE_BONUS) + value - TIE_BREAK * (rank + 1) * (slots.length - slotIndex)
     }
   })
   const matched = assignMaximum(weight)
@@ -202,7 +209,7 @@ export function buildDepth(
 
   slots.forEach((slot, slotIndex) => {
     slot.backups = candidates[slotIndex]
-      .filter((entry) => !taken.has(entry.player.row.idx))
+      .filter((entry) => !taken.has(entry.player.row.idx) && !entry.temporary)
       .slice(0, backupCount)
       .map(toDepthPlayer)
     slot.thin = slot.starter !== null && slot.backups.length === 0
@@ -224,6 +231,7 @@ interface Entry {
   result: RoleScore
   rating: number
   effScore: number
+  temporary: boolean
   z: number | null
 }
 
@@ -235,6 +243,7 @@ function toDepthPlayer(entry: Entry): DepthPlayer {
     effScore: entry.effScore,
     rating: entry.rating,
     uncertain: entry.result.uncertain,
+    temporary: entry.temporary,
     z: entry.z
   }
 }
