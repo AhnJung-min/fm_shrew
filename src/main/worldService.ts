@@ -1,12 +1,12 @@
 import { existsSync, statSync } from 'node:fs'
 import { basename } from 'node:path'
+import { expectedWage, type WageCoefs } from '@shared/dashboard'
 import { NO_DATA, type DataStatus, type SaveFileInfo } from '@shared/game'
 import { POSITION_KEYS, PLAYABLE_RATING, positionOrder, positionsLabel } from '@shared/positions'
 import { footValues, formatPounds, hiddenAttributes, isGoalkeeper, visibleAttributes } from '@shared/playerView'
 import { normOf, type RoleNorms } from '@shared/norms'
 import { prepareRole, ROLE_BY_ID, savedRoleScore } from '@shared/roles'
 import {
-  capTierByRealism,
   recommend,
   squadMoney,
   tierRanker,
@@ -82,6 +82,11 @@ export interface WorldDeps {
   /** 찾아낸 내 팀 번호를 기억해 둔다 */
   rememberTeam(fileName: string, teamId: number): void
   roleWeights(): Record<string, Record<string, number>>
+  /**
+   * 대시보드의 리그 주급 모델(ln 주급 = a + b·CA + 나이 더미). 소속 없는 선수의 주급을 어림하는 데 쓴다(4회차).
+   * 이미 계산해 둔 것을 돌려주기만 한다(계산은 한 번). 아직 없으면 null이고 그때는 자유 계약 선수의 주급 부담을 보통(0.5)으로 본다
+   */
+  wageModel?(): WageCoefs | null
   /** 게임에 물어 알게 된 이름(나라, 팀)을 적어 두는 폴더 */
   namesDir: string
 }
@@ -130,6 +135,11 @@ export class WorldService {
   /** 게임의 값을 읽고 고칠 수 있는지를 알려 둔다. 못 하면 그 이유(화면에 그대로 보여 준다). */
   setLiveOff(reason: string | null): void {
     this.liveOff = reason
+  }
+
+  /** 게임에서 지금 값을 받은 시각(ms). 받은 적이 없으면 null. 이 값이 같으면 능력·현재 능력도 같다 */
+  liveStamp(): number | null {
+    return this.loaded?.live?.at ?? null
   }
 
   /** 적용해 둔 세이브의 경로 */
@@ -491,6 +501,7 @@ export class WorldService {
         backup: mine[1] ? { name: world.names[mine[1].k], score: mine[1].eff, shownScore: mine[1].score } : null
       }
     const money = squadMoney(myWages, myValues)
+    const wageCoefs = this.deps.wageModel?.() ?? null
     // 같은 포지션·역할의 자리는 한 그룹이라 필요도도 그룹 값(자리들 가운데 최대)이다
     const group = slotFound ? slotFound.group : null
     const need = group ? group.need : null
@@ -501,7 +512,8 @@ export class WorldService {
       money,
       need,
       norm,
-      groupSlots: group?.slots.length
+      groupSlots: group?.slots.length,
+      expectedWage: wageCoefs ? (ca, age) => expectedWage(wageCoefs, ca, age) : null
     }
     const goalkeeper = role.positions.includes('GK')
     const traitAt = (id: TraitId): number => ATTRIBUTE_INDEX.get(id)!
@@ -534,9 +546,9 @@ export class WorldService {
       expiresBy = (world.gameDate.year + Math.floor((days - 1) / 365)) * 1000 + ((days - 1) % 365) + 1
     }
     const counts = { ...empty }
-    /** 고른 유형의 자격 후보 전체의 총점(등급의 백분위를 매기는 기준. 이름 검색과 상관없다) */
-    const qualifiedTotals: number[] = []
-    const picked: Array<{ k: number; score: number; age: number | null; categories: CandidateCategory[]; total: number; inTab: boolean }> = []
+    /** 고른 유형의 자격 후보 전체의 총점과 영입 현실성(등급을 매기는 기준. 이름 검색과 상관없다) */
+    const qualifiedTotals: Array<{ total: number; low: boolean }> = []
+    const picked: Array<{ k: number; score: number; age: number | null; categories: CandidateCategory[]; total: number; low: boolean; inTab: boolean }> = []
     for (let k = 0; k < world.count; k++) {
       const name = world.names[k]
       if (!name || world.uids[k] === 0) continue
@@ -564,15 +576,17 @@ export class WorldService {
       const shown = nameHit && (inTab || search !== '')
       if (!inTab && !shown) continue
       // 줄 세우는 데는 설명 글이 필요 없어 점수만 구한다(풀이는 보여 줄 줄에만 붙인다)
-      const total = recommend(inputOf(k, score, age), context, false).total
-      if (inTab) qualifiedTotals.push(total)
-      if (shown) picked.push({ k, score, age, categories, total, inTab })
+      const scored = recommend(inputOf(k, score, age), context, false)
+      const total = scored.total
+      const low = scored.realism.low
+      if (inTab) qualifiedTotals.push({ total, low })
+      if (shown) picked.push({ k, score, age, categories, total, low, inTab })
     }
     // 추천 점수 순. 같으면 적합도, 현재 능력 순
     picked.sort((a, b) => b.total - a.total || b.score - a.score || world.ca[b.k] - world.ca[a.k])
     const tierOf = tierRanker(qualifiedTotals)
 
-    const rows: CandidateRow[] = picked.slice(0, MAX_ROWS).map(({ k, score, age, categories, total, inTab }) => {
+    const rows: CandidateRow[] = picked.slice(0, MAX_ROWS).map(({ k, score, age, categories, total, low, inTab }) => {
       const club = this.clubOf(world, k)
       const recommendation = recommend(inputOf(k, score, age), context)
       return {
@@ -594,8 +608,8 @@ export class WorldService {
         gap: bench.starter ? Math.round((score - (bench.starter.shownScore ?? bench.starter.score)) * 10) / 10 : null,
         categories,
         recommend: recommendation,
-        // 영입 현실성이 낮으면 등급만 "고려"까지로 제한한다(총점·정렬은 그대로)
-        tier: (inTab ? capTierByRealism(tierOf(total), recommendation.realism) : 'outside') as RecommendTierId,
+        // 등급 경계는 영입 현실성이 낮지 않은 후보로만 정하고, 낮은 선수는 그 위에 끼워 "고려"까지로 제한한다(총점·정렬은 그대로)
+        tier: (inTab ? tierOf(total, low) : 'outside') as RecommendTierId,
         attributes: [...world.attributes.subarray(k * ATTRIBUTE_COUNT, (k + 1) * ATTRIBUTE_COUNT)].map(shownValue)
       }
     })

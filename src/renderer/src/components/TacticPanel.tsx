@@ -163,7 +163,7 @@ export function TacticPanel(props: {
             <details className="tactic-more">
               <summary>어떻게 계산했나</summary>
               <p className="muted">
-                역할마다 점수 눈금이 달라, 줄끼리는 같은 역할 상위권 평균과 견준 표준편차(점수가 보통 흩어지는 폭)의 몇 배인지로 비교했습니다. {strongest.label}은 {strongest.zAverage! >= 0 ? '+' : ''}{strongest.zAverage!.toFixed(1)} 표준편차(적합도 평균 {strongest.fitAverage}점), {weakest.label}은 {weakest.zAverage!.toFixed(1)} 표준편차(적합도 평균 {weakest.fitAverage}점)입니다.
+                역할마다 점수 눈금이 달라, 줄끼리는 같은 역할 상위권 평균과 견준 표준편차(점수가 보통 흩어지는 폭)의 몇 배인지로 비교했습니다. {analysis.slots[0]?.normSource === 'world' && `모든 역할을 현재 능력 ${analysis.slots[0].norm.caRef} 이상 선수의 평균에 맞췄습니다. `}{strongest.label}은 {strongest.zAverage! >= 0 ? '+' : ''}{strongest.zAverage!.toFixed(1)} 표준편차(적합도 평균 {strongest.fitAverage}점), {weakest.label}은 {weakest.zAverage!.toFixed(1)} 표준편차(적합도 평균 {weakest.fitAverage}점)입니다.
               </p>
             </details>
           </>

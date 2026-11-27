@@ -57,7 +57,9 @@ function Explainer(props: { category: CandidateCategory; baseline: SquadMoney | 
         </table>
         <p>
           점수 차이는 이 역할의 보통 점수 차이(표준편차)로 잽니다
-          {norm ? `. 이 역할은 상위권 평균 ${norm.mu.toFixed(1)}점, 표준편차 ${norm.sigma.toFixed(1)}점입니다(현재 능력 ${norm.caRef} 이상 ${norm.n}명 기준)` : ''}.
+          {norm
+            ? `. 이 역할은 상위권 평균 ${norm.mu.toFixed(1)}점, 표준편차 ${norm.sigma.toFixed(1)}점입니다(현재 능력 ${norm.caRef} 이상 선수의 평균에 맞췄고, ${norm.poolCa !== undefined && norm.poolCa < norm.caRef ? `표본이 모자라 현재 능력 ${norm.poolCa} 이상 ${norm.n}명으로 구한 뒤 ${Math.abs(norm.shift ?? 0).toFixed(1)}점 ${(norm.shift ?? 0) >= 0 ? '올렸습니다' : '내렸습니다'}` : `${norm.n}명 기준입니다`})`
+            : ''}.
           자리를 골라 찾을 때는 그 자리의 보강 필요도에 따라 즉시 전력의 비중이 {NEED_WEIGHT_LOW}배(필요도 0)에서 {NEED_WEIGHT_HIGH}배(필요도 100) 사이로
           바뀝니다{need !== null ? `. 지금 자리의 보강 필요도는 ${Math.round(need)}입니다` : ''}.
         </p>
@@ -65,11 +67,19 @@ function Explainer(props: { category: CandidateCategory; baseline: SquadMoney | 
           등급은 점수의 절대값이 아니라, 같은 유형의 자격을 갖춘 선수 전체 안에서의 순위로 매깁니다: 상위 {percent(TIER_CUMULATIVE_SHARE[0])}%는 강력 추천, 다음{' '}
           {percent(TIER_CUMULATIVE_SHARE[1] - TIER_CUMULATIVE_SHARE[0])}%는 추천, 다음 {percent(TIER_CUMULATIVE_SHARE[2] - TIER_CUMULATIVE_SHARE[1])}%는 고려, 나머지는 보류입니다.
           후보 수가 적어도 모든 등급이 나오도록 인원은 올림해서 셉니다. 점수가 {TIER_MIN_TOTAL}점 미만이면 순위와 상관없이 보류입니다.
+          {REALISM_LABEL} 선수는 순위 칸을 쓰지 않습니다. 등급의 경계는 영입이 현실적인 선수들로만 정하고, 낮은 선수는 그 안에서 같은 순위로 놓았다가 “고려”까지로 제한합니다.
         </p>
+        {category === 'free' && (
+          <p>
+            자유 계약 선수는 세이브에 주급이 적혀 있지 않아, 같은 리그에서 현재 능력과 나이가 비슷한 선수의 기대 주급으로 어림해 비용 부담을 매깁니다(이적료는 없어 그 몫은 1).
+            영입 난이도는 계약·입지는 가장 쉬운 것으로 보고, 내 약한 주전보다 현재 능력이 훨씬 높은 선수만 체급으로 깎습니다.
+          </p>
+        )}
         {category === 'prospect' && (
           <p>
             유망주는 나이가 어릴수록 점수가 높습니다(17세 이하 1, 26세 이상 0). 성숙 시 이득(잠재와 현재의 차이 × 나이별 성장 몫 × 역할의 기울기)이 {PROSPECT_MIN_GAIN_SIGMA} 표준편차보다
             작은 선수는 유망주로 보지 않습니다. 그런 선수도 즉시 전력·로테이션 탭에는 그대로 남습니다.
+            어릴수록 실제 성장의 편차가 큽니다(같은 잠재 능력이라도 다 컸을 때 현재 능력이 ±10쯤 달라집니다). 점수는 기대값만 쓰므로 어린 선수일수록 불확실합니다.
           </p>
         )}
         <p>

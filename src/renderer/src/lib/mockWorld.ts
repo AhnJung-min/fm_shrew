@@ -2,6 +2,7 @@ import {
   ageStructure,
   buildBrief,
   contractWindows,
+  expectedWage,
   firstTeamPlayers,
   fitWageModel,
   NO_DASHBOARD,
@@ -16,7 +17,7 @@ import { FIELD_BY_ID, FIELDS } from '@shared/fields'
 import { footValues, formatPounds, hiddenAttributes, isGoalkeeper, visibleAttributes } from '@shared/playerView'
 import { POSITION_KEYS, PLAYABLE_RATING, positionsLabel } from '@shared/positions'
 import { FALLBACK_NORM, type RoleNorms } from '@shared/norms'
-import { capTierByRealism, recommend, squadMoney, tierRanker, TRAIT_WEIGHTS, type RecommendContext, type RecommendInput, type TraitId, type Traits } from '@shared/recommend'
+import { recommend, squadMoney, tierRanker, TRAIT_WEIGHTS, type RecommendContext, type RecommendInput, type TraitId, type Traits } from '@shared/recommend'
 import { ROLE_BY_ID, ROLES } from '@shared/roles'
 import { analyseTactic, slotBench } from '@shared/tactic'
 import type { SeasonMatch, SeasonResult, SeasonTableRow } from '@shared/season'
@@ -90,6 +91,17 @@ const ATTRIBUTE_INDEX = new Map<string, number>(SAVE_ATTRIBUTE_ORDER.map((id, i)
 /** 미리보기에는 세이브 전체가 없어 역할별 기준 분포를 구하지 못한다: 모든 역할에 대신하는 값을 주어 실제 앱과 같은 식을 돌린다 */
 const MOCK_NORMS: RoleNorms = Object.fromEntries(ROLES.map((role) => [role.id, FALLBACK_NORM]))
 
+/** 지어낸 주급 기준선: 선수마다 주급이 능력(과 나이)의 지수 함수에 가깝게 흩어지도록 만든 표본에 실제 앱과 같은 식을 맞춘다 */
+function mockWageFit(): NonNullable<ReturnType<typeof fitWageModel>> {
+  const points = Array.from({ length: 400 }, (_, i) => {
+    const random = rng(i + 901)
+    const ca = 60 + Math.floor(random() * 110)
+    const age = 17 + Math.floor(random() * 20)
+    return { ca, age, wage: Math.exp(3.4 + 0.052 * ca - (age < 21 ? 0.5 : 0) + (age >= 30 ? 0.2 : 0) + (random() - 0.5) * 1.2) }
+  })
+  return fitWageModel(points)!
+}
+
 export function mockCandidates(query: CandidateQuery, empty: boolean): CandidateResult {
   const counts: Record<CandidateCategory, number> = { all: 0, starter: 0, rotation: 0, prospect: 0, free: 0 }
   if (empty) {
@@ -128,13 +140,15 @@ export function mockCandidates(query: CandidateQuery, empty: boolean): Candidate
   )
   const group = slotFound ? slotFound.group : null
   const need = group ? group.need : null
+  const wageFit = mockWageFit()
   const context: RecommendContext = {
     starter: bench.starter,
     backup: bench.backup ? { score: bench.backup.score, shownScore: bench.backup.shownScore } : null,
     today: { year: 2026, day: 182 },
     money,
     need,
-    groupSlots: group?.slots.length
+    groupSlots: group?.slots.length,
+    expectedWage: (ca, age) => expectedWage(wageFit, ca, age)
   }
   // 미리보기에는 세이브 전체가 없어 기준 분포를 구하지 못한다: 대신하는 값으로 같은 식을 돌린다
   const norm = FALLBACK_NORM
@@ -175,7 +189,7 @@ export function mockCandidates(query: CandidateQuery, empty: boolean): Candidate
     .filter((row) => (query.category === 'all' ? row.categories.length > 0 : row.categories.includes(query.category)))
     .map((row) => ({ ...row, recommend: recommend(inputOf(row.player, row.score), { ...context, norm }) }))
     .sort((a, b) => b.recommend.total - a.recommend.total || b.score - a.score)
-  const tierOf = tierRanker(picked.map((row) => row.recommend.total))
+  const tierOf = tierRanker(picked.map((row) => ({ total: row.recommend.total, low: row.recommend.realism.low })))
 
   return {
     ok: true,
@@ -210,7 +224,7 @@ export function mockCandidates(query: CandidateQuery, empty: boolean): Candidate
         score,
         gap: bench.starter ? Math.round((score - (bench.starter.shownScore ?? bench.starter.score)) * 10) / 10 : null,
         categories,
-        tier: capTierByRealism(tierOf(recommendation.total), recommendation.realism),
+        tier: tierOf(recommendation.total, recommendation.realism.low),
         attributes: player.attributes.map(shownValue)
       }
     })
@@ -406,14 +420,7 @@ export function mockDashboard(empty: boolean, settings: { formation: string; slo
   const need = analysis.byNeed[0]
   const slot = recommendSlotOf(analysis.formation.id, need)
 
-  // 지어낸 주급 기준선: 선수마다 주급이 능력(과 나이)의 지수 함수에 가깝게 흩어지도록 만든 표본
-  const points = Array.from({ length: 400 }, (_, i) => {
-    const random = rng(i + 901)
-    const ca = 60 + Math.floor(random() * 110)
-    const age = 17 + Math.floor(random() * 20)
-    return { ca, age, wage: Math.exp(3.4 + 0.052 * ca - (age < 21 ? 0.5 : 0) + (age >= 30 ? 0.2 : 0) + (random() - 0.5) * 1.2) }
-  })
-  const fit = fitWageModel(points)!
+  const fit = mockWageFit()
   const loanedIn = new Set([1030])
   const over = overpaidPlayers(players, fit, loanedIn)
 
@@ -436,7 +443,7 @@ export function mockDashboard(empty: boolean, settings: { formation: string; slo
       recent: season.recent,
       next: season.upcoming[0] ?? null,
       need: { label: slot.label, roleLabel: slot.roleLabel, need: slot.need, level: slot.level, levelLabel: slot.levelLabel, reason: slot.reason, formation: analysis.formation.label },
-      expiring: { known: contracts.known, count: contracts.within1y.length, names: contracts.within1y.map((row) => row.name) }
+      expiring: { known: contracts.known, count: contracts.within1y.length, names: contracts.within1y.map((row) => row.name), expired: contracts.expired.length }
     }),
     squad: {
       firstTeam: players.length,
@@ -448,7 +455,7 @@ export function mockDashboard(empty: boolean, settings: { formation: string; slo
       loans: { in: [loan(1030, '한강 유나이티드', '북악 시티')], out: [loan(1040, '남해 FC', '남해 FC'), loan(1050, '서천 애슬레틱', '서천 애슬레틱')] },
       ages: ageStructure(players)
     },
-    contracts: { known: contracts.known, within1y: contracts.within1y, within2y: contracts.within2y, wageWithin1y: contracts.wageWithin1y },
+    contracts: { known: contracts.known, expired: contracts.expired, within1y: contracts.within1y, within2y: contracts.within2y, wageWithin1y: contracts.wageWithin1y },
     surplus: { ok: true, formation: analysis.formation.label, ...surplusReport({ players, rows: squad.rows, columns: squad.columns, analysis, roleWeights: {}, norms: squad.roleNorms, wageModel: fit, loanedIn }) },
     overpaid: { ok: true, model: { ...fit, scope: 'league', teams: 8 }, rows: over.rows, total: over.total },
     recommend: {

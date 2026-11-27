@@ -84,8 +84,9 @@ export const TERM_HELP = {
  * - 즉시 전력: 지금 주전을 바꿀 선수를 찾는 것이므로 즉시 전력이 절반이고 성숙 시 전력은 거의 보지 않는다.
  * - 로테이션 자원: 주전이 아닌 뒤를 받칠 선수라 능력 격차보다 몸값·주급 부담과 데려오기 쉬운지가 더 중요하다.
  * - 유망주: 지금 능력은 거의 보지 않고 성숙 시 전력이 40이다. 나이 가치(어릴수록 되팔 때 값이 오른다)도 본다.
- * - 자유 계약: 이적료가 없고 데려오기 쉬운 것은 모두에게 같으므로 비용·난이도는 0으로 두고(세이브에는 소속 없는
- *   선수의 주급도 적혀 있지 않다), 실력과 믿음직함(영입 뒤 문제를 덜 일으키는가)을 더 본다.
+ * - 자유 계약: 이적료가 없고 계약·입지가 걸리지 않아 비용·난이도의 비중은 작게 두지만(4회차까지는 0이었다), 0은 아니다.
+ *   세이브에는 소속 없는 선수의 주급이 적혀 있지 않아 같은 리그에서 현재 능력·나이가 비슷한 선수의 기대 주급으로 어림하고
+ *   (비용 = 0.6·주급 부담 + 0.4·1), 난이도는 체급만 본다(0.8·1 + 0.2·체급). 비중은 추정이다. 실력과 믿음직함도 더 본다.
  *
  * 성숙 시 전력은 증분이 아니라 수준이라, 27세 이상의 선수는 (즉시 전력 + 성숙 시 전력) 둘 다 지금 적합도에 걸린다.
  * 그래서 1회차보다 총점 눈금이 약 10점 올랐다(2회차).
@@ -95,7 +96,7 @@ export const RECOMMEND_WEIGHTS: Record<CandidateCategory, Record<ComponentId, nu
   starter: { immediate: 50, maturity: 4, age: 10, cost: 14, ease: 10, reliability: 12 },
   rotation: { immediate: 36, maturity: 6, age: 8, cost: 20, ease: 16, reliability: 14 },
   prospect: { immediate: 12, maturity: 40, age: 10, cost: 14, ease: 12, reliability: 12 },
-  free: { immediate: 50, maturity: 12, age: 14, cost: 0, ease: 0, reliability: 24 }
+  free: { immediate: 44, maturity: 10, age: 12, cost: 10, ease: 8, reliability: 16 }
 }
 
 // ---------- 등급 ----------
@@ -113,7 +114,7 @@ export const RECOMMEND_TIER_LABEL: Record<RecommendTierId, string> = {
 /**
  * 등급은 점수의 절대값이 아니라 "같은 유형 탭의 자격 후보 전체" 안에서의 순위로 매긴다.
  * 유형마다 점수 눈금이 달라서 75점 같은 고정 경계는 유형에 따라 다른 뜻이 되기 때문이다.
- * 누적 비율: 상위 5% 강력 추천, 다음 15%(상위 20%까지) 추천, 다음 30%(상위 50%까지) 고려, 나머지 보류. (비율은 이 앱이 정한 어림)
+ * 경계는 영입 현실성이 낮지 않은 후보만으로 센다(tierRanker). 누적 비율: 상위 5% 강력 추천, 다음 15%(상위 20%까지) 추천, 다음 30%(상위 50%까지) 고려, 나머지 보류. (비율은 이 앱이 정한 어림)
  * 인원은 올림해서 센다: n명이면 k1 = max(1, ⌈0.05n⌉), k2 = max(k1+1, ⌈0.20n⌉), k3 = max(k2+1, ⌈0.50n⌉).
  * 그러면 후보가 5명이어도 강력 추천 1, 추천 1, 고려 1, 보류 2로 모든 등급이 나온다(2회차. 백분위로 나누면 5명에서 추천이 비었다).
  */
@@ -133,28 +134,28 @@ export function tierCutoffs(count: number): [number, number, number] {
 }
 
 /**
- * 자격 후보들의 총점 목록으로 등급을 매기는 함수를 만든다. 순위 = 나보다 총점이 높은 후보 수 + 1(동점은 같은 순위, 같은 등급).
- * 총점이 TIER_MIN_TOTAL 미만이면 순위와 상관없이 보류다.
+ * 등급을 매기는 함수를 만든다(4회차). 경계(k1, k2, k3)는 같은 탭 자격 후보 가운데 "영입 현실성이 낮지 않은" 후보만으로 정한다.
+ * 순위 = 나보다 총점이 높은 현실적 후보 수 + 1(동점은 같은 순위, 같은 등급). 총점이 TIER_MIN_TOTAL 미만이면 순위와 상관없이 보류다.
+ * 현실성이 낮은 선수(low)는 후보 수에 들지 않고, 같은 순위 규칙으로 등급을 구한 뒤 "고려"까지로 제한한다.
+ * 그래서 현실성 낮은 후보를 더해도 현실적인 후보의 등급은 내려가지 않는다(1~3회차에는 낮은 선수가 강력 추천·추천 칸을 쓴 채 "고려"로 남아 가장 현실적인 선수가 보류로 밀렸다).
  */
-export function tierRanker(totals: number[]): (total: number) => Exclude<RecommendTierId, 'outside'> {
-  const sorted = [...totals].sort((a, b) => b - a)
+export function tierRanker(candidates: Array<{ total: number; low: boolean }>): (total: number, low?: boolean) => Exclude<RecommendTierId, 'outside'> {
+  const sorted = candidates.filter((each) => !each.low).map((each) => each.total).sort((a, b) => b - a)
   const count = sorted.length
   const [k1, k2, k3] = tierCutoffs(count)
-  return (total) => {
+  return (total, low = false) => {
     if (total < TIER_MIN_TOTAL || count === 0) return 'low'
-    // 나보다 점수가 높은 후보 수(이분 탐색)
-    let low = 0
-    let high = count
-    while (low < high) {
-      const mid = (low + high) >> 1
-      if (sorted[mid] > total) low = mid + 1
-      else high = mid
+    // 나보다 점수가 높은 현실적 후보 수(이분 탐색)
+    let lo = 0
+    let hi = count
+    while (lo < hi) {
+      const mid = (lo + hi) >> 1
+      if (sorted[mid] > total) lo = mid + 1
+      else hi = mid
     }
-    const rank = low + 1
-    if (rank <= k1) return 'top'
-    if (rank <= k2) return 'good'
-    if (rank <= k3) return 'maybe'
-    return 'low'
+    const rank = lo + 1
+    const tier = rank <= k1 ? 'top' : rank <= k2 ? 'good' : rank <= k3 ? 'maybe' : 'low'
+    return capTierByRealism(tier, { low, reasons: [] }) as Exclude<RecommendTierId, 'outside'>
   }
 }
 
@@ -319,7 +320,7 @@ export function realismOf(input: Pick<RecommendInput, 'hasClub' | 'wage' | 'ca' 
   return { low: reasons.length > 0, reasons }
 }
 
-/** 영입 현실성이 낮으면 등급을 "고려"까지로 제한한다(보류·유형 밖은 그대로) */
+/** 영입 현실성이 낮으면 등급을 "고려"까지로 제한한다(보류·유형 밖은 그대로). tierRanker가 낮은 선수에게 같은 제한을 건다 */
 export function capTierByRealism(tier: RecommendTierId, realism: Realism): RecommendTierId {
   return realism.low && (tier === 'top' || tier === 'good') ? 'maybe' : tier
 }
@@ -383,6 +384,11 @@ export interface RecommendContext {
   norm?: RoleNorm
   /** 고른 자리가 속한 그룹의 자리 수(같은 포지션·역할). 2 이상이면 설명에 적는다 */
   groupSlots?: number
+  /**
+   * 같은 리그에서 현재 능력·나이가 비슷한 선수의 기대 주급(파운드). 대시보드의 주급 모델이다. 모르면 없다.
+   * 세이브에 주급이 적혀 있지 않은 자유 계약 선수의 주급을 어림하는 데 쓴다(4회차)
+   */
+  expectedWage?: ((ca: number, age: number | null) => number) | null
 }
 
 export interface RecommendComponent {
@@ -647,8 +653,11 @@ function agePart(input: RecommendInput, notes: boolean): Part {
 function costPart(input: RecommendInput, ctx: RecommendContext, notes: boolean): Part {
   if (!ctx.money) return unknown('내 팀의 주급·몸값 수준을 알 수 없어서,')
   const { medianWage, topWage, medianValue, topValue } = ctx.money
-  const wageKnown = input.wage !== null
-  const wageFit = wageKnown ? affordability(input.wage!, medianWage, topWage) : UNKNOWN_FIT
+  // 소속 없는 선수는 세이브에 주급이 없다: 같은 리그의 기대 주급(능력·나이)으로 어림한다(4회차)
+  const estimated = !input.hasClub && input.wage === null && ctx.expectedWage ? ctx.expectedWage(input.ca, input.age) : null
+  const wage = input.wage ?? estimated
+  const wageKnown = wage !== null
+  const wageFit = wageKnown ? affordability(wage, medianWage, topWage) : UNKNOWN_FIT
 
   let valueFit: number = UNKNOWN_FIT
   let feeNote = ''
@@ -670,20 +679,31 @@ function costPart(input: RecommendInput, ctx: RecommendContext, notes: boolean):
   const fit = WAGE_SHARE * wageFit + (1 - WAGE_SHARE) * valueFit
   const assumed = !wageKnown || !feeKnown
   if (!notes) return { fit, assumed, note: '' }
-  const ratio = wageKnown ? input.wage! / medianWage : 0
+  const ratio = wageKnown ? wage / medianWage : 0
+  const wageLabel = estimated !== null ? '이 주급' : `주급 ${formatPounds(wage!)}`
   const wageNote = !wageKnown
     ? `주급은 정보가 없어 보통(${UNKNOWN_FIT})으로 보았습니다${input.hasClub ? '' : '(자유 계약 선수는 세이브에 주급이 적혀 있지 않습니다)'}.`
-    : input.wage! > topWage
-      ? `${withJosa(`주급 ${formatPounds(input.wage!)}`, '은/는')} 내 팀 최고 주급(${formatPounds(topWage)})보다 많아 팀에서 가장 많이 받는 선수가 됩니다.`
-      : ratio < COST_LOW_RATIO
-        ? `${withJosa(`주급 ${formatPounds(input.wage!)}`, '은/는')} 내 팀 중간(${formatPounds(medianWage)})의 절반에도 못 미쳐 부담이 거의 없습니다.`
-        : `${withJosa(`주급 ${formatPounds(input.wage!)}`, '은/는')} 내 팀 중간(${formatPounds(medianWage)})의 ${fixed1(ratio)}배입니다.`
+    : `${estimated !== null ? `자유 계약 선수라 주급은 같은 리그에서 현재 능력·나이가 비슷한 선수의 기대 주급(${formatPounds(estimated)})으로 어림했습니다. ` : ''}${
+        wage > topWage
+          ? `${withJosa(wageLabel, '은/는')} 내 팀 최고 주급(${formatPounds(topWage)})보다 많아 팀에서 가장 많이 받는 선수가 됩니다.`
+          : ratio < COST_LOW_RATIO
+            ? `${withJosa(wageLabel, '은/는')} 내 팀 중간(${formatPounds(medianWage)})의 절반에도 못 미쳐 부담이 거의 없습니다.`
+            : `${withJosa(wageLabel, '은/는')} 내 팀 중간(${formatPounds(medianWage)})의 ${fixed1(ratio)}배입니다.`
+      }`
   return { fit, assumed, note: `${wageNote} ${feeNote}` }
 }
 
 function easePart(input: RecommendInput, ctx: RecommendContext, notes: boolean): Part {
-  if (!input.hasClub) return { fit: 1, assumed: false, note: notes ? '소속 구단이 없어 협상할 상대가 선수 본인뿐이라 가장 쉽습니다.' : '' }
   const norm = ctx.norm ?? FALLBACK_NORM
+  if (!input.hasClub) {
+    // 계약·입지는 걸리지 않아 1이고, 체급(내 약한 주전보다 현재 능력이 얼마나 높은가)만 본다(4회차: 0.8·1 + 0.2·체급)
+    const reference = ctx.starter ? ctx.starter.ca : norm.caRef
+    const stature = statureFit(input.ca, reference)
+    const fit = 1 - EASE_STATURE_SHARE * (1 - stature)
+    const gap = input.ca - reference
+    const heavy = gap > 0 && stature < 1 ? ` 다만 현재 능력 ${input.ca}이 ${ctx.starter ? '내 약한 주전' : '내 팀 기준 능력'}(${reference})보다 ${gap} 높아 체급이 달라 이 부분은 ${Math.round(stature * 100)}%만 쳤습니다.` : ''
+    return { fit, assumed: false, note: notes ? `소속 구단이 없어 협상할 상대가 선수 본인뿐이라 계약과 입지는 가장 쉽습니다.${heavy}` : '' }
+  }
   const days = input.contractEnd && ctx.today ? daysUntil(input.contractEnd, ctx.today) : null
   const contractFit = days === null ? null : interpolate(CONTRACT_EASE, Math.max(0, days))
   const statusFit = STATUS_EASE[input.squadStatus] ?? null

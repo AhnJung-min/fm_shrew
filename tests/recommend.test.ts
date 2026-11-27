@@ -89,8 +89,10 @@ describe('가중치 표', () => {
     expect(RECOMMEND_WEIGHTS.starter.immediate).toBeGreaterThan(RECOMMEND_WEIGHTS.prospect.immediate)
     expect(RECOMMEND_WEIGHTS.prospect.maturity).toBeGreaterThan(RECOMMEND_WEIGHTS.starter.maturity)
     expect(RECOMMEND_WEIGHTS.rotation.cost).toBeGreaterThan(RECOMMEND_WEIGHTS.starter.cost)
-    expect(RECOMMEND_WEIGHTS.free.cost).toBe(0)
-    expect(RECOMMEND_WEIGHTS.free.ease).toBe(0)
+    // 자유 계약: 이적료가 없고 계약·입지가 걸리지 않아 비용·난이도 비중은 작지만 0은 아니다(4회차)
+    expect(RECOMMEND_WEIGHTS.free).toEqual({ immediate: 44, maturity: 10, age: 12, cost: 10, ease: 8, reliability: 16 })
+    expect(RECOMMEND_WEIGHTS.free.cost).toBeLessThan(RECOMMEND_WEIGHTS.starter.cost)
+    expect(RECOMMEND_WEIGHTS.free.ease).toBeLessThan(RECOMMEND_WEIGHTS.starter.ease)
   })
 })
 
@@ -357,10 +359,14 @@ describe('내 팀의 주급·몸값 수준', () => {
 })
 
 describe('영입 난이도', () => {
-  it('자유 계약은 가장 쉽다', () => {
-    const result = part('ease', { hasClub: false, contractEnd: null, squadStatus: 0 })
+  it('자유 계약은 가장 쉽다: 계약·입지는 1이고 체급이 내 주전 이하이면 가득 받는다(4회차: 0.8·1 + 0.2·체급)', () => {
+    const result = part('ease', { hasClub: false, contractEnd: null, squadStatus: 0, ca: 120 })
     expect(result.counted).toBe(true)
     expect(result.points).toBeCloseTo(result.max)
+    // 내 주전(CA 125)보다 25 이상 높으면 체급 몫(0.2)만 깎인다
+    const star = part('ease', { hasClub: false, contractEnd: null, squadStatus: 0, ca: 160 })
+    expect(star.points / star.max).toBeCloseTo(0.8, 6)
+    expect(star.note).toContain('체급')
   })
   it('계약이 짧을수록 쉽다', () => {
     const f = (end: number): number => part('ease', { contractEnd: end, squadStatus: 0 }).points
@@ -612,14 +618,16 @@ describe('유형에 따른 차이', () => {
     expect(recommend({ ...veteran, category: 'starter' }, ctx).total).toBeGreaterThan(recommend({ ...youngster, category: 'starter' }, ctx).total)
     expect(recommend({ ...youngster, pa: 170, category: 'prospect' }, ctx).total).toBeGreaterThan(recommend({ ...youngster, pa: 120, category: 'prospect' }, ctx).total)
   })
-  it('자유 계약 유형은 비용과 난이도를 보지 않는다', () => {
+  it('자유 계약 유형도 비용(10)과 난이도(8)를 본다(4회차). 주급 모델이 없으면 비용은 이적료 1과 주급 보통 0.5다', () => {
     const result = recommend(input({ category: 'free', hasClub: false, wage: null }), context())
-    for (const id of ['cost', 'ease'] as const) {
+    for (const [id, max] of [['cost', 10], ['ease', 8]] as const) {
       const each = result.components.find((component) => component.id === id)!
-      expect(each.counted).toBe(false)
-      expect(each.max).toBe(0)
-      expect(each.note).toContain('이 유형에서는')
+      expect(each.counted).toBe(true)
+      expect(each.max).toBe(max)
     }
+    const cost = result.components.find((each) => each.id === 'cost')!
+    expect(cost.points / cost.max).toBeCloseTo(0.6 * 0.5 + 0.4 * 1, 1)
+    expect(cost.assumed).toBe(true)
   })
 })
 
@@ -699,8 +707,10 @@ describe('경고(점수에는 넣지 않는다)', () => {
 })
 
 describe('등급(같은 유형의 자격 후보 안에서의 순위, 올림 인원)', () => {
+  const ranker = (totals: number[], lows: number[] = []): ReturnType<typeof tierRanker> =>
+    tierRanker([...totals.map((total) => ({ total, low: false })), ...lows.map((total) => ({ total, low: true }))])
   const grades = (totals: number[]): Record<string, number> => {
-    const tier = tierRanker(totals)
+    const tier = ranker(totals)
     const count: Record<string, number> = { top: 0, good: 0, maybe: 0, low: 0 }
     for (const total of totals) count[tier(total)]++
     return count
@@ -716,20 +726,46 @@ describe('등급(같은 유형의 자격 후보 안에서의 순위, 올림 인�
     expect(tierCutoffs(100)).toEqual([5, 20, 50])
   })
   it('후보 5명(70.8, 66.9, 61.0, 58.9, 55.9)이면 강력 추천, 추천, 고려, 보류, 보류(60 미만은 보류)', () => {
-    const tier = tierRanker([70.8, 66.9, 61.0, 58.9, 55.9])
-    expect([70.8, 66.9, 61.0, 58.9, 55.9].map(tier)).toEqual(['top', 'good', 'maybe', 'low', 'low'])
+    const tier = ranker([70.8, 66.9, 61.0, 58.9, 55.9])
+    expect([70.8, 66.9, 61.0, 58.9, 55.9].map((total) => tier(total))).toEqual(['top', 'good', 'maybe', 'low', 'low'])
   })
   it('점수가 60 미만이면 순위가 높아도 보류이고, 후보 한 명이면 60 이상일 때 강력 추천이다', () => {
-    expect(tierRanker([59.9])(59.9)).toBe('low')
-    expect(tierRanker([TIER_MIN_TOTAL])(TIER_MIN_TOTAL)).toBe('top')
-    expect(tierRanker([80])(80)).toBe('top')
+    expect(ranker([59.9])(59.9)).toBe('low')
+    expect(ranker([TIER_MIN_TOTAL])(TIER_MIN_TOTAL)).toBe('top')
+    expect(ranker([80])(80)).toBe('top')
     expect(grades([58, 57, 56, 55])).toEqual({ top: 0, good: 0, maybe: 0, low: 4 })
     expect(TIER_MIN_TOTAL).toBe(60)
   })
+  it('T2. 영입 현실성 낮음 선수는 순위 칸을 쓰지 않는다: [70.7 낮음, 70.4 낮음, 67.4, 64.9, 59.1, 56.6] → 고려, 고려, 강력 추천, 추천, 보류, 보류', () => {
+    const tier = ranker([67.4, 64.9, 59.1, 56.6], [70.7, 70.4])
+    expect([67.4, 64.9, 59.1, 56.6].map((total) => tier(total))).toEqual(['top', 'good', 'low', 'low'])
+    // 낮음 선수는 같은 규칙으로 순위를 구한 뒤 고려까지로 제한한다(총점 60 미만이면 보류)
+    expect(tier(70.7, true)).toBe('maybe')
+    expect(tier(70.4, true)).toBe('maybe')
+    expect(tier(59.0, true)).toBe('low')
+    // 현행(낮음까지 순위에 넣던 방식)은 [고려, 고려, 고려, 보류, 보류, 보류]였다
+    const old = ranker([70.7, 70.4, 67.4, 64.9, 59.1, 56.6])
+    expect(old(64.9)).toBe('low')
+  })
+  it('T7. 속성: 현실성 낮은 후보를 하나 더해도 현실적인 후보의 등급은 내려가지 않는다(등급은 같다)', () => {
+    const random = rng(404)
+    const order = ['low', 'maybe', 'good', 'top']
+    for (let trial = 0; trial < 200; trial++) {
+      const real = Array.from({ length: 1 + Math.floor(random() * 40) }, () => 50 + random() * 35)
+      const lows = Array.from({ length: Math.floor(random() * 5) }, () => 50 + random() * 35)
+      const extra = 50 + random() * 40
+      const before = ranker(real, lows)
+      const after = ranker(real, [...lows, extra])
+      for (const total of real) {
+        expect(order.indexOf(after(total)), `${trial}`).toBeGreaterThanOrEqual(order.indexOf(before(total)))
+        expect(after(total)).toBe(before(total))
+      }
+    }
+  })
   it('점수가 같으면 같은 순위, 같은 등급이다', () => {
-    const tier = tierRanker([70, 70, 70, 60, 60, 55])
+    const tier = ranker([70, 70, 70, 60, 60, 55])
     expect(tier(70)).toBe('top')
-    const ties = tierRanker([80, 80, 80, 80, 80, 80, 80, 80, 80, 80])
+    const ties = ranker([80, 80, 80, 80, 80, 80, 80, 80, 80, 80])
     expect(ties(80)).toBe('top')
   })
 })
@@ -867,5 +903,57 @@ describe('2회차 검토 시나리오(검토 보고서 4.1, 값은 ±1점)', () 
     // 주전이 없으면 기준은 이 역할 상위권 평균이다(주전·후보 없음 → 평균과 같으면 0.5)
     const none = cb2({ starter: null, backup: null })
     expect(immediateFit(norm.mu, none, 'all')).toBeCloseTo(0.5)
+  })
+})
+
+describe('자유 계약 비용·체급 추정(4회차, T10)', () => {
+  // 내 1군 주급 중간이 5,000인 약한 구단. 리그 주급 모델은 세이브 실측 계수
+  const weakMoney = { medianWage: 5_000, topWage: 12_000, medianValue: 1_000_000, topValue: 5_000_000 }
+  const model = { a: 4.058, b: 0.0496, c1: -0.47, c2: 0.2 }
+  const expected = (ca: number, age: number | null): number => Math.exp(model.a + model.b * ca + (age !== null && age < 21 ? model.c1 : 0) + (age !== null && age >= 30 ? model.c2 : 0))
+  const weak = (patch: Partial<RecommendContext> = {}): RecommendContext => ({
+    starter: { name: '주전', score: 70, ca: 100, age: 27 },
+    backup: { score: 62 },
+    today: { year: 2026, day: 181 },
+    money: weakMoney,
+    norm: { mu: 72, sigma: 3.5, beta: 0.27, n: 60, caRef: 100 },
+    expectedWage: expected,
+    ...patch
+  })
+  const free = (ca: number, patch: Partial<RecommendInput> = {}): RecommendInput =>
+    input({ category: 'free', hasClub: false, wage: null, value: null, contractEnd: null, squadStatus: 0, roleScore: 70.5, age: 25, ca, pa: ca + 3, ...patch })
+  const costOf = (r: ReturnType<typeof recommend>): number => {
+    const each = r.components.find((component) => component.id === 'cost')!
+    return each.points / each.max
+  }
+
+  it('CA134·25세는 기대 주급이 약 4.5만 파운드라 최고 주급 1.3배를 넘어 비용이 0.40이다. CA100은 약 0.7로 더 쉽다', () => {
+    expect(expected(134, 25)).toBeGreaterThan(44_000)
+    expect(expected(134, 25)).toBeLessThan(45_000)
+    const big = recommend(free(134), weak())
+    const small = recommend(free(100), weak())
+    expect(costOf(big)).toBeCloseTo(0.4, 2)
+    expect(costOf(small)).toBeGreaterThan(0.65)
+    expect(costOf(big)).toBeLessThan(costOf(small))
+    expect(big.total).toBeLessThan(small.total)
+    expect(big.components.find((each) => each.id === 'cost')!.assumed).toBe(false)
+    expect(big.components.find((each) => each.id === 'cost')!.note).toContain('기대 주급')
+    expect(big.components.find((each) => each.id === 'cost')!.note).toContain('같은 리그')
+    expect(big.components.find((each) => each.id === 'cost')!.note).toContain('만 원')
+  })
+  it('이 약한 구단에서는 같은 적합도라면 현재 능력이 높은 자유 계약 선수의 총점이 오르지 않는다(체급·비용)', () => {
+    const totals = [100, 110, 120, 130, 140].map((ca) => recommend(free(ca), weak()).total)
+    for (let i = 1; i < totals.length; i++) expect(totals[i]).toBeLessThanOrEqual(totals[i - 1] + 1e-9)
+  })
+  it('주급 모델이 없으면 비용은 이적료 1과 주급 보통 0.5(0.7)이고 "보통으로 보았다"고 적는다', () => {
+    const none = recommend(free(134), weak({ expectedWage: null }))
+    expect(costOf(none)).toBeCloseTo(0.7, 2)
+    expect(none.components.find((each) => each.id === 'cost')!.assumed).toBe(true)
+  })
+  it('소속이 있는 선수의 비용은 모델이 아니라 세이브에 적힌 주급으로 본다', () => {
+    const withClub = input({ category: 'all', hasClub: true, wage: 5_000 })
+    const a = recommend(withClub, weak())
+    const b = recommend(withClub, weak({ expectedWage: null }))
+    expect(a.components.find((each) => each.id === 'cost')!.points).toBe(b.components.find((each) => each.id === 'cost')!.points)
   })
 })
