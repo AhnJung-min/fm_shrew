@@ -84,7 +84,8 @@ function createWindow(): void {
     minWidth: 380,
     minHeight: 520,
     show: false,
-    backgroundColor: '#161c1a',
+    // 화면이 뜨기 전 잠깐 보이는 바탕. app.css의 --bg와 같은 색
+    backgroundColor: settings.get().theme === 'black' ? '#08090b' : '#0a1324',
     title: 'FM 보좌관',
     autoHideMenuBar: true,
     webPreferences: {

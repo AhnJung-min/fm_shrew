@@ -45,10 +45,15 @@ describe('hiddenBand', () => {
 })
 
 describe('formatPounds', () => {
-  it('금액을 짧게 쓰고 모르면 빈 글자', () => {
-    expect(formatPounds(25_000_000)).toBe('£25M')
-    expect(formatPounds(2_400_000)).toBe('£2.4M')
-    expect(formatPounds(180_000)).toBe('£180K')
+  it('파운드 금액을 원화로 바꿔 게임과 같은 꼴로 쓰고 모르면 빈 글자', () => {
+    // 1파운드 = WON_PER_POUND(1,920)원
+    expect(formatPounds(25_000_000)).toBe('480억 원')
+    expect(formatPounds(600_000_000)).toBe('11,520억 원')
+    expect(formatPounds(2_400_000)).toBe('46.1억 원')
+    expect(formatPounds(180_000)).toBe('3.5억 원')
+    expect(formatPounds(208_334)).toBe('4억 원')
+    expect(formatPounds(5_000)).toBe('960만 원')
+    expect(formatPounds(3)).toBe('5,760원')
     expect(formatPounds(0)).toBe('')
     expect(formatPounds(null)).toBe('')
   })

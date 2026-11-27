@@ -57,10 +57,10 @@ describe('글자 읽기', () => {
   })
 
   it('금액을 짧게', () => {
-    expect(poundsText(3_200_000)).toBe('£3.2M')
-    expect(poundsText(45_000_000)).toBe('£45M')
-    expect(poundsText(62_000)).toBe('£62K')
-    expect(poundsText(-1_500_000)).toBe('-£1.5M')
+    expect(poundsText(3_200_000)).toBe('61.4억 원')
+    expect(poundsText(45_000_000)).toBe('864억 원')
+    expect(poundsText(62_000)).toBe('1.2억 원')
+    expect(poundsText(-1_500_000)).toBe('-28.8억 원')
   })
 
   it('별 숫자를 막대 길이로', () => {
@@ -105,14 +105,14 @@ describe('구단', () => {
     expect(items[3]).toMatchObject({ id: 'youthRecruitment', text: '평균', level: null })
   })
 
-  it('재정: 게임이 준 글자를 먼저, 숫자만 있으면 파운드로 적는다', () => {
+  it('재정: 게임이 준 글자를 먼저, 숫자만 있으면 파운드로 보고 원화로 적는다', () => {
     const items = financesOf({ transferBudget: '3200000', wageBudget: '€1.5M', wageSpend: '1388000', wageSpendText: '€1.39M', balance: '-2500000', balanceStatus: '위험' })
     const by = Object.fromEntries(items.map((item) => [item.id, item]))
-    expect(by.transferBudget).toMatchObject({ text: '£3.2M', converted: true, sort: 3_200_000 })
+    expect(by.transferBudget).toMatchObject({ text: '61.4억 원', converted: true, sort: 3_200_000 })
     expect(by.wageBudget).toMatchObject({ text: '€1.5M', converted: false, sort: 1_500_000 })
     expect(by.wageSpend).toMatchObject({ text: '€1.39M', converted: false })
     expect(by.wageRemaining).toMatchObject({ text: null, sort: null })
-    expect(by.balance).toMatchObject({ text: '-£2.5M', note: '위험' })
+    expect(by.balance).toMatchObject({ text: '-48억 원', note: '위험' })
   })
 })
 
@@ -229,7 +229,7 @@ describe('buildSnapshot', () => {
     })
     expect(snapshot.ok).toBe(true)
     expect(snapshot.profile?.division).toBe('1부')
-    expect(snapshot.finances[0].text).toBe('£2.0M')
+    expect(snapshot.finances[0].text).toBe('38.4억 원')
     expect(snapshot.players).toHaveLength(2)
     expect(snapshot.players[0].injured).toBe(true)
     expect(snapshot.players[1].read).toBe(false)

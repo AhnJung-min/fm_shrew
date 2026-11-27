@@ -81,13 +81,28 @@ export function footSummary(left: number, right: number): FootSummary {
   }
 }
 
-/** 파운드 금액을 짧게. 모르면 빈 글자 */
+/**
+ * 1파운드가 몇 원인가. 세이브의 금액은 게임의 기준 통화인 파운드로 적혀 있고, 게임은 화면에 원화로 바꿔 보여 준다.
+ * 게임이 원화로 보여 준 주급("주급 4.5억 원", "주급 4억 원")과 같은 선수들의 세이브 주급(파운드)을 견주면
+ * 두 선수 모두 1,906~1,936원 사이에 들어 그 가운데 값을 쓴다(게임 표시가 0.1억 단위로 반올림돼 있어 ±1% 정도의 오차).
+ */
+export const WON_PER_POUND = 1920
+
+/** 원화 금액을 게임과 같은 꼴로: 1,130억 원, 46.1억 원, 4.5억 원, 960만 원 */
+export function formatWon(won: number): string {
+  const size = Math.abs(won)
+  const sign = won < 0 ? '-' : ''
+  const comma = (n: number): string => n.toLocaleString('en-US')
+  if (size >= 1e10) return `${sign}${comma(Math.round(size / 1e8))}억 원`
+  if (size >= 1e8) return `${sign}${(size / 1e8).toFixed(1).replace(/\.0$/, '')}억 원`
+  if (size >= 1e4) return `${sign}${comma(Math.round(size / 1e4))}만 원`
+  return `${sign}${comma(Math.round(size))}원`
+}
+
+/** 파운드 금액(세이브·계산에 쓰는 값)을 원화로 바꿔 짧게 적는다. 모르면 빈 글자. 이름은 옛것이다 */
 export function formatPounds(value: number | null | undefined): string {
   if (!value || value <= 0) return ''
-  if (value >= 10_000_000) return `£${Math.round(value / 1_000_000)}M`
-  if (value >= 1_000_000) return `£${(value / 1_000_000).toFixed(1)}M`
-  if (value >= 1_000) return `£${Math.round(value / 1_000)}K`
-  return `£${value}`
+  return formatWon(value * WON_PER_POUND)
 }
 
 export function formatDate(date: { year: number; month: number; day: number } | null): string {

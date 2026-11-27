@@ -329,7 +329,7 @@
   fill: #07271a;
 }
 .pm-spot.fair circle {
-  fill: #1f4a39;
+  fill: color-mix(in srgb, var(--good) 24%, var(--bg));
   stroke: var(--good);
 }
 .pm-spot.fair text {
@@ -387,7 +387,7 @@
   border-color: var(--good);
 }
 .pm-swatch.fair {
-  background: #1f4a39;
+  background: color-mix(in srgb, var(--good) 24%, var(--bg));
   border-color: var(--good);
 }
 .pm-swatch.poor {

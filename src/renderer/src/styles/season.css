@@ -141,18 +141,18 @@
   font-weight: 800;
 }
 .form-badge.win {
-  background: rgba(99, 214, 157, 0.18);
-  border-color: rgba(99, 214, 157, 0.5);
+  background: var(--good-soft);
+  border-color: color-mix(in srgb, var(--good) 50%, transparent);
   color: var(--good);
 }
 .form-badge.draw {
-  background: rgba(207, 216, 210, 0.1);
+  background: var(--info-soft);
   border-color: var(--line-strong);
   color: var(--text-2);
 }
 .form-badge.loss {
-  background: rgba(242, 134, 122, 0.17);
-  border-color: rgba(242, 134, 122, 0.5);
+  background: var(--bad-soft);
+  border-color: color-mix(in srgb, var(--bad) 50%, transparent);
   color: var(--bad);
 }
 .form-badge.none {

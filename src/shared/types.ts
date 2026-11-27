@@ -62,6 +62,9 @@ export interface SquadResult {
 
 export type Density = 'compact' | 'comfortable'
 
+/** 화면 색. blue는 어두운 남색, black은 무채색 검정 */
+export type ThemeId = 'blue' | 'black'
+
 export interface Settings {
   /** 세이브 파일(.fm)이 있는 폴더 */
   saveDir: string
@@ -70,6 +73,8 @@ export interface Settings {
   /** 세이브 파일 이름 → 내 팀 id (한 번 찾으면 기억한다) */
   saveTeams: Record<string, number>
   density: Density
+  /** 화면 색 */
+  theme: ThemeId
   /** 뎁스 차트에 쓰는 포메이션 id */
   formation: string
   /** "포메이션:자리 순번" → 역할 id. 자리마다 고른 역할을 기억한다 */

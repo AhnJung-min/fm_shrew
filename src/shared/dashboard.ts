@@ -476,7 +476,7 @@ function surplusReason(
     stem(`가장 가까운 ${best.label} 자리에서도 첫 후보 ${best.benchmarkName}보다 적합도가 ${best.gap.toFixed(1)}점(약 ${(best.gap / best.sigma).toFixed(1)} 표준편차) 낮`, '고', '습니다')
   } else stem(`${best.label} 자리 첫 후보 ${best.benchmarkName}와 실력은 비슷하지만 그 자리가 이미 찼`, '고', '습니다')
   if (scored.wageRatio !== null && scored.wageRatio >= 1 && player.wage && median) {
-    stem(`주급 ${formatPounds(player.wage)}는 1군 중간값(${formatPounds(median)})의 ${scored.wageRatio.toFixed(1)}배`, '이고', '입니다')
+    stem(`${withJosa(`주급 ${formatPounds(player.wage)}`, '은/는')} 1군 중간값(${formatPounds(median)})의 ${scored.wageRatio.toFixed(1)}배`, '이고', '입니다')
   }
   if (player.age !== null) {
     const room = player.ca !== null && player.pa !== null ? player.pa - player.ca : null

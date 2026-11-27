@@ -94,9 +94,9 @@ export class GameLink {
     this.world.setLiveOff(!next.connected ? GAME_OFF : next.pluginOld ? oldPluginNote(next.pluginVersion) : null)
     this.world.setMarketOff(
       !next.connected
-        ? '게임이 꺼져 있어 몸값과 주급은 세이브에 적힌 값(파운드)으로 보여 줍니다.'
+        ? '게임이 꺼져 있어 몸값과 주급은 세이브에 적힌 값(파운드)을 원화로 바꿔(1파운드 = 1,920원) 보여 줍니다.'
         : versionOlder(next.pluginVersion, MARKET_PLUGIN)
-          ? `몸값과 주급은 세이브에 적힌 값(파운드)입니다. 게임이 보여 주는 금액과 나라·구단 이름은 FM을 완전히 껐다가 다시 켜면 채워집니다(게임에 올라가 있는 플러그인 ${next.pluginVersion}, 필요한 버전 ${MARKET_PLUGIN}).`
+          ? `몸값과 주급은 세이브에 적힌 값(파운드)을 원화로 바꿔(1파운드 = 1,920원) 보여 줍니다. 게임이 보여 주는 금액과 나라·구단 이름은 FM을 완전히 껐다가 다시 켜면 채워집니다(게임에 올라가 있는 플러그인 ${next.pluginVersion}, 필요한 버전 ${MARKET_PLUGIN}).`
           : !next.loaded
             ? '게임에서 세이브를 불러오면 게임이 보여 주는 금액과 나라·구단 이름이 채워집니다.'
             : null

@@ -124,7 +124,7 @@ function Finances(props: { snapshot: ClubSnapshot }) {
         ))}
       </dl>
       {props.snapshot.finances.some((item) => item.converted) ? (
-        <p className="gc-note">게임이 단위 없이 알려 준 금액은 파운드로 적었습니다. 게임 화면의 통화와 다를 수 있습니다.</p>
+        <p className="gc-note">게임이 단위 없이 알려 준 금액은 게임의 기준 통화(파운드)로 보고 원화로 바꿔(1파운드 = 1,920원) 적었습니다. 게임 화면의 금액과 조금 다를 수 있습니다.</p>
       ) : null}
       <Source at={props.snapshot.readAt} />
     </section>

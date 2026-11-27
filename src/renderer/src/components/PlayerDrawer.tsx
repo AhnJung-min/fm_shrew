@@ -197,7 +197,7 @@ function Profile(props: { profile: PlayerProfile; rangeOf: (id: string) => CellV
         <p className="pl-note">
           {profile.moneyFrom === 'game'
             ? '몸값과 주급은 게임이 보여 주는 금액입니다.'
-            : '몸값과 주급은 세이브에 적힌 기준 금액(파운드)입니다.'}
+            : '몸값과 주급은 세이브에 적힌 기준 금액(파운드)을 원화로 바꿔(1파운드 = 1,920원) 보여 줍니다.'}
         </p>
       </section>
 

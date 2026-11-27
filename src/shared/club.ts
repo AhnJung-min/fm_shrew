@@ -5,6 +5,7 @@
  *
  * 값은 게임이 보여 주는 글자를 그대로 쓰고, 정렬이나 막대에 쓸 숫자만 따로 읽는다. 게임에서 읽지 못한 값은 null이다.
  */
+import { formatWon, WON_PER_POUND } from './playerView'
 
 /** 게임 안 플러그인(0.11.0 이상)이 /club, /health에서 돌려주는 기록 하나: 항목 이름 → 게임의 글자 */
 export type GameFields = Record<string, string | number | undefined>
@@ -82,14 +83,9 @@ function isPlainNumber(text: string): boolean {
   return /^-?\d+(\.\d+)?$/.test(text)
 }
 
-/** 파운드 금액을 짧게(£12.5M). 게임이 단위 없이 돌려준 값을 보여 줄 때 쓴다 */
+/** 게임이 단위 없이 돌려준 금액(기준 통화인 파운드로 본다)을 원화로 바꿔 짧게 적는다 */
 export function poundsText(value: number): string {
-  const sign = value < 0 ? '-' : ''
-  const size = Math.abs(value)
-  if (size >= 10_000_000) return `${sign}£${Math.round(size / 1_000_000)}M`
-  if (size >= 1_000_000) return `${sign}£${(size / 1_000_000).toFixed(1)}M`
-  if (size >= 1_000) return `${sign}£${Math.round(size / 1_000)}K`
-  return `${sign}£${Math.round(size)}`
+  return formatWon(value * WON_PER_POUND)
 }
 
 // ── 구단 ───────────────────────────────────────────────

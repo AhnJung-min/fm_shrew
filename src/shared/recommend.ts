@@ -602,7 +602,7 @@ function costPart(input: RecommendInput, ctx: RecommendContext, notes: boolean):
       fee *= Math.min(1, Math.max(FEE_FLOOR, daysUntil(input.contractEnd, ctx.today) / FEE_FULL_DAYS))
     }
     valueFit = affordability(fee, medianValue, topValue)
-    feeNote = `몸값 ${formatPounds(input.value)}${fee < input.value ? `(계약이 짧아 ${formatPounds(Math.round(fee))}쯤으로 봄)` : ''}는 내 팀 선수 몸값 중간(${formatPounds(medianValue)}) 기준 ${valueFit >= 0.7 ? '부담이 크지 않습니다' : valueFit >= 0.4 ? '다소 큽니다' : '매우 큽니다'}.`
+    feeNote = `${withJosa(`몸값 ${formatPounds(input.value)}${fee < input.value ? `(계약이 짧아 ${formatPounds(Math.round(fee))}쯤으로 봄)` : ''}`, '은/는')} 내 팀 선수 몸값 중간(${formatPounds(medianValue)}) 기준 ${valueFit >= 0.7 ? '부담이 크지 않습니다' : valueFit >= 0.4 ? '다소 큽니다' : '매우 큽니다'}.`
   } else {
     feeKnown = false
     feeNote = `몸값은 정보가 없어 보통(${UNKNOWN_FIT})으로 보았습니다.`
@@ -614,10 +614,10 @@ function costPart(input: RecommendInput, ctx: RecommendContext, notes: boolean):
   const wageNote = !wageKnown
     ? `주급은 정보가 없어 보통(${UNKNOWN_FIT})으로 보았습니다${input.hasClub ? '' : '(자유 계약 선수는 세이브에 주급이 적혀 있지 않습니다)'}.`
     : input.wage! > topWage
-      ? `주급 ${formatPounds(input.wage!)}는 내 팀 최고 주급(${formatPounds(topWage)})보다 많아 팀에서 가장 많이 받는 선수가 됩니다.`
+      ? `${withJosa(`주급 ${formatPounds(input.wage!)}`, '은/는')} 내 팀 최고 주급(${formatPounds(topWage)})보다 많아 팀에서 가장 많이 받는 선수가 됩니다.`
       : ratio < COST_LOW_RATIO
-        ? `주급 ${formatPounds(input.wage!)}는 내 팀 중간(${formatPounds(medianWage)})의 절반에도 못 미쳐 부담이 거의 없습니다.`
-        : `주급 ${formatPounds(input.wage!)}는 내 팀 중간(${formatPounds(medianWage)})의 ${fixed1(ratio)}배입니다.`
+        ? `${withJosa(`주급 ${formatPounds(input.wage!)}`, '은/는')} 내 팀 중간(${formatPounds(medianWage)})의 절반에도 못 미쳐 부담이 거의 없습니다.`
+        : `${withJosa(`주급 ${formatPounds(input.wage!)}`, '은/는')} 내 팀 중간(${formatPounds(medianWage)})의 ${fixed1(ratio)}배입니다.`
   return { fit, assumed, note: `${wageNote} ${feeNote}` }
 }
 

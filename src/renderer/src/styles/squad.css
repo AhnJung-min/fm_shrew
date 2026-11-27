@@ -49,9 +49,9 @@
 
 /* 경기장: 위가 상대 골문. 줄무늬와 선은 방향을 알려 주는 배경이다. */
 .tp-pitch {
-  --pitch-a: #163025;
-  --pitch-b: #193629;
-  --pitch-line: rgba(243, 246, 242, 0.3);
+  --pitch-a: var(--turf);
+  --pitch-b: var(--turf-stripe);
+  --pitch-line: color-mix(in srgb, var(--text) 30%, transparent);
   position: relative;
   display: flex;
   flex-direction: column;

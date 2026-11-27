@@ -63,7 +63,9 @@ export function App() {
   }, [])
 
   useEffect(() => {
-    if (settings) document.documentElement.dataset.density = settings.density
+    if (!settings) return
+    document.documentElement.dataset.density = settings.density
+    document.documentElement.dataset.theme = settings.theme
   }, [settings])
 
   useEffect(() => {

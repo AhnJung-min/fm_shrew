@@ -1,8 +1,13 @@
 import { FolderOpen } from 'lucide-react'
-import type { AppStatus, Settings as SettingsData } from '@shared/types'
+import type { AppStatus, Settings as SettingsData, ThemeId } from '@shared/types'
 import { api } from '@/api'
 import { RoleWeights } from '@/components/RoleWeights'
 import { TalkSettings } from '@/components/TalkSettings'
+
+const THEMES: Array<{ id: ThemeId; label: string }> = [
+  { id: 'blue', label: '어두운 블루' },
+  { id: 'black', label: '블랙' }
+]
 
 export function Settings(props: {
   status: AppStatus | null
@@ -23,6 +28,18 @@ export function Settings(props: {
               <h2>앱</h2>
             </div>
             <div className="panel-body">
+              <div style={{ marginBottom: 16 }}>
+                <div className="inline-field">
+                  <span>화면 색</span>
+                  <div className="segmented" role="group" aria-label="화면 색">
+                    {THEMES.map((theme) => (
+                      <button key={theme.id} aria-pressed={settings.theme === theme.id} onClick={() => void onChange({ theme: theme.id })}>
+                        {theme.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </div>
               <label className="inline-field">
                 <input
                   type="checkbox"

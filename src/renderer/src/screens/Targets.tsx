@@ -44,12 +44,12 @@ const VALUE: ColumnInfo = {
   ...info(
     '몸값',
     'value',
-    '게임이 보여 주는 몸값(스카우트하지 않은 선수는 범위가 넓다). 게임에 묻기 전이나 FM이 꺼져 있을 때는 세이브에 적힌 기준 몸값(파운드)',
+    '게임이 보여 주는 몸값(스카우트하지 않은 선수는 범위가 넓다). 게임에 묻기 전이나 FM이 꺼져 있을 때는 세이브에 적힌 기준 몸값을 원화로 바꾼 값(1파운드 = 1,920원)',
     true
   ),
   width: 156
 }
-const WAGE: ColumnInfo = { ...info('주급', 'wage', '지금 받는 주급. 게임에 묻기 전이나 FM이 꺼져 있을 때는 세이브에 적힌 값(파운드)', true), width: 116 }
+const WAGE: ColumnInfo = { ...info('주급', 'wage', '지금 받는 주급. 게임에 묻기 전이나 FM이 꺼져 있을 때는 세이브에 적힌 값을 원화로 바꾼 값(1파운드 = 1,920원)', true), width: 116 }
 const STATUS = info('입지', 'squadStatus', '계약에 적힌 팀 내 입지(구단이 약속한 역할)', false)
 const CONTRACT = info('계약 만료', 'contractEnd', '계약이 끝나는 날', true)
 const NATION = info('국적', 'nation', '국적', false)

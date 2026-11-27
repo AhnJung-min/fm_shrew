@@ -15,6 +15,7 @@ export class SettingsStore {
       saveTeams: {},
       activeSave: '',
       density: 'compact',
+      theme: 'blue',
       formation: '4-2-3-1',
       slotRoles: {},
       roleWeights: {},

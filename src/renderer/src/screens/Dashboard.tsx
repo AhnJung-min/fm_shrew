@@ -574,7 +574,7 @@ function Cards(props: {
                   </span>
                 </div>
                 <p className="num">
-                  주급 {pounds(row.wage)}로 기대치보다 {pounds(row.excess)} 많습니다. 같은 리그에서 현재 능력 {row.ca}인 선수의 보통 주급은
+                  주급이 {pounds(row.wage)}이라 기대치보다 {pounds(row.excess)} 많습니다. 같은 리그에서 현재 능력 {row.ca}인 선수의 보통 주급은
                   약 {pounds(row.expected)}입니다.
                 </p>
               </li>
