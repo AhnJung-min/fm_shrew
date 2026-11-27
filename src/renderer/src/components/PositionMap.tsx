@@ -2,8 +2,8 @@ import { EditNumber } from '@/components/EditNumber'
 import { POSITION_KEYS } from '@shared/positions'
 import { POSITION_LEVEL_LABEL, POSITION_NAME, positionLevel, type PositionLevel } from '@shared/playerView'
 
-/** 그림 안 자리(가로 0~220, 세로 0~300). 위쪽이 상대 골문, 아래쪽이 우리 골문이다. */
-const SPOT: Record<string, [number, number]> = {
+/** 그림 안 자리(가로 0~220, 세로 0~340. 자리 원은 지름 38 + 테두리라 이웃과 중심이 44 이상 떨어져야 겹치지 않는다). 위쪽이 상대 골문, 아래쪽이 우리 골문이다. */
+export const SPOT: Record<string, [number, number]> = {
   ST: [110, 36],
   AML: [34, 84],
   AMC: [110, 84],
@@ -12,13 +12,13 @@ const SPOT: Record<string, [number, number]> = {
   MC: [110, 132],
   MR: [186, 132],
   DM: [110, 176],
-  WBL: [22, 178],
-  WBR: [198, 178],
-  DL: [48, 220],
-  DC: [110, 220],
-  DR: [172, 220],
-  SW: [110, 254],
-  GK: [110, 284]
+  WBL: [24, 178],
+  WBR: [196, 178],
+  DL: [48, 222],
+  DC: [110, 222],
+  DR: [172, 222],
+  SW: [110, 266],
+  GK: [110, 310]
 }
 
 const LEVELS: PositionLevel[] = ['main', 'good', 'fair', 'poor']
@@ -38,12 +38,12 @@ export function PositionMap(props: {
 
   return (
     <div className="posmap">
-      <svg viewBox="0 0 220 308" role="img" aria-label="포지션별 소화 능력을 보여 주는 경기장 그림" className="posmap-pitch">
-        <rect x="2" y="2" width="216" height="304" rx="8" className="pm-grass" />
+      <svg viewBox="0 0 220 340" role="img" aria-label="포지션별 소화 능력을 보여 주는 경기장 그림" className="posmap-pitch">
+        <rect x="2" y="2" width="216" height="336" rx="8" className="pm-grass" />
         <line x1="2" y1="154" x2="218" y2="154" className="pm-line" />
         <circle cx="110" cy="154" r="26" className="pm-line" fill="none" />
         <rect x="52" y="2" width="116" height="40" className="pm-line" fill="none" />
-        <rect x="52" y="266" width="116" height="40" className="pm-line" fill="none" />
+        <rect x="52" y="298" width="116" height="40" className="pm-line" fill="none" />
         {rated.map(({ key, rating }) => {
           const [x, y] = SPOT[key]
           const level = positionLevel(rating)

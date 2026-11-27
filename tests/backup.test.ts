@@ -2,7 +2,7 @@ import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, statSync
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { beforeEach, describe, expect, it } from 'vitest'
-import { BackupManager, parseBackupName } from '../src/main/backup'
+import { BackupManager, isBackupId, parseBackupName } from '../src/main/backup'
 
 let saveDir: string
 let backupDir: string
@@ -114,5 +114,50 @@ describe('BackupManager', () => {
     await manager.remove(made!.id)
     expect(existsSync(join(backupDir, 'notes.txt'))).toBe(true)
     expect(readdirSync(backupDir).filter((name) => name.endsWith('.fm'))).toEqual([])
+  })
+
+  describe('N-03: 화면이 보낸 사본 이름 검사', () => {
+    const HOSTILE = [
+      '../victim__20260101-000000.fm',
+      '..\\victim__20260101-000000.fm',
+      'sub/victim__20260101-000000.fm',
+      'sub\\victim__20260101-000000.fm',
+      '/victim__20260101-000000.fm',
+      'C:\\victim__20260101-000000.fm',
+      'C:victim__20260101-000000.fm',
+      '\\\\server\\share\\victim__20260101-000000.fm',
+      'victim__20260101-000000.fm:stream',
+      'victim\0__20260101-000000.fm',
+      '..',
+      '',
+      'victim.fm'
+    ]
+
+    it('폴더 이름이나 경로가 섞인 이름, 우리 사본 모양이 아닌 이름은 사본 이름이 아니다', () => {
+      for (const id of HOSTILE) expect(isBackupId(id), JSON.stringify(id)).toBe(false)
+      for (const id of [null, undefined, 3, {}, ['a__20261101-120000.fm']]) expect(isBackupId(id)).toBe(false)
+      expect(isBackupId('a__20261101-120000.fm')).toBe(true)
+      expect(isBackupId('내 세이브 - 가상 FC__20261101-120000__pre.fm')).toBe(true)
+    })
+
+    it('폴더 밖의 파일은 복원으로 읽지도, 세이브 폴더 밖에 쓰지도, 지우기로 지우지도 못한다', async () => {
+      const root = join(backupDir, '..')
+      const victim = join(root, 'victim__20260101-000000.fm')
+      writeFileSync(victim, 'outside')
+      for (const id of HOSTILE) {
+        expect((await manager.restore(id)).ok, JSON.stringify(id)).toBe(false)
+        await manager.remove(id)
+      }
+      expect(readFileSync(victim, 'utf8')).toBe('outside')
+      expect(existsSync(join(root, 'victim.fm'))).toBe(false)
+      expect(readdirSync(saveDir)).toEqual([])
+    })
+
+    it('정상 이름은 그대로 복원되고 지워진다', async () => {
+      const made = await manager.backup(save('a.fm', 'x', day(1)))
+      expect((await manager.restore(made!.id)).ok).toBe(true)
+      await manager.remove(made!.id)
+      expect((await manager.list()).entries.filter((entry) => !entry.beforeRestore)).toHaveLength(0)
+    })
   })
 })

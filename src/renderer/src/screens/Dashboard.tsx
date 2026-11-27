@@ -284,7 +284,11 @@ function Cards(props: {
         {title} <span className="num">{list.length}명</span>
       </h3>
       {list.length === 0 ? (
-        <Empty>{empty}</Empty>
+        // 0명이어도 칸이 비어 보이지 않게, 점선 칸 안에 "없음"을 뜻하는 글로 채운다
+        <p className="dash-empty cell">
+          <CircleCheck size={16} aria-hidden="true" />
+          {empty}
+        </p>
       ) : (
         <ul className="dash-list">
           {list.slice(0, 10).map((row) => (
