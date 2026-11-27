@@ -22,9 +22,6 @@ export function isNegotiation(screen: TalkScreen): boolean {
   return screen === 'transfer_negotiation' || screen === 'contract_negotiation'
 }
 
-/** 확신도가 이 값보다 낮으면 "딱 맞는 선택지가 없었다"고 알린다 */
-export const LOW_CONFIDENCE = 0.4
-
 /** 게임에서 읽은 장면. 대화는 이 장면을 놓고 이어진다 */
 export interface TalkScene {
   id: number

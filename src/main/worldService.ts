@@ -4,7 +4,7 @@ import { expectedWage, type WageCoefs } from '@shared/dashboard'
 import type { ClubChoices, EditorApplyReport, EditorPlayerResult, LinkExtras, SaveCheck } from '@shared/connect'
 import { SAVE_CHECK_OK } from '@shared/connect'
 import { NO_DATA, type DataStatus, type SaveFileInfo } from '@shared/game'
-import { POSITION_KEYS, PLAYABLE_RATING, positionOrder, positionsLabel } from '@shared/positions'
+import { POSITION_KEYS, positionOrder, positionsLabel } from '@shared/positions'
 import { footValues, formatPounds, hiddenAttributes, isGoalkeeper, visibleAttributes } from '@shared/playerView'
 import { normOf, type RoleNorms } from '@shared/norms'
 import { prepareRole, ROLE_BY_ID, savedRoleScore } from '@shared/roles'
@@ -13,7 +13,6 @@ import {
   recommend,
   squadMoney,
   tierRanker,
-  TRAIT_WEIGHTS,
   type RecommendContext,
   type RecommendInput,
   type RecommendTierId,
@@ -53,6 +52,7 @@ import { NameBook } from './names'
 import { calendar } from './save/contracts'
 import { squadTable, type SquadTable } from './squad'
 import { gamePeople, livePlayer, liveSetOutcome, PEOPLE_PER_REQUEST, type GameName } from './talk/bridge'
+import { K } from '@shared/ledger'
 
 /** 게임에서 받은 시장 정보를 다시 묻지 않고 쓰는 시간 */
 const MARKET_KEEP_MS = 10 * 60_000
@@ -614,8 +614,8 @@ export class WorldService {
       for (const slot of slots) best = Math.max(best, world.positions[k * POSITION_COUNT + slot])
       return best
     }
-    const eligible = (k: number): boolean => ratingOf(k) >= PLAYABLE_RATING
-    const scoreOf = (k: number): number => savedRoleScore(world.attributes, k * ATTRIBUTE_COUNT, prepared)
+    const eligible = (k: number): boolean => ratingOf(k) >= K.PLAYABLE_RATING
+    const scoreOf = (k: number): number | null => savedRoleScore(world.attributes, k * ATTRIBUTE_COUNT, prepared)
 
     // 내 팀(1군)의 주급·몸값 수준과, 이 역할을 뛸 수 있는 선수들
     const mine: Array<{ k: number; score: number; eff: number }> = []
@@ -629,6 +629,7 @@ export class WorldService {
       myValues.push(world.value[k])
       if (eligible(k)) {
         const score = scoreOf(k)
+        if (score === null) continue
         mine.push({ k, score, eff: effectiveScore(score, ratingOf(k), null, norm.sigma) })
       }
     }
@@ -661,7 +662,7 @@ export class WorldService {
     }
     const goalkeeper = role.positions.includes('GK')
     const traitAt = (id: TraitId): number => ATTRIBUTE_INDEX.get(id)!
-    const traitIds = Object.keys(TRAIT_WEIGHTS) as TraitId[]
+    const traitIds = Object.keys(K.TRAIT_WEIGHTS) as TraitId[]
     const inputOf = (k: number, score: number, age: number | null): RecommendInput => {
       const traits = {} as Traits
       for (const id of traitIds) traits[id] = shownValue(world.attributes[k * ATTRIBUTE_COUNT + traitAt(id)])
@@ -722,6 +723,7 @@ export class WorldService {
       if (query.maxAge !== null && (age === null || age > query.maxAge)) continue
 
       const score = scoreOf(k)
+      if (score === null) continue
       // 다른 구단과 계약을 마친 무소속 선수는 소속 있음으로 본다(자유 계약 유형에서 뺀다. 5회차)
       const categories = categoriesOf({ score, age, ca: world.ca[k], pa: world.pa[k], hasClub: team !== NO_TEAM || signedTeam !== null, rating: ratingOf(k) }, bench, norm, goalkeeper, window)
       const qualified = categories.length > 0

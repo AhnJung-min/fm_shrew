@@ -1,17 +1,7 @@
 import { CircleAlert, CircleCheck, Info, OctagonAlert, TriangleAlert, type LucideIcon } from 'lucide-react'
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import {
-  AGE_RISK_FROM,
-  AGE_RISK_FULL,
-  FIT_GAP_SIGMAS,
-  GOALKEEPERS_KEPT,
   NO_DASHBOARD,
-  NO_SLOT_PREMIUM,
-  OVERPAID_Z,
-  OVERPAID_Z_STRONG,
-  SURPLUS_WEIGHTS,
-  UNKNOWN_RISK,
-  WAGE_Z_FULL,
   type DashboardData,
   type DashContract,
   type DashDate,
@@ -26,7 +16,7 @@ import { formatPounds } from '@shared/playerView'
 import { RECOMMEND_TIER_LABEL, REALISM_LABEL, TIER_MEANING } from '@shared/recommend'
 import type { SeasonResult } from '@shared/season'
 import type { Settings, SquadResult } from '@shared/types'
-import { benchLine, PROSPECT_MAX_AGE, PROSPECT_MIN_GAIN_SIGMA, PROSPECT_MIN_ROOM } from '@shared/world'
+import { benchLine } from '@shared/world'
 import { api } from '@/api'
 import { ClubLogo } from '@/components/ClubLogo'
 import { GameCards } from '@/components/GameCards'
@@ -37,6 +27,7 @@ import { SeasonCenter } from '@/components/SeasonCenter'
 import { formatTime } from '@/lib/format'
 import '@/styles/season.css'
 import '@/styles/dashboard.css'
+import { K } from '@shared/ledger'
 
 const TONE_WORD: Record<Tone, string> = { good: '좋음', warn: '주의', bad: '위험', info: '참고' }
 /** 톤은 색만이 아니라 아이콘과 글자로도 알린다 */
@@ -637,31 +628,31 @@ function Cards(props: {
             <span>점수를 어떻게 매겼나</span>
           </summary>
           <p>
-            적합도 차이 {SURPLUS_WEIGHTS.fit}% + 주급 부담 {SURPLUS_WEIGHTS.wage}% + 나이·정체 {SURPLUS_WEIGHTS.age}%를 0~100점으로
-            합칩니다(주급이나 나이를 모르면 보통 {UNKNOWN_RISK}으로 봅니다).
+            적합도 차이 {K.SURPLUS_WEIGHTS.fit}% + 주급 부담 {K.SURPLUS_WEIGHTS.wage}% + 나이·정체 {K.SURPLUS_WEIGHTS.age}%를 0~100점으로
+            합칩니다(주급이나 나이를 모르면 보통 {K.SURPLUS_UNKNOWN_RISK}으로 봅니다).
           </p>
           <ul>
             <li>
-              적합도: 자리가 있으면, 뛸 수 있는 자리 가운데 첫 후보와 가장 가까운 자리의 점수 차이를 그 자리 역할의 표준편차(σ)로 잰 뒤 {FIT_GAP_SIGMAS}σ로 나눕니다.
+              적합도: 자리가 있으면, 뛸 수 있는 자리 가운데 첫 후보와 가장 가까운 자리의 점수 차이를 그 자리 역할의 표준편차(σ)로 잰 뒤 {K.FIT_GAP_SIGMAS}σ로 나눕니다.
               포지션 숙련이 20보다 낮으면 스쿼드·영입 후보와 같게 그만큼 뺀 점수로 견줍니다.
             </li>
             <li>
-              자리가 없으면: 현재 전술에 뛸 자리가 없는 선수는 가장 잘 맞는 역할로 본 점수가 지금 주전 가운데 가장 약한 선수보다 얼마나 낮은지에 {NO_SLOT_PREMIUM}σ를 더해 같은 식으로
+              자리가 없으면: 현재 전술에 뛸 자리가 없는 선수는 가장 잘 맞는 역할로 본 점수가 지금 주전 가운데 가장 약한 선수보다 얼마나 낮은지에 {K.NO_SLOT_PREMIUM}σ를 더해 같은 식으로
               잽니다. 실력이 주전급이면 자리가 없어도 낮게 나옵니다.
             </li>
-            <li>골키퍼: 능력이 높은 {GOALKEEPERS_KEPT}명은 빼고, 4번째 이후는 인원이 많아서 최대입니다.</li>
+            <li>골키퍼: 능력이 높은 {K.GOALKEEPERS_KEPT}명은 빼고, 4번째 이후는 인원이 많아서 최대입니다.</li>
             <li>
-              주급 부담: 같은 리그에서 현재 능력과 나이가 비슷한 선수의 기대 주급보다 표준편차(σ) 몇 배 높은가입니다. 기대 이하면 0, +{WAGE_Z_FULL}σ 이상이면 최대입니다.
+              주급 부담: 같은 리그에서 현재 능력과 나이가 비슷한 선수의 기대 주급보다 표준편차(σ) 몇 배 높은가입니다. 기대 이하면 0, +{K.WAGE_Z_FULL}σ 이상이면 최대입니다.
               아래 주급 과다 의심과 같은 기준입니다.
             </li>
             <li>
-              나이·정체: {AGE_RISK_FROM}세 이하 0에서 {AGE_RISK_FULL}세 이상 최대까지의 나이, 잠재가 현재보다 20 이상 높으면 0인 성장 여지를 6 대 4로 섞습니다.
+              나이·정체: {K.AGE_RISK_FROM}세 이하 0에서 {K.AGE_RISK_FULL}세 이상 최대까지의 나이, 잠재가 현재보다 20 이상 높으면 0인 성장 여지를 6 대 4로 섞습니다.
             </li>
             <li>
-              뺀 선수: 선발과 첫 후보, 능력이 높은 골키퍼 {GOALKEEPERS_KEPT}명, 임대로 들어온 선수(이 구단이 정리할 수 없음), 그리고 클 여지가 있는 어린 선수(따로 보여 줍니다).
+              뺀 선수: 선발과 첫 후보, 능력이 높은 골키퍼 {K.GOALKEEPERS_KEPT}명, 임대로 들어온 선수(이 구단이 정리할 수 없음), 그리고 클 여지가 있는 어린 선수(따로 보여 줍니다).
             </li>
             <li>
-              임대 보내 키울 선수: {PROSPECT_MAX_AGE}세 이하이고 잠재가 현재보다 {PROSPECT_MIN_ROOM} 이상 높으며, 다 컸을 때 적합도가 {PROSPECT_MIN_GAIN_SIGMA}σ 이상 오르고,
+              임대 보내 키울 선수: {K.PROSPECT_MAX_AGE}세 이하이고 잠재가 현재보다 {K.PROSPECT_MIN_ROOM} 이상 높으며, 다 컸을 때 적합도가 {K.PROSPECT_MIN_GAIN_SIGMA}σ 이상 오르고,
               그렇게 다 컸을 때 우리 주전 수준(그 자리의 비교 기준에서 0.25σ 낮은 선까지)에 이르는 선수입니다. 영입 후보의 유망주 유형과 같은 기준입니다.
               클 여지는 있지만 다 커도 못 미치는 선수는 정리 후보로 계산하고, 이유 앞에 그렇게 적습니다.
             </li>
@@ -720,7 +711,7 @@ function Cards(props: {
               {overpaid.model.c2 < 0 ? '−' : '+'} {Math.abs(overpaid.model.c2).toFixed(2)} × [30세 이상] (설명력 R² {overpaid.model.r2.toFixed(2)}, 잔차 표준편차{' '}
               {overpaid.model.s.toFixed(2)}). 제곱 항이 음수이면 능력이 아주 높은 선수의 주급은 능력에 비례하는 만큼 늘지 않는다는 뜻입니다.
               {` 내 리그 ${overpaid.model.teams}개 팀의 선수 ${overpaid.model.n.toLocaleString()}명 기준(순위표를 읽지 못한 리그는 기준을 세우지 않습니다).`}
-              {` 의심: 기대 주급의 ${Math.exp(overpaid.model.s * OVERPAID_Z).toFixed(2)}배(+${OVERPAID_Z}σ) 이상, 강한 의심: ${Math.exp(overpaid.model.s * OVERPAID_Z_STRONG).toFixed(2)}배(+${OVERPAID_Z_STRONG}σ) 이상.`}
+              {` 의심: 기대 주급의 ${Math.exp(overpaid.model.s * K.OVERPAID_Z).toFixed(2)}배(+${K.OVERPAID_Z}σ) 이상, 강한 의심: ${Math.exp(overpaid.model.s * K.OVERPAID_Z_STRONG).toFixed(2)}배(+${K.OVERPAID_Z_STRONG}σ) 이상.`}
               {overpaid.model.removed > 0 && ` 주급이 기대와 크게 어긋나는 선수 ${overpaid.model.removed}명(3σ 넘게 벗어남)은 빼고 다시 맞췄습니다.`}
               {overpaid.total > overpaid.rows.length && ` 기준을 넘는 선수는 모두 ${overpaid.total}명입니다.`}
             </p>

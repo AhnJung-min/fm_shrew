@@ -9,7 +9,6 @@ import {
   overpaidPlayers,
   recommendSlotOf,
   surplusReport,
-  WAGE_MODEL_MIN_SAMPLE,
   type ClubTeam,
   type DashboardData,
   type LoanEntry,
@@ -27,6 +26,7 @@ import { POSITION_COUNT } from './save/reader'
 import { ageAt, NO_TEAM, SEX_FEMALE, type SaveWorld } from './save/world'
 import type { SeasonService } from './seasonService'
 import { MIN_LOANS_IN_SAVE, NO_TEAM_MESSAGE, type WorldService } from './worldService'
+import { K } from '@shared/ledger'
 
 /** 영입 추천으로 보여 주는 후보 수 */
 const RECOMMEND_SHOWN = 3
@@ -376,7 +376,7 @@ export class DashboardService {
       if (!league.has(world.teamIds[k])) continue
       points.push({ ca, wage, age: plausibleAge(ageAt(world, k)) })
     }
-    const fit = fitWageModel(points, WAGE_MODEL_MIN_SAMPLE)
+    const fit = fitWageModel(points, K.WAGE_MODEL_MIN_SAMPLE)
     return fit ? { ...fit, scope: 'league', teams: league.size } : null
   }
 }

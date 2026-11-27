@@ -1,5 +1,6 @@
+import { K } from './ledger'
 import { FALLBACK_NORM, normOf, zOf, type RoleNorms } from './norms'
-import { parsePositions, PLAYABLE_RATING, posPenaltySigma, ratingAt, RATING_UNKNOWN_ASSUMED, TEMPORARY_MIN_RATING } from './positions'
+import { parsePositions, posPenaltySigma, ratingAt, RATING_UNKNOWN_ASSUMED } from './positions'
 import { attributesOf, DEFAULT_ROLE, effectiveWeights, ROLE_BY_ID, scoreRole, type AttributeValue, type PositionKey, type RoleScore } from './roles'
 import type { ColumnInfo, PlayerRow } from './types'
 
@@ -51,20 +52,13 @@ export interface DepthSlot {
   thin: boolean
 }
 
-/** 약한 자리로 보는 기준(기준 분포가 없을 때): 주전 점수가 자리 평균보다 이만큼 낮을 때 */
-const WEAK_GAP = 5
-/**
- * 약한 자리로 보는 기준(기준 분포가 있을 때): 주전의 z가 주전들 z 평균보다 이만큼 낮을 때.
- * 같은 5점이 σ 3점인 역할에서는 1.7σ, 4.7점인 역할에서는 1.1σ라서 점수 대신 σ로 잰다.
- */
-export const WEAK_GAP_SIGMAS = 1.2
+// 약한 자리 기준(K.WEAK_GAP 점, 기준 분포가 있으면 K.WEAK_GAP_SIGMAS): 같은 5점이 σ 3점인 역할에서는 1.7σ, 4.7점인 역할에서는 1.1σ라서 σ로 잰다.
 /**
  * 주전 배정에서 뛸 수 있는 쌍의 가중치에 더하는 상수. 뛸 수 있는 쌍은 이 값에 z(또는 점수)를 더해 언제나 양수이므로,
  * 최대 가중 매칭은 먼저 가능한 한 많은 자리를 채우고 그다음 z 합을 최대로 만든다.
  */
 const PLAYABLE_BONUS = 1000
-/** 숙련 10~14 선수를 임시 주전으로 세울 때의 상수. 숙련 15 이상(1000)보다 낮아 같은 자리를 다투면 늘 15 이상이 먼저이고, 빈 자리(0)보다는 먼저 채운다(4회차) */
-const TEMPORARY_BONUS = 700
+// 숙련 10~14 선수를 임시 주전으로 세울 때의 가중치(K.TEMPORARY_BONUS 700)는 숙련 15 이상(1000)보다 낮아 같은 자리를 다투면 늘 15 이상이 먼저이고, 빈 자리(0)보다는 먼저 채운다(4회차)
 /** 동점일 때 선수 idx가 작은 선수가 자리 순번이 작은 자리를 먼저 차지하도록 가중치에서 빼는 아주 작은 값 */
 const TIE_BREAK = 1e-8
 
@@ -177,12 +171,12 @@ export function buildDepth(
       const natural = canPlay(player.positions, slot.position)
       const measured = ratingAt(player.row.ratings, slot.position)
       // 숙련 15 미만 10 이상이면 임시 주전감이다(숫자를 모르는 선수는 뛸 수 있다고 적힌 자리만)
-      if (!natural && (measured === null || measured < TEMPORARY_MIN_RATING)) continue
+      if (!natural && (measured === null || measured < K.TEMPORARY_MIN_RATING)) continue
       const result = scoreRole(player.attrs, weights)
       if (!result) continue
       const rating = measured ?? RATING_UNKNOWN_ASSUMED
       const effScore = result.score - sigma * posPenaltySigma(rating)
-      list.push({ player, result, rating, effScore, temporary: rating < PLAYABLE_RATING, z: known ? zOf(known, effScore) : null })
+      list.push({ player, result, rating, effScore, temporary: rating < K.PLAYABLE_RATING, z: known ? zOf(known, effScore) : null })
     }
     return list.sort((a, b) => b.effScore - a.effScore || b.result.score - a.result.score || a.player.row.idx - b.player.row.idx)
   })
@@ -194,7 +188,7 @@ export function buildDepth(
     for (const entry of list) {
       const rank = playerRank.get(entry.player.row.idx)!
       const value = entry.z ?? entry.effScore
-      weight[slotIndex][rank] = (entry.temporary ? TEMPORARY_BONUS : PLAYABLE_BONUS) + value - TIE_BREAK * (rank + 1) * (slots.length - slotIndex)
+      weight[slotIndex][rank] = (entry.temporary ? K.TEMPORARY_BONUS : PLAYABLE_BONUS) + value - TIE_BREAK * (rank + 1) * (slots.length - slotIndex)
     }
   })
   const matched = assignMaximum(weight)
@@ -220,7 +214,7 @@ export function buildDepth(
     const useZ = starters.every((slot) => slot.starter!.z !== null)
     const valueOf = (player: DepthPlayer): number => (useZ ? player.z! : player.effScore)
     const average = starters.reduce((sum, slot) => sum + valueOf(slot.starter!), 0) / starters.length
-    const gap = useZ ? WEAK_GAP_SIGMAS : WEAK_GAP
+    const gap = useZ ? K.WEAK_GAP_SIGMAS : K.WEAK_GAP
     for (const slot of slots) slot.weak = slot.starter === null || valueOf(slot.starter) <= average - gap
   }
   return slots

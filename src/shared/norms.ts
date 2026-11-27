@@ -1,8 +1,10 @@
+import { K } from './ledger'
+
 /**
  * 역할 기준 분포(RoleNorm).
  *
  * 적합도(0~100)는 역할마다 눈금이 다르다. 같은 상위권 선수들의 적합도 평균이 역할마다 최대 6점 차이 나고,
- * 흩어진 정도(표준편차)도 2.8~5.9점으로 다르다(리버풀 세이브 실측, 검토 1회차). 그래서 "주전이 약한가", "후보와 얼마나 차이 나는가",
+ * 흩어진 정도(표준편차)도 2.8~5.9점으로 다르다(시험 세이브 실측, 검토 1회차). 그래서 "주전이 약한가", "후보와 얼마나 차이 나는가",
  * "후보 선수가 주전보다 낫다고 할 만한 차이인가"를 점수 그대로가 아니라 그 역할의 눈금(평균 mu, 표준편차 sigma)으로 잰다.
  *
  * 이 모듈은 순수 계산만 한다. 세이브를 돌며 점수 목록을 모으는 일은 main(src/main/roleNorms.ts)이 한다.
@@ -31,38 +33,26 @@ export interface RoleNorm {
   shift?: number
 }
 
-/** 이 숙련도 이상이어야 그 역할의 자리를 뛰는 선수로 본다(positions.ts의 PLAYABLE_RATING과 같은 15) */
-export const NORM_MIN_RATING = 15
-/** 기준 능력의 하한: 내 팀이 약해도 상위권을 100 아래로 잡지 않는다 */
-export const NORM_CA_FLOOR = 100
-/** 내 주전 11명의 현재 능력 중간값에서 이만큼 낮은 선수부터를 "내가 데려올 수준의 상위권"으로 본다 */
-export const NORM_CA_MARGIN = 10
-/** 중간값을 구하는 내 선수 수(상위 11명 = 한 경기 선발진) */
-export const NORM_TOP_COUNT = 11
-/** 모집단이 이 인원보다 적으면 기준 능력을 한 걸음씩 낮춰 다시 센다 */
-export const NORM_MIN_POPULATION = 40
-export const NORM_CA_STEP = 10
-/** 기준 능력을 이보다 낮추지 않는다 */
-export const NORM_CA_MIN = 60
-/** 표준편차 하한. 모집단이 너무 모여 있으면 작은 차이가 과장되므로 최소값을 둔다(역할별 실측은 2.8 이상) */
-export const NORM_MIN_SIGMA = 2.5
-/** 기울기를 못 구할 때의 값(추정: 리버풀 세이브에서 역할별 0.236~0.336의 가운데쯤) */
-export const DEFAULT_BETA = 0.28
-/** 기울기를 구하는 데 쓰는 선수의 최소 현재 능력과 최소 인원 */
-export const BETA_MIN_CA = 60
-export const BETA_MIN_POPULATION = 40
-/** 성장 기울기 β_grow를 재는 현재 능력 구간(5회차): 어린 선수가 실제로 지나가는 구간. 이 구간 표본이 BETA_MIN_POPULATION 미만이면 β */
-export const BETA_GROW_MIN_CA = 110
-export const BETA_GROW_MAX_CA = 180
-
 /**
- * 기준 분포를 못 구했을 때(옛 호출, 미리보기) 쓰는 값.
- * 추정: 상위권 적합도 평균 72, 표준편차 4(역할별 실측 평균이 약 3.9).
+ * 기준 분포를 못 구했을 때(옛 호출, 미리보기) 쓰는 값. 전술 분석(보강 필요도)과 영입 추천이 같은 값을 쓴다(F-08).
+ * 평균은 우리 팀 주전 평균이 아니라 고정값(K.FALLBACK_MU)이다. 팀 주전 평균을 평균으로 삼으면 모든 주전의 z가 0 근처로 모여
+ * "주전이 약한가"를 못 가리고, 같은 선수의 z가 화면마다 달라진다. 값은 대장(ledger.ts)에서 그때그때 읽는다(getter).
  */
-export const FALLBACK_NORM: RoleNorm = { mu: 72, sigma: 4, beta: DEFAULT_BETA, n: 0, caRef: NORM_CA_FLOOR }
-
-/** 점수 차이를 충족도로 바꾸는 폭(표준편차의 몇 배에서 0.88에 이르는가). g(Δ) = 0.5 + 0.5·tanh(Δ / (1.5σ)) */
-export const GAIN_WIDTH_SIGMAS = 1.5
+export const FALLBACK_NORM: RoleNorm = {
+  get mu() {
+    return K.FALLBACK_MU
+  },
+  get sigma() {
+    return K.FALLBACK_SIGMA
+  },
+  get beta() {
+    return K.DEFAULT_BETA
+  },
+  n: 0,
+  get caRef() {
+    return K.NORM_CA_FLOOR
+  }
+}
 
 /** z 점수: 이 역할 기준에서 평균보다 표준편차의 몇 배 위인가 */
 export function zOf(norm: RoleNorm, score: number): number {
@@ -71,16 +61,16 @@ export function zOf(norm: RoleNorm, score: number): number {
 
 /** 점수 차이 Δ(적합도 점수)의 충족도 0~1. 같으면 0.5, +1.5σ 높으면 0.88, -1.5σ 낮으면 0.12. 역할이 달라도 σ 단위 차이가 같으면 같다 */
 export function gainOf(delta: number, norm: RoleNorm): number {
-  return 0.5 + 0.5 * Math.tanh(delta / (GAIN_WIDTH_SIGMAS * norm.sigma))
+  return 0.5 + 0.5 * Math.tanh(delta / (K.GAIN_WIDTH_SIGMAS * norm.sigma))
 }
 
 /** 기준 능력의 시작값: 내 상위 11명 현재 능력의 중간값 - 10, 단 100 이상 */
 export function referenceCa(myAbilities: number[]): number {
-  const top = [...myAbilities].sort((a, b) => b - a).slice(0, NORM_TOP_COUNT)
-  if (top.length === 0) return NORM_CA_FLOOR
+  const top = [...myAbilities].sort((a, b) => b - a).slice(0, K.NORM_TOP_COUNT)
+  if (top.length === 0) return K.NORM_CA_FLOOR
   const mid = top.length >> 1
   const median = top.length % 2 === 1 ? top[mid] : (top[mid - 1] + top[mid]) / 2
-  return Math.max(NORM_CA_FLOOR, Math.round(median - NORM_CA_MARGIN))
+  return Math.max(K.NORM_CA_FLOOR, Math.round(median - K.NORM_CA_MARGIN))
 }
 
 /** start부터, 그 능력 이상인 선수가 40명 이상이 될 때까지 10씩 낮춘 기준 능력(최저 60) */
@@ -89,8 +79,8 @@ export function pickCaRef(abilities: ArrayLike<number>, start: number): number {
   for (;;) {
     let count = 0
     for (let i = 0; i < abilities.length; i++) if (abilities[i] >= ref) count++
-    if (count >= NORM_MIN_POPULATION || ref <= NORM_CA_MIN) return Math.max(NORM_CA_MIN, Math.min(ref, start))
-    ref = Math.max(NORM_CA_MIN, ref - NORM_CA_STEP)
+    if (count >= K.NORM_MIN_POPULATION || ref <= K.NORM_CA_MIN) return Math.max(K.NORM_CA_MIN, Math.min(ref, start))
+    ref = Math.max(K.NORM_CA_MIN, ref - K.NORM_CA_STEP)
   }
 }
 
@@ -122,7 +112,7 @@ function slopeOf(scores: ArrayLike<number>, abilities: ArrayLike<number>, minCa:
 
 /** 점수를 현재 능력에 단순 회귀한 기울기(현재 능력 60 이상). 표본이 모자라거나 기울기가 0 이하이면 DEFAULT_BETA */
 export function betaFromScores(scores: ArrayLike<number>, abilities: ArrayLike<number>): number {
-  return slopeOf(scores, abilities, BETA_MIN_CA, BETA_MIN_POPULATION) ?? DEFAULT_BETA
+  return slopeOf(scores, abilities, K.BETA_MIN_CA, K.BETA_MIN_POPULATION) ?? K.DEFAULT_BETA
 }
 
 /**
@@ -130,7 +120,7 @@ export function betaFromScores(scores: ArrayLike<number>, abilities: ArrayLike<n
  * β는 현재 능력 60 이상 전체의 기울기라 유망주가 지나가는 구간(110~180)과 어긋난다: 이 세이브에서 스트라이커 0.237 → 0.279, 수비형 미드 0.313 → 0.259.
  */
 export function betaGrowFromScores(scores: ArrayLike<number>, abilities: ArrayLike<number>, beta: number): number {
-  return slopeOf(scores, abilities, BETA_GROW_MIN_CA, BETA_MIN_POPULATION, BETA_GROW_MAX_CA) ?? beta
+  return slopeOf(scores, abilities, K.BETA_GROW_MIN_CA, K.BETA_MIN_POPULATION, K.BETA_GROW_MAX_CA) ?? beta
 }
 
 /**
@@ -162,11 +152,11 @@ export function normFromScores(scores: ArrayLike<number>, abilities: ArrayLike<n
     if (abilities[i] < poolCa) continue
     squares += (scores[i] - mean) ** 2
   }
-  const betaHi = slopeOf(scores, abilities, poolCa, BETA_MIN_POPULATION) ?? beta
+  const betaHi = slopeOf(scores, abilities, poolCa, K.BETA_MIN_POPULATION) ?? beta
   const shift = meanCaStar === undefined ? 0 : betaHi * (meanCaStar - sumCa / n)
   return {
     mu: mean + shift,
-    sigma: Math.max(NORM_MIN_SIGMA, Math.sqrt(squares / n)),
+    sigma: Math.max(K.NORM_MIN_SIGMA, Math.sqrt(squares / n)),
     beta,
     betaGrow,
     n,
