@@ -11,7 +11,8 @@
     "start": "electron-vite preview",
     "web": "vite --config vite.web.config.ts",
     "typecheck": "tsc --noEmit -p tsconfig.json",
-    "test": "vitest run"
+    "test": "vitest run",
+    "docs:ledger": "node -e \"process.env.UPDATE_LEDGER_DOC='1';require('child_process').spawnSync('npx vitest run tests/ledger.test.ts',{shell:true,stdio:'inherit'})\""
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^1.14.0",
