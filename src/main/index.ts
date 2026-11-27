@@ -15,7 +15,7 @@ import { SeasonService } from './seasonService'
 import { SettingsStore } from './settings'
 import { TalkController } from './talk/controller'
 import { KeyStore } from './talk/keyStore'
-import { TRAY_ICON } from './trayIcon'
+import { trayIconFor } from './trayIcon'
 import { SaveWatcher } from './watcher'
 import { WorldService } from './worldService'
 
@@ -133,7 +133,7 @@ function showWindow(): void {
 
 /** 알림 영역 아이콘. 창을 닫은 뒤에도 앱을 다시 열거나 끌 수 있게 한다. */
 function createTray(): void {
-  tray = new Tray(nativeImage.createFromDataURL(TRAY_ICON))
+  tray = new Tray(nativeImage.createFromDataURL(trayIconFor(settings.get().theme)))
   tray.setToolTip('FM 보좌관')
   tray.setContextMenu(
     Menu.buildFromTemplate([
@@ -158,6 +158,8 @@ function registerIpc(): void {
     const before = settings.get()
     const next = settings.set(patch)
     if (next.saveDir !== before.saveDir) await saveWatcher.start(next.saveDir)
+    // 화면 색을 바꾸면 알림 영역 아이콘도 그 색으로 바꾼다
+    if (next.theme !== before.theme) tray?.setImage(nativeImage.createFromDataURL(trayIconFor(next.theme)))
     return next
   })
   ipcMain.handle('shell:openPath', async (_event, path: unknown) => {
