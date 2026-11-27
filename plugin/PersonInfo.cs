@@ -209,6 +209,158 @@ internal static class PersonInfo
         }
     }
 
+    /// <summary>수·참거짓 조건 하나: 이름, 만드는 방법(GameData.PutValue의 kind), 값</summary>
+    internal sealed class ValueContext
+    {
+        public readonly string Name;
+        public readonly string Kind;
+        public readonly string Value;
+
+        public ValueContext(string name, string kind, string value)
+        {
+            Name = name;
+            Kind = kind;
+            Value = value;
+        }
+    }
+
+    private const int MaxListItems = 100;
+
+    /// <summary>
+    /// 개발용(/fields): 대상 하나에 항목들을 청한다. 기록 조건(contexts)과 수·참거짓 조건(values)을 함께 올릴 수 있고,
+    /// listPath가 있으면 그 목록의 줄마다 itemPaths 항목을 청한다(역할 별점 표처럼 줄이 여럿인 항목).
+    /// 돌려주는 JSON: {"id":…, "notes":{조건: 올렸는지}, "fields":{경로: 값}, "list":목록 글, "count":줄 수, "items":[{경로: 값}]}
+    /// </summary>
+    internal static string Probe(GameData.RecordKind kind, uint id, int index, Field[] fields, List<Context> contexts,
+        List<ValueContext> values, string listPath, string[] itemPaths, int maxItems)
+    {
+        if (failures >= MaxFailures) throw new HttpError(503, "game queries are off after repeated failures");
+        maxItems = Math.Clamp(maxItems, 1, MaxListItems);
+        lock (Gate)
+        {
+            try
+            {
+                var node = Node(id);
+                var notes = new List<(string Name, string State)>();
+                var placed = MainThread.Run(() =>
+                {
+                    var state = Ask(kind, new List<(uint, int)> { (id, index) }, fields, contexts, values, notes);
+                    if (state == "ok" && listPath != null) GameData.Want(node + "." + listPath);
+                    return state;
+                }, 30_000);
+                if (placed != "ok") throw new HttpError(503, placed);
+
+                var asked = fields.Select(field => node + "." + field.Path).ToList();
+                if (listPath != null) asked.Add(node + "." + listPath);
+                WaitFor(asked);
+
+                // 목록의 줄마다 우리 이름의 마디를 올리고(조건이 같은 부모 아래에서 찾아지도록 같은 곳에) 항목을 청한다
+                var itemNodes = new List<string>();
+                if (listPath != null && itemPaths.Length > 0)
+                {
+                    MainThread.Run(() =>
+                    {
+                        var count = GameData.Count(node + "." + listPath);
+                        var limit = count >= 0 ? Math.Min(count, maxItems) : maxItems;
+                        for (var i = 0; i < limit; i++)
+                        {
+                            var itemNode = Root + "i" + i.ToString(CultureInfo.InvariantCulture);
+                            if (!GameData.Put(itemNode, node + "." + listPath, i)) break;
+                            foreach (var path in itemPaths) GameData.Want(itemNode + "." + path);
+                            itemNodes.Add(itemNode);
+                        }
+                        return "";
+                    });
+                    if (itemNodes.Count > 0) WaitFor(itemNodes.SelectMany(item => itemPaths.Select(path => item + "." + path)).ToList());
+                }
+
+                return MainThread.Run(() =>
+                {
+                    var json = new StringBuilder("{\"id\":").Append(id.ToString(CultureInfo.InvariantCulture)).Append(",\"notes\":{");
+                    for (var i = 0; i < notes.Count; i++)
+                        json.Append(i > 0 ? "," : "").Append(Quote(notes[i].Name)).Append(':').Append(Quote(notes[i].State));
+                    json.Append("},\"fields\":{");
+                    var first = true;
+                    foreach (var field in fields)
+                    {
+                        var text = GameData.Text(node + "." + field.Path);
+                        if (text == null) continue;
+                        json.Append(first ? "" : ",").Append(Quote(field.Path)).Append(':').Append(Quote(text));
+                        first = false;
+                    }
+                    json.Append('}');
+                    if (listPath != null)
+                    {
+                        var listText = GameData.Text(node + "." + listPath);
+                        json.Append(",\"list\":").Append(listText == null ? "null" : Quote(listText));
+                        json.Append(",\"count\":").Append(GameData.Count(node + "." + listPath).ToString(CultureInfo.InvariantCulture));
+                        json.Append(",\"items\":[");
+                        for (var i = 0; i < itemNodes.Count; i++)
+                        {
+                            json.Append(i > 0 ? "," : "").Append('{');
+                            var firstItem = true;
+                            foreach (var path in itemPaths)
+                            {
+                                var text = GameData.Text(itemNodes[i] + "." + path);
+                                if (text == null) continue;
+                                json.Append(firstItem ? "" : ",").Append(Quote(path)).Append(':').Append(Quote(text));
+                                firstItem = false;
+                            }
+                            json.Append('}');
+                        }
+                        json.Append(']');
+                    }
+                    return json.Append('}').ToString();
+                });
+            }
+            catch (HttpError)
+            {
+                throw;
+            }
+            catch (TimeoutException error)
+            {
+                throw new HttpError(503, error.Message);
+            }
+            catch (Exception error)
+            {
+                failures++;
+                Plugin.Logger.LogWarning($"game probe ({failures}/{MaxFailures}): {error.Message}");
+                throw new HttpError(503, error.Message);
+            }
+            finally
+            {
+                try
+                {
+                    MainThread.Run(() =>
+                    {
+                        GameData.Drop(Root);
+                        return "";
+                    });
+                }
+                catch (Exception error)
+                {
+                    Plugin.Logger.LogWarning($"game probe: clean-up: {error.Message}");
+                }
+            }
+        }
+    }
+
+    /// <summary>요청 스레드: 경로가 모두 오거나(값이 없다는 답도 답이다), 첫 경로가 온 뒤 SettleMs가 지나거나, WaitMs가 지날 때까지 기다린다.</summary>
+    private static void WaitFor(List<string> paths)
+    {
+        var watch = Stopwatch.StartNew();
+        long firstAt = -1;
+        while (true)
+        {
+            Thread.Sleep(PollMs);
+            var state = MainThread.Run(() => !GameData.Arrived(paths[0]) ? "" : paths.All(GameData.Arrived) ? "all" : "first");
+            if (state == "all") return;
+            if (state == "first" && firstAt < 0) firstAt = watch.ElapsedMilliseconds;
+            if (firstAt >= 0 && watch.ElapsedMilliseconds - firstAt >= SettleMs) return;
+            if (watch.ElapsedMilliseconds >= WaitMs) return;
+        }
+    }
+
     /// <summary>메인 스레드: 게임이 받지 않는다고 확인된 경로를 뺀다(확인할 수 없으면 청해 본다). 첫 항목은 늘 남긴다.</summary>
     private static Field[] Accepted(Field[] fields, List<string> skipped)
     {
@@ -222,8 +374,9 @@ internal static class PersonInfo
         return kept.ToArray();
     }
 
-    /// <summary>메인 스레드: 대상을 가리키는 마디를 올리고 항목을 청한다.</summary>
-    private static string Ask(GameData.RecordKind kind, List<(uint Id, int Index)> targets, Field[] fields, List<Context> contexts)
+    /// <summary>메인 스레드: 대상을 가리키는 마디를 올리고 항목을 청한다. 조건(기록, 수·참거짓)은 항목을 청하기 전에 올린다.</summary>
+    private static string Ask(GameData.RecordKind kind, List<(uint Id, int Index)> targets, Field[] fields, List<Context> contexts,
+        List<ValueContext> values = null, List<(string Name, string State)> notes = null)
     {
         if (!GameData.Available) return "game data is not available";
         GameData.Drop(Root);
@@ -232,6 +385,12 @@ internal static class PersonInfo
         if (contexts != null)
             foreach (var context in contexts)
                 GameData.PutRecord(Root + context.Name, context.Kind, context.Index);
+        if (values != null)
+            foreach (var value in values)
+            {
+                var state = GameData.PutValue(Root + value.Name, value.Kind, value.Value);
+                notes?.Add((value.Name, state));
+            }
         var asked = 0;
         foreach (var (id, index) in targets)
         {

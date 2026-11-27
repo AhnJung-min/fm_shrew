@@ -343,6 +343,79 @@ internal static unsafe class GameData
         }
     }
 
+    /// <summary>
+    /// 조건 값을 우리 이름으로 올린다(역할 별점처럼 수·참거짓 조건이 필요한 항목을 청할 때).
+    /// 게임이 어떻게 만든 값을 조건으로 받아들이는지는 게임에서 확인해야 해서, 만드는 방법을 고를 수 있게 했다:
+    ///   int, uint, long, ulong, bool   게임의 TypedValue.Create&lt;T&gt;로 만든다
+    ///   posmask, iprole, ooprole       같은 방법으로 포지션 묶음(PlayingDataFlags.PositionMask), 공격 시 역할(FM.UI.InPossessionRole),
+    ///                                  수비 시 역할(FM.UI.OutOfPossessionRole) 열거형 값을 만든다
+    ///   box-(위의 것)                  값을 상자에 담아 참조 값으로 올린다(PutRecord와 같은 방법)
+    /// 올렸으면 "ok", 아니면 까닭을 돌려준다. Create로 만든 값은 게임이 함께 쓰는 값일 수 있어 돌려주지(Dispose) 않는다.
+    /// </summary>
+    public static string PutValue(string name, string kind, string valueText)
+    {
+        if (Tree() == null) return "no data tree";
+        var boxedKind = kind.StartsWith("box-", StringComparison.Ordinal);
+        var core = boxedKind ? kind[4..] : kind;
+        ulong raw;
+        if (core == "bool") raw = valueText is "1" or "true" ? 1UL : 0UL;
+        else if (valueText.StartsWith('-'))
+        {
+            if (!long.TryParse(valueText, System.Globalization.NumberStyles.AllowLeadingSign, System.Globalization.CultureInfo.InvariantCulture, out var signed)) return "bad value";
+            raw = unchecked((ulong)signed);
+        }
+        else if (!ulong.TryParse(valueText, System.Globalization.NumberStyles.None, System.Globalization.CultureInfo.InvariantCulture, out raw)) return "bad value";
+
+        try
+        {
+            if (boxedKind)
+            {
+                var klass = core switch
+                {
+                    "int" => Il2CppClassPointerStore<int>.NativeClassPtr,
+                    "uint" => Il2CppClassPointerStore<uint>.NativeClassPtr,
+                    "long" => Il2CppClassPointerStore<long>.NativeClassPtr,
+                    "ulong" => Il2CppClassPointerStore<ulong>.NativeClassPtr,
+                    "bool" => Il2CppClassPointerStore<bool>.NativeClassPtr,
+                    "posmask" => Il2CppClassPointerStore<global::PlayingDataFlags.PositionMask>.NativeClassPtr,
+                    "iprole" => Il2CppClassPointerStore<FM.UI.InPossessionRole>.NativeClassPtr,
+                    "ooprole" => Il2CppClassPointerStore<FM.UI.OutOfPossessionRole>.NativeClassPtr,
+                    _ => IntPtr.Zero
+                };
+                if (klass == IntPtr.Zero) return "unknown kind";
+                var buffer = raw;
+                var boxedValue = IL2CPP.il2cpp_value_box(klass, (IntPtr)(&buffer));
+                if (boxedValue == IntPtr.Zero) return "box failed";
+                var holder = TypedValue.GetReferenceTypedValue();
+                holder.SetValue(new Il2CppSystem.Object(boxedValue));
+                var placedBox = Place(name, holder);
+                holder.Dispose();
+                return placedBox ? "ok" : "not placed";
+            }
+
+            TypedValue typed = core switch
+            {
+                "int" => TypedValue.Create(unchecked((int)raw)),
+                "uint" => TypedValue.Create(unchecked((uint)raw)),
+                "long" => TypedValue.Create(unchecked((long)raw)),
+                "ulong" => TypedValue.Create(raw),
+                "bool" => TypedValue.Create(raw != 0),
+                "posmask" => TypedValue.Create((global::PlayingDataFlags.PositionMask)unchecked((int)raw)),
+                "iprole" => TypedValue.Create((FM.UI.InPossessionRole)raw),
+                "ooprole" => TypedValue.Create((FM.UI.OutOfPossessionRole)raw),
+                _ => null
+            };
+            if (typed == null) return "unknown kind";
+            return Place(name, typed) ? "ok" : "not placed";
+        }
+        catch (Exception error)
+        {
+            // 여기서 난 문제는 경기 카드를 끄지 않도록 세지 않는다
+            Plugin.Logger.LogWarning($"game data: value {name} ({kind}): {error.Message}");
+            return "failed: " + error.Message;
+        }
+    }
+
     /// <summary>prefix로 시작하는 경로를 모두 거두고, 그 아래에 올려 둔 우리 마디도 지운다.</summary>
     public static void Drop(string prefix)
     {

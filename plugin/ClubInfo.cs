@@ -181,12 +181,36 @@ internal static class ClubInfo
 
     private static readonly Regex PathPattern = new("^[A-Za-z][A-Za-z0-9_]*(\\.[A-Za-z][A-Za-z0-9_]*)*$", RegexOptions.CultureInvariant);
 
+    /// <summary>수·참거짓 조건 하나: "이름=만드는방법:값". 만드는 방법은 GameData.PutValue 참고</summary>
+    private static readonly Regex ValuePattern = new(
+        "^([A-Za-z][A-Za-z0-9_]*)=((?:box-)?(?:int|uint|long|ulong|bool|posmask|iprole|ooprole)):(-?[0-9]{1,20}|true|false)$",
+        RegexOptions.CultureInvariant);
+
+    private static List<PersonInfo.ValueContext> ParseValues(string text)
+    {
+        var values = new List<PersonInfo.ValueContext>();
+        if (string.IsNullOrEmpty(text)) return values;
+        foreach (var part in text.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+        {
+            var match = ValuePattern.Match(part);
+            if (!match.Success) throw new HttpError(400, $"bad ctx '{part}' (name=kind:value)");
+            values.Add(new PersonInfo.ValueContext(match.Groups[1].Value, match.Groups[2].Value, match.Groups[3].Value));
+        }
+        if (values.Count > 8) throw new HttpError(400, "at most 8 ctx values");
+        return values;
+    }
+
     /// <summary>
     /// 개발용: 팀이나 선수 하나에 임의의 항목 경로들을 청하고, 값이 온 것을 경로를 이름으로 돌려준다.
     /// 예: /fields?kind=team&amp;id=번호&amp;f=Division.Name,Stadium.Name,Club.TransferBudget
     /// 선수일 때 team=팀 번호를 주면 사기처럼 팀 문맥이 필요한 항목도 청할 수 있다. 받는 이름인지는 확인하지 않고 그대로 청한다.
+    /// 선수일 때 더 쓸 수 있는 것(0.12.0):
+    ///   ctx=이름=방법:값,…   수·참거짓 조건. 예: ctx=PositionMask=posmask:8192,InPossession=bool:1
+    ///   list=목록 경로, items=줄마다 청할 경로들, max=줄 수 상한. 예: list=PositionalAbilitiesRoleTable&amp;items=RoleAbilityText,PositionalStrength
+    /// 이때는 {"id","notes","fields","list","count","items"} 꼴로 돌려준다.
     /// </summary>
-    public static string Fields(string kind, string idText, string pathsText, string teamText)
+    public static string Fields(string kind, string idText, string pathsText, string teamText, string ctxText = null,
+        string listPath = null, string itemsText = null, int maxItems = 40)
     {
         var paths = pathsText.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).Distinct().ToList();
         if (paths.Count == 0 || paths.Count > 60) throw new HttpError(400, "need 1 to 60 paths");
@@ -201,6 +225,15 @@ internal static class ClubInfo
         {
             if (!LiveMemory.PersonIndex(id, out var index)) throw new HttpError(404, "player not found");
             var contexts = string.IsNullOrEmpty(teamText) ? null : new List<PersonInfo.Context> { new("team", GameData.RecordKind.Team, ParseTeam(teamText)) };
+            var values = ParseValues(ctxText);
+            if (values.Count > 0 || !string.IsNullOrEmpty(listPath))
+            {
+                if (!string.IsNullOrEmpty(listPath) && !PathPattern.IsMatch(listPath)) throw new HttpError(400, "bad list path");
+                var itemPaths = (itemsText ?? "").Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).Distinct().ToArray();
+                if (itemPaths.Length > 20 || itemPaths.Any(path => !PathPattern.IsMatch(path))) throw new HttpError(400, "bad item paths (at most 20)");
+                return PersonInfo.Probe(GameData.RecordKind.Person, id, index, fields.ToArray(), contexts, values,
+                    string.IsNullOrEmpty(listPath) ? null : listPath, itemPaths, maxItems);
+            }
             return Wrap(PersonInfo.Run(GameData.RecordKind.Person, new List<(uint, int)> { (id, index) }, fields.ToArray(), "uid", contexts));
         }
         if (kind == "team")

@@ -216,9 +216,9 @@ internal static class Server
                 return ClubInfo.Club(Need("team"));
             case "/health":
                 return ClubInfo.Health(Need("uids"), query["team"]);
-            // 개발용: 한 팀이나 선수에 임의의 항목 경로를 청해 본다
+            // 개발용: 한 팀이나 선수에 임의의 항목 경로를 청해 본다(조건 값 ctx, 목록 list·items는 0.12.0부터)
             case "/fields":
-                return ClubInfo.Fields(Need("kind"), Need("id"), Need("f"), query["team"]);
+                return ClubInfo.Fields(Need("kind"), Need("id"), Need("f"), query["team"], query["ctx"], query["list"], query["items"], Number("max", 40));
             // 개발용: 번호로 선수를 가리키는 마디를 올린다. 그 뒤 /bind로 항목을 청해 본다
             case "/alias/person":
             {
