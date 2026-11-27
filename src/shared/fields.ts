@@ -172,7 +172,9 @@ export const GROUP_LABEL: Record<ColumnGroup, string> = {
   mental: '정신',
   physical: '신체',
   goalkeeping: '골키퍼',
-  other: '기타'
+  other: '기타',
+  key: '핵심 능력치',
+  support: '도움 능력치'
 }
 
 export const GROUP_ORDER: ColumnGroup[] = ['info', 'contract', 'technical', 'mental', 'physical', 'goalkeeping', 'other']

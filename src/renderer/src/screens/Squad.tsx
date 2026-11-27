@@ -2,6 +2,7 @@ import { Search } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 import { bestRoleOf, FORMATION_BY_ID, FORMATIONS } from '@shared/depth'
 import { GROUP_LABEL, GROUP_ORDER } from '@shared/fields'
+import { groupKeyAttributes, playsInGroup, POSITION_GROUPS, type PositionGroup } from '@shared/keyAttributes'
 import type { LinkStatus } from '@shared/game'
 import { buildInsights } from '@shared/insights'
 import { analyseTactic } from '@shared/tactic'
@@ -49,6 +50,53 @@ function withRoleFit(snapshot: SquadResult, weights: Settings['roleWeights']): {
   return { columns, rows }
 }
 
+type PositionView = 'all' | PositionGroup['id']
+
+/** 포지션별 보기를 이 PC에 기억해 두는 이름(브라우저 저장소. 못 읽으면 "전체"로 시작한다) */
+const POSITION_VIEW_STORE = 'fmb.squad.positionView'
+
+function readPositionView(): PositionView {
+  try {
+    const saved = window.localStorage.getItem(POSITION_VIEW_STORE)
+    return POSITION_GROUPS.some((group) => group.id === saved) ? (saved as PositionView) : 'all'
+  } catch {
+    return 'all'
+  }
+}
+
+function writePositionView(view: PositionView): void {
+  try {
+    window.localStorage.setItem(POSITION_VIEW_STORE, view)
+  } catch {
+    // 기억하지 못해도 이번에는 고른 대로 보인다
+  }
+}
+
+/**
+ * 포지션 묶음 보기: 그 묶음의 자리를 뛸 수 있는 선수만, 정보 열 뒤에 그 묶음의 주요 능력치(핵심 → 도움)만 놓는다.
+ * 능력치 열 30여 개를 다 보는 대신 수비수는 수비수에게 중요한 능력치만 본다.
+ */
+function positionView(
+  fitted: { columns: ColumnInfo[]; rows: PlayerRow[] },
+  group: PositionGroup,
+  weights: Settings['roleWeights']
+): { columns: ColumnInfo[]; rows: PlayerRow[] } {
+  const positionHeader = fitted.columns.find((col) => col.field === 'position')?.header
+  const rows = positionHeader ? fitted.rows.filter((row) => playsInGroup(row.cells[positionHeader]?.raw ?? '', group)) : fitted.rows
+  const keys: ColumnInfo[] = []
+  for (const key of groupKeyAttributes(group, weights)) {
+    const column = fitted.columns.find((col) => col.isAttr && col.field === key.id)
+    if (column) {
+      keys.push({
+        ...column,
+        group: key.core ? 'key' : 'support',
+        hint: `${column.label}: ${group.label} 역할들의 ${key.core ? '핵심' : '도움'} 능력치(평균 가중치 ${key.weight})`
+      })
+    }
+  }
+  return { columns: [...fitted.columns.filter((col) => !col.isAttr), ...keys], rows }
+}
+
 /** 적용한 세이브의 내 팀 선수들. 게임이 켜져 있으면 게임의 지금 값으로 보인다. */
 export function Squad(props: {
   /** 자료가 바뀌면 달라지는 글자(다시 읽을 때를 안다) */
@@ -72,6 +120,8 @@ export function Squad(props: {
   // 열이 많아 골키퍼 능력치와 계약 열은 처음에 접어 두고 필요할 때 켠다
   const [hidden, setHidden] = useState<Set<ColumnGroup>>(new Set(['goalkeeping', 'contract']))
   const [showInsights, setShowInsights] = useState(false)
+  /** 포지션별 보기(전체면 모든 선수와 모든 능력치) */
+  const [posView, setPosView] = useState<PositionView>(readPositionView)
   const [sort, setSort] = useState<SortState | null>(null)
   const [selectedIdx, setSelectedIdx] = useState<number | null>(null)
   /** 전술판에서 분석을 펼친 자리(포메이션과 함께 기억해, 포메이션을 바꾸면 닫힌다) */
@@ -92,24 +142,37 @@ export function Squad(props: {
     [snapshot, settings.roleWeights]
   )
 
-  const groups = useMemo(() => {
-    const present = new Set(fitted?.columns.filter((c) => c.field !== 'name').map((c) => c.group))
-    return GROUP_ORDER.filter((group) => present.has(group))
-  }, [fitted])
-
-  const columns = useMemo(
-    () => fitted?.columns.filter((col) => col.field === 'name' || !hidden.has(col.group)) ?? [],
-    [fitted, hidden]
+  const activeGroup = POSITION_GROUPS.find((group) => group.id === posView) ?? null
+  // 포지션별 보기면 그 묶음의 선수와 주요 능력치만 남긴다
+  const shown = useMemo(
+    () => (fitted && activeGroup ? positionView(fitted, activeGroup, settings.roleWeights) : fitted),
+    [fitted, activeGroup, settings.roleWeights]
   )
 
+  const groups = useMemo(() => {
+    const present = new Set(fitted?.columns.filter((c) => c.field !== 'name').map((c) => c.group))
+    // 포지션별 보기에서는 능력치 열을 묶음이 정하므로 정보·계약 묶음만 켜고 끈다
+    return GROUP_ORDER.filter((group) => present.has(group) && (activeGroup === null || group === 'info' || group === 'contract'))
+  }, [fitted, activeGroup])
+
+  const columns = useMemo(
+    () => shown?.columns.filter((col) => col.field === 'name' || !hidden.has(col.group)) ?? [],
+    [shown, hidden]
+  )
+
+  // 보이지 않게 된 열로 정렬해 두었으면 정렬을 푼다
+  useEffect(() => {
+    if (sort && !columns.some((column) => column.header === sort.header)) setSort(null)
+  }, [sort, columns])
+
   const rows = useMemo(() => {
-    if (!fitted) return []
+    if (!shown) return []
     const needle = query.trim().toLowerCase()
     const filtered = needle
-      ? fitted.rows.filter((row) => Object.values(row.cells).some((cell) => cell.raw.toLowerCase().includes(needle)))
-      : fitted.rows
+      ? shown.rows.filter((row) => Object.values(row.cells).some((cell) => cell.raw.toLowerCase().includes(needle)))
+      : shown.rows
     return sortRows(filtered, sort)
-  }, [fitted, query, sort])
+  }, [shown, query, sort])
 
   // 전술판·진단이 같은 전술 분석(주전·후보·보강 필요도)을 쓰도록 한 번만 계산한다. 영입 후보 화면도 같은 계산을 쓴다
   const formation = FORMATION_BY_ID[settings.formation] ?? FORMATIONS[0]
@@ -209,6 +272,31 @@ export function Squad(props: {
               onChange={(event) => setQuery(event.target.value)}
             />
           </label>
+          <div className="segmented" role="group" aria-label="포지션별 주요 능력치">
+            <button
+              aria-pressed={posView === 'all'}
+              title="모든 선수와 모든 능력치를 봅니다."
+              onClick={() => {
+                setPosView('all')
+                writePositionView('all')
+              }}
+            >
+              전체
+            </button>
+            {POSITION_GROUPS.map((group) => (
+              <button
+                key={group.id}
+                aria-pressed={posView === group.id}
+                title={`${group.label}를 뛸 수 있는 선수만, ${group.label} 역할들에 중요한 능력치만 봅니다.`}
+                onClick={() => {
+                  setPosView(group.id)
+                  writePositionView(group.id)
+                }}
+              >
+                {group.label}
+              </button>
+            ))}
+          </div>
           <div className="chips" role="group" aria-label="보여 줄 열 묶음">
             {groups.map((group) => (
               <button key={group} className="chip" aria-pressed={!hidden.has(group)} onClick={() => toggleGroup(group)}>
@@ -276,8 +364,17 @@ export function Squad(props: {
         )}
         {view === 'table' && fitted && rows.length === 0 && (
           <div className="empty" style={{ flex: 1 }}>
-            <strong>“{query}”에 맞는 선수가 없습니다</strong>
-            다른 이름이나 포지션으로 찾아보세요.
+            {query.trim() ? (
+              <>
+                <strong>“{query}”에 맞는 선수가 없습니다</strong>
+                다른 이름이나 포지션으로 찾아보세요.
+              </>
+            ) : (
+              <>
+                <strong>{activeGroup?.label ?? '이 포지션'}를 뛸 수 있는 선수가 없습니다</strong>
+                “전체”를 누르면 모든 선수를 봅니다.
+              </>
+            )}
           </div>
         )}
         {view === 'tactics' && snapshot?.ok && (
