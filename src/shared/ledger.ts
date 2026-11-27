@@ -37,15 +37,10 @@ function def<V>(
   value: V,
   unit: string,
   basis: string,
-  more: { status?: LedgerStatus; sensitivity?: LedgerSensitivity } = {}
+  more: { status?: LedgerStatus } = {}
 ): Omit<LedgerEntry<V>, 'name'> {
-  return { value, unit, status: more.status ?? '추정', basis, lastChecked: CHECKED, sensitivity: more.sensitivity ?? '미측정' }
+  return { value, unit, status: more.status ?? '추정', basis, lastChecked: CHECKED, sensitivity: '미측정' }
 }
-
-/** 나머지 상수보다 눈에 띄게 흔들리는 것(5회차 검토 부록 A 등) */
-const SENSITIVE = { sensitivity: '민감' } as const
-/** 5회차 검토에서 ±20%에 상위 10명 겹침이 0.8 이상이었던 것 */
-const STABLE = { sensitivity: '보통' } as const
 
 type NeedFactorWeights = { quality: number; depth: number; age: number; contract: number }
 type NeedLevelMin = { urgent: number; recommended: number; normal: number; fine: number }
@@ -64,7 +59,7 @@ const DEFS = {
   // ---------- 역할 기준 분포(norms.ts) ----------
   NORM_MIN_RATING: def(15, '숙련', '이 숙련 이상이어야 그 역할의 자리를 뛰는 선수로 본다. PLAYABLE_RATING과 같은 15(게임의 능숙 이상)'),
   NORM_CA_FLOOR: def(100, '현재 능력', '기준 능력의 하한. 내 팀이 약해도 상위권을 100 아래로 잡지 않는다'),
-  NORM_CA_MARGIN: def(10, '현재 능력', '내 주전 11명 현재 능력의 중간값에서 이만큼 낮은 선수부터를 "데려올 수준의 상위권"으로 본다', STABLE),
+  NORM_CA_MARGIN: def(10, '현재 능력', '내 주전 11명 현재 능력의 중간값에서 이만큼 낮은 선수부터를 "데려올 수준의 상위권"으로 본다'),
   NORM_TOP_COUNT: def(11, '명', '중간값을 구하는 내 선수 수(한 경기 선발진)'),
   NORM_MIN_POPULATION: def(40, '명', '기준 분포의 모집단이 이보다 적으면 기준 능력을 한 걸음씩 낮춰 다시 센다'),
   NORM_CA_STEP: def(10, '현재 능력', '모집단이 모자랄 때 기준 능력을 낮추는 한 걸음'),
@@ -75,19 +70,19 @@ const DEFS = {
   BETA_MIN_POPULATION: def(40, '명', '기울기를 구하는 데 필요한 최소 인원'),
   BETA_GROW_MIN_CA: def(110, '현재 능력', '성장 기울기를 재는 현재 능력 구간의 아래쪽(5회차). 어린 선수가 실제로 지나가는 구간'),
   BETA_GROW_MAX_CA: def(180, '현재 능력', '성장 기울기를 재는 현재 능력 구간의 위쪽(5회차)'),
-  GAIN_WIDTH_SIGMAS: def(1.5, 'σ', '점수 차이를 충족도로 바꾸는 폭. 1.5σ 높으면 0.88에 이른다', STABLE),
+  GAIN_WIDTH_SIGMAS: def(1.5, 'σ', '점수 차이를 충족도로 바꾸는 폭. 1.5σ 높으면 0.88에 이른다'),
   FALLBACK_MU: def(72, '점', '기준 분포를 못 구했을 때(옛 호출, 미리보기)의 상위권 적합도 평균. 전술 분석과 영입 추천이 같은 값을 쓴다(F-08)'),
   FALLBACK_SIGMA: def(4, '점', '기준 분포를 못 구했을 때의 표준편차. 역할별 실측 평균이 약 3.9'),
 
   // ---------- 포지션 숙련(positions.ts) ----------
   PLAYABLE_RATING: def(15, '숙련', '이 값 이상이면 그 자리에서 뛸 수 있는 것으로 본다(게임의 "능숙" 이상)'),
   TEMPORARY_MIN_RATING: def(10, '숙련', '이 값 이상 15 미만이면 임시 주전으로 세울 수 있다(4회차). 10 미만은 빈 자리로 둔다'),
-  PENALTY_ACCOMPLISHED_PER_POINT: def(0.08, 'σ/숙련 1점', '숙련 15~19의 적합도 감점 계수(20에서 0, 15에서 0.40σ). 게임에서 숙련 차이를 대조한 적이 없다. 가장 민감한 상수(3회차 E4)', SENSITIVE),
-  PENALTY_AWKWARD_BASE: def(0.4, 'σ', '숙련 15 미만 구간의 감점 시작값. 15에서 끊기지 않게 0.08×5로 정했다', SENSITIVE),
-  PENALTY_AWKWARD_PER_POINT: def(0.3, 'σ/숙련 1점', '숙련 10~14의 감점 계수(10에서 1.90σ)', SENSITIVE),
+  PENALTY_ACCOMPLISHED_PER_POINT: def(0.08, 'σ/숙련 1점', '숙련 15~19의 적합도 감점 계수(20에서 0, 15에서 0.40σ). 게임에서 숙련 차이를 대조한 적이 없다. 가장 민감한 상수(3회차 E4)'),
+  PENALTY_AWKWARD_BASE: def(0.4, 'σ', '숙련 15 미만 구간의 감점 시작값. 15에서 끊기지 않게 0.08×5로 정했다'),
+  PENALTY_AWKWARD_PER_POINT: def(0.3, 'σ/숙련 1점', '숙련 10~14의 감점 계수(10에서 1.90σ)'),
   PENALTY_AWKWARD_FROM: def(10, '숙련', '감점 구간이 바뀌는 숙련(10 이상은 어색, 미만은 서투름)'),
-  PENALTY_POOR_BASE: def(1.9, 'σ', '숙련 10 미만 구간의 감점 시작값. 10에서 끊기지 않게 0.4+0.30×5로 정했다', SENSITIVE),
-  PENALTY_POOR_PER_POINT: def(0.5, 'σ/숙련 1점', '숙련 10 미만의 감점 계수(1에서 6.40σ)', SENSITIVE),
+  PENALTY_POOR_BASE: def(1.9, 'σ', '숙련 10 미만 구간의 감점 시작값. 10에서 끊기지 않게 0.4+0.30×5로 정했다'),
+  PENALTY_POOR_PER_POINT: def(0.5, 'σ/숙련 1점', '숙련 10 미만의 감점 계수(1에서 6.40σ)'),
   LOW_GATE_BELOW: def(10, '숙련', '숙련이 이 값 미만이면 총점에 곱셈 보정을 건다'),
   LOW_GATE_BASE: def(0.1, '배', '숙련 1에서의 곱셈 보정. 뛸 수 없는 자리의 선수가 다른 항목 점수로 위에 오르는 것을 막는 안전장치'),
   LOW_GATE_STEP: def(0.1, '배/숙련 1점', '숙련이 1 오를 때마다 곱셈 보정에 더하는 값(9에서 0.90)'),
@@ -125,28 +120,26 @@ const DEFS = {
   // ---------- 성장·나이·경계(world.ts) ----------
   PROSPECT_MAX_AGE: def(23, '세', '유망주 자격의 나이 한도(1회차 21세, 2회차 23세로 올려 22~23세 고잠재 선수가 어느 탭에도 못 드는 것을 막았다)'),
   PROSPECT_MIN_ROOM: def(10, '능력', '유망주 자격의 최소 성장 여지(잠재 능력 - 현재 능력)'),
-  PROSPECT_MIN_GAIN_SIGMA: def(0.5, 'σ', '성숙 시 적합도 이득이 이 값 × σ 이상이어야 클 여지가 있다고 본다. "한 시즌 주전 경쟁에 보탬이 될 크기"라는 어림(3회차)', STABLE),
+  PROSPECT_MIN_GAIN_SIGMA: def(0.5, 'σ', '성숙 시 적합도 이득이 이 값 × σ 이상이어야 클 여지가 있다고 본다. "한 시즌 주전 경쟁에 보탬이 될 크기"라는 어림(3회차)'),
   REPRESENTATIVE_BETA: def(0.265, '점/현재 능력', '역할을 정할 수 없을 때 쓰는 대표 기울기. 시험 세이브 A에서 역할별 0.24~0.34의 가운데쯤(3회차)', { status: '실측' }),
   REPRESENTATIVE_SIGMA: def(3.2, '점', '역할을 정할 수 없을 때 쓰는 대표 표준편차. 시험 세이브 A에서 역할별 2.8~5.9의 가운데쯤(3회차)', { status: '실측' }),
   GROWTH_SHARE_TABLE: def<Array<[number, number]>>(
     [[17, 0.78], [18, 0.7], [20, 0.57], [22, 0.38], [24, 0.15], [26, 0]],
     '[나이, 몫]',
-    '필드 선수의 성장 몫(성숙까지 채워질 비율). 단면 실측이라 세대 차이와 은퇴 편향이 섞여 있다. 두 날짜 세이브로 다시 재야 한다. ±20%에 유망주 탭 상위 10명의 절반이 바뀐다',
-    SENSITIVE
+    '필드 선수의 성장 몫(성숙까지 채워질 비율). 단면 실측이라 세대 차이와 은퇴 편향이 섞여 있다. 두 날짜 세이브로 다시 재야 한다. ±20%에 유망주 탭 상위 10명의 절반이 바뀐다'
   ),
   GROWTH_SHARE_TABLE_GOALKEEPER: def<Array<[number, number]>>(
     [[17, 0.73], [18, 0.72], [20, 0.58], [22, 0.46], [24, 0.28], [26, 0]],
     '[나이, 몫]',
-    '골키퍼의 성장 몫(5회차). 같은 단면 자료에서 골키퍼가 필드 선수보다 늦게 큰다. 단면 실측이라 두 날짜 세이브로 다시 재야 한다',
-    SENSITIVE
+    '골키퍼의 성장 몫(5회차). 같은 단면 자료에서 골키퍼가 필드 선수보다 늦게 큰다. 단면 실측이라 두 날짜 세이브로 다시 재야 한다'
   ),
   AGING_START_AGE: def(31, '세', '이 나이를 넘으면 한 해마다 적합도가 내려갈 것으로 본다(필드 선수)'),
   AGING_START_AGE_GOALKEEPER: def(34, '세', '골키퍼의 하락 시작 나이. 골키퍼는 늦게 내려간다'),
-  AGING_DROP_PER_YEAR: def(1.0, '점/년', '하락 속도. 단면 자료(세이브 하나)로 구할 수 없어 한 해 1점으로 어림했다', STABLE),
-  STARTER_TOLERANCE_SIGMAS: def(0.25, 'σ', '주전보다 이만큼 낮아도 "주전 수준"으로 본다(반올림·표본 오차 여유). 로테이션 탭의 위쪽 경계라 0이나 0.5로 바꾸면 상위 10명이 많이 바뀐다(4회차)', SENSITIVE),
-  ROTATION_REACH_SIGMAS: def(1.5, 'σ', '로테이션: 주전보다 이만큼보다 많이 낮은 선수는 번갈아 쓸 수준이 아니다', STABLE),
+  AGING_DROP_PER_YEAR: def(1.0, '점/년', '하락 속도. 단면 자료(세이브 하나)로 구할 수 없어 한 해 1점으로 어림했다'),
+  STARTER_TOLERANCE_SIGMAS: def(0.25, 'σ', '주전보다 이만큼 낮아도 "주전 수준"으로 본다(반올림·표본 오차 여유). 로테이션 탭의 위쪽 경계라 0이나 0.5로 바꾸면 상위 10명이 많이 바뀐다(4회차)'),
+  ROTATION_REACH_SIGMAS: def(1.5, 'σ', '로테이션: 주전보다 이만큼보다 많이 낮은 선수는 번갈아 쓸 수준이 아니다'),
   THIN_REACH_SIGMAS: def(1.0, 'σ', '후보가 2명 미만인 그룹은 로테이션 창을 아래로 이만큼까지 열어 둔다(5회차)'),
-  CA_GATE: def(0.85, '비율', '주전·로테이션 후보의 현재 능력은 내 주전의 이 비율 이상이어야 한다. 로테이션 탭의 경계라 0.95로 바꾸면 상위 10명이 많이 바뀐다(4회차)', SENSITIVE),
+  CA_GATE: def(0.85, '비율', '주전·로테이션 후보의 현재 능력은 내 주전의 이 비율 이상이어야 한다. 로테이션 탭의 경계라 0.95로 바꾸면 상위 10명이 많이 바뀐다(4회차)'),
 
   // ---------- 추천 점수(recommend.ts) ----------
   RECOMMEND_WEIGHTS: def<Record<Category, Record<Component, number>>>(
@@ -158,25 +151,23 @@ const DEFS = {
       free: { immediate: 44, maturity: 10, age: 12, cost: 10, ease: 8, reliability: 16 }
     },
     '점(유형마다 합 100)',
-    '유형별 항목 가중치 표. 무엇을 찾느냐에 따라 중요한 것이 다르다는 판단으로 직접 정했다. 자유 계약 탭은 4회차에 비용·난이도를 0에서 올렸다',
-    STABLE
+    '유형별 항목 가중치 표. 무엇을 찾느냐에 따라 중요한 것이 다르다는 판단으로 직접 정했다. 자유 계약 탭은 4회차에 비용·난이도를 0에서 올렸다'
   ),
   TIER_CUMULATIVE_SHARE: def<number[]>([0.05, 0.2, 0.5], '누적 비율', '등급 경계: 상위 5% 강력 추천, 20%까지 추천, 50%까지 고려, 나머지 보류. 이 앱이 정한 어림'),
-  TIER_MIN_TOTAL: def(60, '점', '점수가 이보다 낮으면 순위가 높아도 보류(절대 하한). 2회차에 총점 눈금이 10점 올라 50에서 60으로 올렸다', STABLE),
-  NEED_WEIGHT_LOW: def(0.8, '배', '필요도 0일 때 즉시 전력 비중에 곱하는 값(1회차에 0.6~1.4배가 지나치다고 보아 줄였다)', STABLE),
-  NEED_WEIGHT_HIGH: def(1.2, '배', '필요도 100일 때 즉시 전력 비중에 곱하는 값', STABLE),
+  TIER_MIN_TOTAL: def(60, '점', '점수가 이보다 낮으면 순위가 높아도 보류(절대 하한). 2회차에 총점 눈금이 10점 올라 50에서 60으로 올렸다'),
+  NEED_WEIGHT_LOW: def(0.8, '배', '필요도 0일 때 즉시 전력 비중에 곱하는 값(1회차에 0.6~1.4배가 지나치다고 보아 줄였다)'),
+  NEED_WEIGHT_HIGH: def(1.2, '배', '필요도 100일 때 즉시 전력 비중에 곱하는 값'),
   NEED_DEFAULT: def(50, '점', '자리를 고르지 않았을 때 보는 필요도'),
   STARTER_SHARE: def<Record<Category, number>>(
     { all: 0.7, starter: 0.85, rotation: 0.3, prospect: 0.7, free: 0.7 },
     '비율',
-    '즉시 전력에서 주전과 견주는 몫(나머지는 두 번째 선수). 로테이션은 두 번째 선수를 넘는지가 핵심이라 주전 몫을 줄였다',
-    STABLE
+    '즉시 전력에서 주전과 견주는 몫(나머지는 두 번째 선수). 로테이션은 두 번째 선수를 넘는지가 핵심이라 주전 몫을 줄였다'
   ),
   PEAK_OUTFIELD: def<[number, number]>([24, 29], '세', '필드 선수의 전성기(이 범위에서 나이 가치 1)'),
   PEAK_GOALKEEPER: def<[number, number]>([27, 33], '세', '골키퍼의 전성기. 골키퍼는 늦게 피고 오래 간다'),
   AGE_YOUNG_FLOOR: def(0.7, '충족도', '18세 이하의 나이 가치. 되팔 가치는 높지만 당장의 힘은 약하다'),
   AGE_YOUNG_FROM: def(18, '세', '이 나이 이하는 AGE_YOUNG_FLOOR이고, 전성기 시작 나이까지 1로 오른다'),
-  AGE_DECLINE_PER_YEAR: def(0.12, '충족도/년', '전성기가 지난 뒤 한 해마다 깎는 충족도', STABLE),
+  AGE_DECLINE_PER_YEAR: def(0.12, '충족도/년', '전성기가 지난 뒤 한 해마다 깎는 충족도'),
   AGE_PROSPECT_FROM: def(17, '세', '유망주 탭의 나이 가치가 1인 나이(17세 이하 1)'),
   AGE_PROSPECT_SPAN: def(9, '년', '유망주 탭의 나이 가치가 0이 되기까지의 햇수(26세 이상 0)'),
   MIN_SQUAD_SAMPLE: def(8, '명', '내 팀 주급·몸값 수준을 알려면 필요한 최소 선수 수(너무 적으면 중간값을 믿을 수 없다)'),
@@ -197,7 +188,7 @@ const DEFS = {
   EASE_CONTRACT_SHARE: def(0.4, '비율', '영입 난이도(소속 있음)에서 계약 기간의 몫. 계약과 입지를 같은 비중으로 둔 것은 1회차부터 이어 온 어림'),
   EASE_STATUS_SHARE: def(0.4, '비율', '영입 난이도(소속 있음)에서 계약상 입지의 몫'),
   EASE_STATURE_SHARE: def(0.2, '비율', '영입 난이도에서 체급의 몫. 이적 의사·평판을 못 읽는 동안의 임시 대용(2회차)'),
-  STATURE_SPAN_CA: def(25, '현재 능력', '체급 = 1 - clamp01((CA - 내 약한 주전 CA) / 25). 현재 능력이 훨씬 높은 선수는 우리 구단으로 오려 하지 않을 것이라는 어림. 영입 현실성의 체급 조건도 같은 값을 쓴다', STABLE),
+  STATURE_SPAN_CA: def(25, '현재 능력', '체급 = 1 - clamp01((CA - 내 약한 주전 CA) / 25). 현재 능력이 훨씬 높은 선수는 우리 구단으로 오려 하지 않을 것이라는 어림. 영입 현실성의 체급 조건도 같은 값을 쓴다'),
   STATUS_EASE: def<Record<number, number>>(
     { 1: 0.1, 2: 0.3, 3: 0.5, 4: 0.7, 5: 0.75, 7: 0.95, 9: 0.9, 10: 0.4, 11: 0.4, 13: 0.5, 14: 0.6, 15: 0.5, 16: 0.7, 17: 0.7, 18: 0.7, 20: 0.8, 21: 0.9 },
     '{입지 코드: 쉬움}',
