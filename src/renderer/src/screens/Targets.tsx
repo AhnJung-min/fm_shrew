@@ -36,7 +36,7 @@ const info = (header: string, field: string, label: string, numeric: boolean): C
 })
 
 const NAME = info('이름', 'name', '이름', false)
-const KIND: ColumnInfo = { ...info('유형', 'candidateKind', '이 선수가 드는 유형(영입 현실성이 낮으면 표지가 붙습니다)', false), width: 250 }
+const KIND: ColumnInfo = { ...info('유형', 'candidateKind', '이 선수가 드는 유형(즉시 전력, 로테이션 자원, 유망주, 자유 계약)', false), width: 170 }
 const RECO: ColumnInfo = { ...info('추천 점수', 'recommend', TERM_HELP.recommend, true), width: 160 }
 const SCORE = info('적합도', 'roleScore', TERM_HELP.fit, true)
 const GAP = info(
@@ -47,7 +47,7 @@ const GAP = info(
 )
 const AGE = info('나이', 'age', '나이', true)
 const POSITION = info('포지션', 'position', '포지션', false)
-const CLUB: ColumnInfo = { ...info('소속 구단', 'club', '소속 구단. 임대 중이면 원 소속 구단(이적료를 받는 쪽)입니다', false), width: 250 }
+const CLUB: ColumnInfo = { ...info('소속 구단', 'club', '소속 구단. 임대 중이면 원 소속 구단(이적료를 받는 쪽)입니다', false), width: 220 }
 // 너비를 고정한다: 열 너비는 앞쪽 줄의 글자 수로 어림하는데, 게임이 범위로 적어 주는 몸값("170억 원 - 185억 원")은 나중에 도착해 더 길어서 잘렸다
 const VALUE: ColumnInfo = {
   ...info(
@@ -71,10 +71,11 @@ const ATTRIBUTE_COLUMNS: Array<{ column: ColumnInfo; index: number }> = FIELDS.f
   index: SAVE_ATTRIBUTE_ORDER.indexOf(field.id as (typeof SAVE_ATTRIBUTE_ORDER)[number])
 }))
 
-const COLUMNS: ColumnInfo[] = [
-  NAME, RECO, KIND, SCORE, GAP, AGE, POSITION, CLUB, VALUE, WAGE, CONTRACT, STATUS, NATION, ABILITY, POTENTIAL,
-  ...ATTRIBUTE_COLUMNS.map((each) => each.column)
-]
+/** 이름·추천 점수 다음에 데려오는 데 드는 것(소속 구단, 몸값, 주급)을 먼저 보여 준다(사용자 요청) */
+const LEAD: ColumnInfo[] = [NAME, RECO, CLUB, VALUE, WAGE, KIND, SCORE, GAP]
+const TRAIL: ColumnInfo[] = [AGE, POSITION, CONTRACT, STATUS, NATION, ABILITY, POTENTIAL]
+
+const COLUMNS: ColumnInfo[] = [...LEAD, ...TRAIL, ...ATTRIBUTE_COLUMNS.map((each) => each.column)]
 
 const ATTRIBUTE_BY_ID = new Map(ATTRIBUTE_COLUMNS.map((each) => [each.column.field, each.column]))
 
@@ -94,7 +95,7 @@ function keyColumns(roleId: string, overrides: Settings['roleWeights']): ColumnI
       })
     }
   }
-  return [NAME, RECO, KIND, SCORE, GAP, ...keys, AGE, POSITION, CLUB, VALUE, WAGE, CONTRACT, STATUS, NATION, ABILITY, POTENTIAL]
+  return [...LEAD, ...keys, ...TRAIL]
 }
 
 /** "주요 능력치만" 보기를 이 PC에 기억해 두는 이름(브라우저 저장소. 못 읽으면 켠 채로 시작한다) */
@@ -343,8 +344,12 @@ export function Targets(props: {
     if (!candidate) return null
     if (col.field === 'recommend') {
       const tier = { id: candidate.tier, label: RECOMMEND_TIER_LABEL[candidate.tier] }
+      // 영입 현실성이 낮은 선수는 표에 표지를 달지 않고(사용자 요청), 등급이 왜 고려까지인지 마우스 설명에만 적는다
+      const realism = candidate.recommend.realism.low
+        ? ` ${REALISM_LABEL}: ${candidate.recommend.realism.reasons.join(' / ')}. 그래서 등급은 고려까지로 제한했습니다.`
+        : ''
       return (
-        <span className="reco-cell" title={`${tier.label}(${candidate.recommend.total}점). ${TERM_HELP.recommend}`}>
+        <span className="reco-cell" title={`${tier.label}(${candidate.recommend.total}점).${realism} ${TERM_HELP.recommend}`}>
           <span className="reco-num num">{Math.round(candidate.recommend.total)}</span>
           <span className={`reco-bar ${tier.id}`} aria-hidden="true">
             <i style={{ width: `${candidate.recommend.total}%` }} />
@@ -368,15 +373,6 @@ export function Targets(props: {
       return (
         <span title={`화면에 보이는 적합도끼리는 ${shown > 0 ? '+' : shown < 0 ? '−' : ''}${Math.abs(shown).toFixed(1)}`}>
           {row.cells[col.header]?.raw}
-        </span>
-      )
-    }
-    if (col.field === 'candidateKind' && candidate.recommend.realism.low) {
-      const text = row.cells[col.header]?.raw ?? ''
-      return (
-        <span className="club-cell" title={`${REALISM_LABEL}: ${candidate.recommend.realism.reasons.join(' / ')}. 등급은 고려까지로 제한했습니다.`}>
-          <span>{text}</span>
-          <span className="tag warn">{REALISM_LABEL}</span>
         </span>
       )
     }
