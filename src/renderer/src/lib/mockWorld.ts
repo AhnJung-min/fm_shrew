@@ -19,12 +19,13 @@ import { POSITION_KEYS, PLAYABLE_RATING, positionsLabel } from '@shared/position
 import { FALLBACK_NORM, type RoleNorms } from '@shared/norms'
 import { recommend, squadMoney, tierRanker, TRAIT_WEIGHTS, type RecommendContext, type RecommendInput, type TraitId, type Traits } from '@shared/recommend'
 import { ROLE_BY_ID, ROLES } from '@shared/roles'
-import { analyseTactic, slotBench } from '@shared/tactic'
+import { analyseTactic, loanEndFrom, slotBench } from '@shared/tactic'
 import type { SeasonMatch, SeasonResult, SeasonTableRow } from '@shared/season'
 import type { ColumnInfo, SquadResult } from '@shared/types'
 import {
   categoriesOf,
   effectiveScore,
+  gapVsAnchor,
   SAVE_ATTRIBUTE_ORDER,
   shownValue,
   type CandidateBench,
@@ -44,6 +45,9 @@ import {
 interface MockPlayer extends Omit<EditorPlayer, 'source'> {
   mine: boolean
 }
+
+/** 지어낸 임대 영입 선수의 번호(대시보드의 임대 영입 1명) */
+const MOCK_LOAN_IN = 1030
 
 const FAMILY = ['한', '서', '도', '윤', '백', '차', '류', '진', '모', '설']
 const GIVEN = ['지후', '태윤', '민재', '서준', '하람', '건우', '시온', '도현', '유찬', '이안', '준서', '로운']
@@ -146,6 +150,7 @@ export function mockCandidates(query: CandidateQuery, empty: boolean): Candidate
     backup: bench.backup ? { score: bench.backup.score, shownScore: bench.backup.shownScore } : null,
     today: { year: 2026, day: 182 },
     money,
+    myStature: 160,
     need,
     groupSlots: group?.slots.length,
     expectedWage: (ca, age) => expectedWage(wageFit, ca, age)
@@ -171,6 +176,8 @@ export function mockCandidates(query: CandidateQuery, empty: boolean): Candidate
       contractEnd: free ? null : (2026 + (player.uid % 4)) * 1000 + 181,
       squadStatus: statusCode(player),
       hasClub: !free,
+      // 지어낸 파는 구단 체급: 선수 번호에 따라 150~170
+      sellerStature: free ? null : 150 + (player.uid % 6) * 4,
       traits
     }
   }
@@ -223,6 +230,7 @@ export function mockCandidates(query: CandidateQuery, empty: boolean): Candidate
         pa: player.pa,
         score,
         gap: bench.starter ? Math.round((score - (bench.starter.shownScore ?? bench.starter.score)) * 10) / 10 : null,
+        gapEff: gapVsAnchor(recommendation.fit.effective, bench, norm, goalkeeper),
         categories,
         tier: tierOf(recommendation.total, recommendation.realism.low),
         attributes: player.attributes.map(shownValue)
@@ -318,6 +326,8 @@ export function mockSquad(empty: boolean): SquadResult {
       idx: player.uid,
       name: player.name,
       ratings: player.positions,
+      // 지어낸 임대 영입 선수(대시보드의 임대 영입 1명): 임대 끝은 오늘 이후 첫 6월 30일(추정)
+      ...(player.uid === MOCK_LOAN_IN ? { loan: { end: loanEndFrom(today), from: '북악 시티' } } : {}),
       cells: {
         이름: text(player.name),
         포지션: text(player.position),
@@ -421,7 +431,7 @@ export function mockDashboard(empty: boolean, settings: { formation: string; slo
   const slot = recommendSlotOf(analysis.formation.id, need)
 
   const fit = mockWageFit()
-  const loanedIn = new Set([1030])
+  const loanedIn = new Set([MOCK_LOAN_IN])
   const over = overpaidPlayers(players, fit, loanedIn)
 
   const candidates = mockCandidates(
@@ -443,7 +453,13 @@ export function mockDashboard(empty: boolean, settings: { formation: string; slo
       recent: season.recent,
       next: season.upcoming[0] ?? null,
       need: { label: slot.label, roleLabel: slot.roleLabel, need: slot.need, level: slot.level, levelLabel: slot.levelLabel, reason: slot.reason, formation: analysis.formation.label },
-      expiring: { known: contracts.known, count: contracts.within1y.length, names: contracts.within1y.map((row) => row.name), expired: contracts.expired.length }
+      expiring: {
+        known: contracts.known,
+        count: contracts.within1y.filter((row) => !row.loan).length,
+        names: contracts.within1y.filter((row) => !row.loan).map((row) => row.name),
+        expired: contracts.expired.length,
+        loans: { count: contracts.within1y.filter((row) => row.loan).length, names: contracts.within1y.filter((row) => row.loan).map((row) => row.name) }
+      }
     }),
     squad: {
       firstTeam: players.length,
@@ -452,7 +468,7 @@ export function mockDashboard(empty: boolean, settings: { formation: string; slo
         { teamId: 102, name: '한강 유나이티드 U21', first: false, players: 19, averageAge: 19.8 },
         { teamId: 103, name: '', first: false, players: 18, averageAge: 16.9 }
       ],
-      loans: { in: [loan(1030, '한강 유나이티드', '북악 시티')], out: [loan(1040, '남해 FC', '남해 FC'), loan(1050, '서천 애슬레틱', '서천 애슬레틱')] },
+      loans: { in: [loan(MOCK_LOAN_IN, '한강 유나이티드', '북악 시티')], out: [loan(1040, '남해 FC', '남해 FC'), loan(1050, '서천 애슬레틱', '서천 애슬레틱')] },
       ages: ageStructure(players)
     },
     contracts: { known: contracts.known, expired: contracts.expired, within1y: contracts.within1y, within2y: contracts.within2y, wageWithin1y: contracts.wageWithin1y },
@@ -462,8 +478,9 @@ export function mockDashboard(empty: boolean, settings: { formation: string; slo
       ok: true,
       matched: candidates.matched,
       slot,
-      rows: candidates.rows.slice(0, 3).map((row) => ({
-        uid: row.uid, name: row.name, age: row.age, position: row.position, club: row.club, clubUid: null, ca: row.ca, pa: row.pa, total: row.recommend.total, tier: row.tier, score: row.score, gap: row.gap,
+      // 실제 앱과 같게: 영입 현실성이 낮지 않은 후보 가운데 총점 상위 3명, 모자라면 나머지로 채운다
+      rows: [...candidates.rows.filter((row) => !row.recommend.realism.low), ...candidates.rows.filter((row) => row.recommend.realism.low)].slice(0, 3).map((row) => ({
+        uid: row.uid, name: row.name, age: row.age, position: row.position, club: row.club, clubUid: null, ca: row.ca, pa: row.pa, total: row.recommend.total, tier: row.tier, score: row.score, gap: row.gap, gapEff: row.gapEff,
         loanedTo: row.loanedTo, realism: row.recommend.realism
       }))
     }

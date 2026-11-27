@@ -59,6 +59,13 @@ const plausibleAge = (age: number | null): number | null => (age !== null && age
 
 const fail = (message: string): DashboardData => ({ ...NO_DASHBOARD, message })
 
+/** 주급 기준(리그 모델)을 세우지 못했을 때 카드에 쓰는 말(5회차). 순위표를 읽지 못한 리그에서는 다른 리그 선수로 대신하지 않는다 */
+export function wageModelMissing(table: ReadonlyArray<unknown> | null): string {
+  return table && table.length >= MIN_LEAGUE_TEAMS
+    ? '이 리그의 주급 기준을 세우지 못했습니다(리그 선수의 주급을 읽은 표본이 모자랍니다).'
+    : '이 리그의 주급 기준을 세우지 못했습니다(리그 순위표를 읽지 못함).'
+}
+
 /**
  * 적용한 세이브 하나에서 대시보드에 필요한 모든 값을 계산한다.
  * 같은 세이브 자료(그리고 같은 전술 설정, 같은 게임 값)면 계산한 것을 다시 쓴다.
@@ -252,7 +259,7 @@ export class DashboardService {
     const over = model ? overpaidPlayers(players, model, loanedIn) : { rows: [], total: 0 }
     const overpaid: DashboardData['overpaid'] = model
       ? { ok: true, model, rows: over.rows, total: over.total }
-      : { ok: false, message: '주급 기준을 세울 만큼 선수의 주급을 읽지 못했습니다.', model: null, rows: [], total: 0 }
+      : { ok: false, message: wageModelMissing(table), model: null, rows: [], total: 0 }
 
     // 영입 추천: 가장 보강이 급한 자리의 즉시 전력 후보(영입 후보 화면의 첫 화면과 같은 조건)
     const need = analysis?.byNeed[0] ?? null
@@ -269,7 +276,11 @@ export class DashboardService {
         expiringWithinMonths: null,
         slot: { formation: analysis.formation.id, slotRoles: settings.slotRoles, index: need.slot.index }
       })
-      const rows: RecommendRow[] = found.rows.slice(0, RECOMMEND_SHOWN).map((row) => ({
+      // 현실성이 낮지 않은 후보 가운데 총점 상위 3명. 3명이 안 되면 나머지(현실성 낮음)로 채우고 표지를 단다(5회차). 정렬은 총점 그대로다
+      const realistic = found.rows.filter((row) => !row.recommend.realism.low)
+      const unrealistic = found.rows.filter((row) => row.recommend.realism.low)
+      const shown = [...realistic.slice(0, RECOMMEND_SHOWN), ...unrealistic.slice(0, Math.max(0, RECOMMEND_SHOWN - realistic.length))]
+      const rows: RecommendRow[] = shown.map((row) => ({
         uid: row.uid,
         name: row.name,
         age: row.age,
@@ -282,6 +293,7 @@ export class DashboardService {
         tier: row.tier,
         score: row.score,
         gap: row.gap,
+        gapEff: row.gapEff,
         loanedTo: row.loanedTo,
         realism: row.recommend.realism
       }))
@@ -301,7 +313,17 @@ export class DashboardService {
       need: slot
         ? { label: slot.label, roleLabel: slot.roleLabel, need: slot.need, level: slot.level, levelLabel: slot.levelLabel, reason: slot.reason, formation: analysis!.formation.label }
         : null,
-      expiring: contracts.known > 0 ? { known: contracts.known, count: contracts.within1y.length, names: contracts.within1y.map((row) => row.name), expired: contracts.expired.length } : null
+      expiring:
+        contracts.known > 0
+          ? {
+              known: contracts.known,
+              // 임대로 온 선수는 계약이 끝나는 선수와 따로 센다(시즌 끝에 원 소속 팀으로 돌아간다. 5회차)
+              count: contracts.within1y.filter((row) => !row.loan).length,
+              names: contracts.within1y.filter((row) => !row.loan).map((row) => row.name),
+              expired: contracts.expired.length,
+              loans: { count: contracts.within1y.filter((row) => row.loan).length, names: contracts.within1y.filter((row) => row.loan).map((row) => row.name) }
+            }
+          : null
     })
 
     return {
@@ -341,26 +363,20 @@ export class DashboardService {
   }
 
   private fitModel(world: SaveWorld, table: SeasonResult['table'] | null, loansTrusted: boolean): WageModelInfo | null {
+    // 리그 표본(순위표의 팀 8개 이상, 선수 30명 이상)이 없으면 모델을 만들지 않는다(5회차).
+    // 예전에는 "구단이 있는 모든 남자 선수"로 대신 맞췄지만 이 모델(s 0.97)은 쓸 수 없어, 순위표를 못 읽는 리그에서 주급 과다를 9명이나 띄웠다
     const league = table && table.length >= MIN_LEAGUE_TEAMS ? new Set(table.map((row) => row.teamId)) : null
-    const collect = (only: Set<number> | null): WagePoint[] => {
-      const points: WagePoint[] = []
-      for (let k = 0; k < world.count; k++) {
-        const wage = world.wage[k]
-        const ca = world.ca[k]
-        if (wage <= 0 || ca <= 0 || world.club[k] < 0 || world.clubs[world.club[k]].women || world.sex[k] === SEX_FEMALE) continue
-        if (loansTrusted && world.loanFrom[k] !== NO_TEAM) continue
-        if (only && !only.has(world.teamIds[k])) continue
-        points.push({ ca, wage, age: plausibleAge(ageAt(world, k)) })
-      }
-      return points
+    if (!league) return null
+    const points: WagePoint[] = []
+    for (let k = 0; k < world.count; k++) {
+      const wage = world.wage[k]
+      const ca = world.ca[k]
+      if (wage <= 0 || ca <= 0 || world.club[k] < 0 || world.clubs[world.club[k]].women || world.sex[k] === SEX_FEMALE) continue
+      if (loansTrusted && world.loanFrom[k] !== NO_TEAM) continue
+      if (!league.has(world.teamIds[k])) continue
+      points.push({ ca, wage, age: plausibleAge(ageAt(world, k)) })
     }
-    if (league) {
-      const points = collect(league)
-      const fit = fitWageModel(points)
-      if (fit) return { ...fit, scope: 'league', teams: league.size }
-    }
-    const all = collect(null)
-    const fit = fitWageModel(all, WAGE_MODEL_MIN_SAMPLE)
-    return fit ? { ...fit, scope: 'all', teams: 0 } : null
+    const fit = fitWageModel(points, WAGE_MODEL_MIN_SAMPLE)
+    return fit ? { ...fit, scope: 'league', teams: league.size } : null
   }
 }

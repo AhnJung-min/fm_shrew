@@ -145,14 +145,20 @@ describe('모든 역할을 하나의 기준 능력으로(4회차)', () => {
   })
 })
 
-describe('로테이션 탭 경계 안내(4회차)', () => {
+describe('로테이션 탭 경계 안내(4회차, 5회차에 창으로 바꿈)', () => {
   const norm: RoleNorm = { mu: 74.4, sigma: 3.2, beta: 0.265, n: 49, caRef: 153 }
-  it('주전 기준 점수와 0.25 표준편차를 숫자로 적는다. 주전이 나이 들어 기준이 내려가면 그 점수를 쓴다', () => {
+  it('주전 기준 점수와 0.25 표준편차, 로테이션이 시작되는 점수를 숫자로 적는다. 주전이 나이 들어 기준이 내려가면 그 점수를 쓴다', () => {
     const bench: CandidateBench = { starter: { name: '주전', score: 76.3, ca: 157, age: 26 }, backup: null }
-    expect(rotationBoundaryLine(bench, norm)).toBe('주전 기준(76.3점)보다 0.8점 아래부터')
+    // 후보가 없으면 주전 기준 - 1.5σ - 0.25σ부터: 76.3 - 4.8 - 0.8 = 70.7
+    expect(rotationBoundaryLine(bench, norm)).toBe('로테이션은 적합도 70.7점 이상 75.5점 미만입니다(위쪽 경계는 주전 기준 76.3점보다 0.8점 아래).')
     const old: CandidateBench = { starter: { name: '노장', score: 80, ca: 160, age: 33 }, backup: null }
-    expect(rotationBoundaryLine(old, norm)).toBe('주전 기준(78.0점)보다 0.8점 아래부터')
+    expect(rotationBoundaryLine(old, norm)).toBe('로테이션은 적합도 72.4점 이상 77.2점 미만입니다(위쪽 경계는 주전 기준 78.0점보다 0.8점 아래).')
     expect(rotationBoundaryLine({ starter: null, backup: null }, norm)).toBeNull()
+  })
+
+  it('첫 후보가 이미 주전 기준에 닿으면 로테이션 범위가 비어 있다고 적는다', () => {
+    const bench: CandidateBench = { starter: { name: '노장', score: 76, ca: 157, age: 34 }, backup: { name: '후보', score: 74, age: 28 } }
+    expect(rotationBoundaryLine(bench, { ...norm, sigma: 3.15 })).toContain('로테이션으로 볼 범위가 비어 있습니다')
   })
 })
 

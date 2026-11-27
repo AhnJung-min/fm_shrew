@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs'
 import { extractDatabase, extractFile, gameDateOf, openContainer } from './container'
-import { contractInEffect, dateKey, findContracts, loanParent } from './contracts'
+import { contractInEffect, dateKey, findContracts, loanParent, signedContract } from './contracts'
 import {
   ATTRIBUTE_COUNT,
   BLOCK_SIZE,
@@ -88,6 +88,11 @@ export interface SaveWorld {
    * 임대 선수는 계약 기록이 둘이다: 원 소속과 맺은 계약(만료일이 있음)과, 임대받은 팀과 맺은 만료일 없는 기록. 주급·만료일·입지(wage, contractEnd, squadStatus)는 임대 선수에 한해 원 소속 계약에서 읽는다. contracts.ts의 loanParent 참고.
    */
   loanFrom: Uint32Array
+  /**
+   * 주급·만료일·입지를 읽은 계약을 맺은 팀의 번호(없으면 NO_TEAM). 임대 선수는 원 소속 팀이다.
+   * 소속 팀이 없는데 다른 구단과 계약을 마친 선수(주급 > 0, 만료일이 오늘 뒤)는 그 구단이다(5회차. signedClubTeam)
+   */
+  contractTeam: Uint32Array
   /** 계약상 입지(게임의 값 그대로, shared/world.ts의 SQUAD_STATUS_LABEL). 모르면 0 */
   squadStatus: Uint8Array
   /** 국적의 나라 번호(게임 안의 순번). 모르면 0 */
@@ -318,6 +323,7 @@ export function buildWorld(db: Buffer, pickTeam?: (world: SaveWorld) => number |
     wage: new Uint32Array(count),
     contractEnd: new Uint32Array(count),
     loanFrom: new Uint32Array(count).fill(NO_TEAM),
+    contractTeam: new Uint32Array(count).fill(NO_TEAM),
     squadStatus: new Uint8Array(count),
     nationId: new Uint16Array(count),
     sex: new Uint8Array(count),
@@ -380,8 +386,11 @@ export function buildWorld(db: Buffer, pickTeam?: (world: SaveWorld) => number |
     const parent = loanParent(records, world.gameDate, world.teamIds[k])
     if (parent) world.loanFrom[k] = parent.teamId
     // 임대 선수의 주급·만료일·입지는 원 소속과 맺은 계약에서 읽는다(임대받은 팀의 기록에는 만료일과 입지가 없다). 이적료를 받는 쪽도 원 소속이다
-    const contract = parent ?? contractInEffect(records, world.gameDate)
+    // 소속 팀이 없는데 다른 구단과 계약을 마친 선수는 그 계약을 읽는다(5회차): 협상할 수 없는 선수라 자유 계약이 아니다
+    const signed = !parent && world.teamIds[k] === NO_TEAM ? signedContract(records, world.gameDate) : null
+    const contract = parent ?? signed ?? contractInEffect(records, world.gameDate)
     if (!contract) continue
+    world.contractTeam[k] = contract.teamId
     world.wage[k] = contract.wage
     world.contractEnd[k] = contract.end ? dateKey(contract.end) : 0
     world.squadStatus[k] = contract.status
@@ -394,6 +403,15 @@ export function readWorld(path: string, pickTeam?: (world: SaveWorld) => number 
   const container = openContainer(readFileSync(path))
   const info = extractFile(container, 'game_info')
   return buildWorld(extractDatabase(container), pickTeam, info ? gameDateOf(info) : null)
+}
+
+/**
+ * 소속 팀이 없지만 다른 구단과 계약을 마친 선수의 계약 팀 번호(5회차). 아니면 null.
+ * 조건: 소속 팀 없음 ∧ 읽은 계약의 주급 > 0 ∧ 만료일 > 게임의 오늘 ∧ 계약 팀을 앎. 게임의 오늘을 모르면 알 수 없어 null이다.
+ */
+export function signedClubTeam(world: SaveWorld, k: number): number | null {
+  if (world.teamIds[k] !== NO_TEAM || world.contractTeam[k] === NO_TEAM || world.wage[k] <= 0 || !world.gameDate) return null
+  return world.contractEnd[k] > dateKey(world.gameDate) ? world.contractTeam[k] : null
 }
 
 /** 그 팀에 이름을 아는 선수가 있는지 */

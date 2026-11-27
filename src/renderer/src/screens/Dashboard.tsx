@@ -291,9 +291,17 @@ function Cards(props: {
             <li key={row.uid}>
               <Who player={row} onOpen={onOpen} />
               <span className="dash-grow" />
+              {row.loan && (
+                <span
+                  className="tag"
+                  title={`임대로 온 선수라 계약이 끝나는 날이 아니라 임대가 끝나 원 소속 팀${row.loan.from ? `(${row.loan.from})` : ''}으로 돌아가는 날입니다. 세이브에 임대 만료일이 없어 오늘 이후 첫 6월 30일로 어림한 날짜입니다(추정).`}
+                >
+                  임대 복귀(추정)
+                </span>
+              )}
               <span className="num">{dateText(row.end)}</span>
               <span className="faint num dash-w">{monthsLeft(row.daysLeft)}</span>
-              <span className="num dash-w">{row.wage ? `주급 ${pounds(row.wage)}` : '주급 확인 못 함'}</span>
+              <span className="num dash-w">{row.loan ? (row.loan.from ? `원 소속 ${row.loan.from}` : '원 소속 팀으로') : row.wage ? `주급 ${pounds(row.wage)}` : '주급 확인 못 함'}</span>
             </li>
           ))}
           {list.length > 10 && <li className="faint">외 {list.length - 10}명</li>}
@@ -341,7 +349,7 @@ function Cards(props: {
         wide
         id="dash-recommend"
         title="영입 추천"
-        hint="지금 전술에서 보강이 가장 급한 자리의 즉시 전력 후보 3명입니다. 추천 점수는 능력, 나이, 비용 부담, 영입 난이도를 합친 값입니다."
+        hint="지금 전술에서 보강이 가장 급한 자리의 즉시 전력 후보 3명입니다. 영입이 현실적인 후보 가운데 추천 점수가 높은 순서이고, 3명이 안 되면 나머지로 채워 “영입 현실성 낮음” 표지를 답니다. 추천 점수는 능력, 나이, 비용 부담, 영입 난이도를 합친 값입니다."
         source={sourceOf(saveSource, abilitySource, '계약·몸값', '능력')}
         action={
           recommend.slot && (
@@ -407,7 +415,16 @@ function Cards(props: {
                       items={[
                         `현재 능력 ${row.ca}`,
                         `잠재 ${row.pa}`,
-                        row.gap !== null && `주전과 적합도 ${row.gap > 0 ? '+' : ''}${row.gap.toFixed(1)}`
+                        // 영입 후보 표의 "주전 대비"와 같은 값(숙련·나이를 감안한 비교 점수 - 주전 기준). 화면 적합도끼리의 차이는 마우스 설명으로만 보여 준다
+                        row.gapEff !== null && (
+                          <span
+                            key="gap"
+                            title={row.gap !== null ? `화면에 보이는 적합도끼리는 ${row.gap > 0 ? '+' : row.gap < 0 ? '−' : ''}${Math.abs(row.gap).toFixed(1)}` : undefined}
+                          >
+                            주전과 적합도 {row.gapEff > 0 ? '+' : ''}
+                            {row.gapEff.toFixed(1)}
+                          </span>
+                        )
                       ]}
                     />
                   </p>
@@ -422,7 +439,7 @@ function Cards(props: {
         wide
         id="dash-contracts"
         title="계약 만료 예정"
-        hint={`오늘부터 1년 안, 그 뒤 1년 안에 계약이 끝나는 1군 선수입니다.${contracts.wageWithin1y ? ` 1년 안에 끝나는 계약의 주급 합계는 ${pounds(contracts.wageWithin1y)}입니다.` : ''}`}
+        hint={`오늘부터 1년 안, 그 뒤 1년 안에 계약이 끝나는 1군 선수입니다. 임대로 온 선수는 임대가 끝나 원 소속 팀으로 돌아가는 날(세이브에 만료일이 없어 오늘 이후 첫 6월 30일로 어림한 추정)로 넣고 “임대 복귀” 표지를 붙입니다.${contracts.wageWithin1y ? ` 1년 안에 끝나는 계약의 주급 합계는 ${pounds(contracts.wageWithin1y)}입니다(임대 복귀 선수는 뺍니다).` : ''}`}
         source={saveSource}
       >
         {contracts.known === 0 ? (
@@ -640,8 +657,9 @@ function Cards(props: {
               뺀 선수: 선발과 첫 후보, 능력이 높은 골키퍼 {GOALKEEPERS_KEPT}명, 임대로 들어온 선수(이 구단이 정리할 수 없음), 그리고 클 여지가 있는 어린 선수(따로 보여 줍니다).
             </li>
             <li>
-              클 여지: {PROSPECT_MAX_AGE}세 이하이고 잠재가 현재보다 {PROSPECT_MIN_ROOM} 이상 높으며, 다 컸을 때 적합도가 {PROSPECT_MIN_GAIN_SIGMA}σ 이상 오르는 선수입니다. 영입 후보의
-              유망주 유형과 같은 기준입니다.
+              임대 보내 키울 선수: {PROSPECT_MAX_AGE}세 이하이고 잠재가 현재보다 {PROSPECT_MIN_ROOM} 이상 높으며, 다 컸을 때 적합도가 {PROSPECT_MIN_GAIN_SIGMA}σ 이상 오르고,
+              그렇게 다 컸을 때 우리 주전 수준(그 자리의 비교 기준에서 0.25σ 낮은 선까지)에 이르는 선수입니다. 영입 후보의 유망주 유형과 같은 기준입니다.
+              클 여지는 있지만 다 커도 못 미치는 선수는 정리 후보로 계산하고, 이유 앞에 그렇게 적습니다.
             </li>
             <li>전술은 스쿼드 전술판과 같은 포메이션({surplus.formation})과 역할 설정을 씁니다.</li>
           </ul>
@@ -693,12 +711,11 @@ function Cards(props: {
               <span>기대 주급을 어떻게 구했나</span>
             </summary>
             <p className="dash-note num">
-              기준선: 주급의 로그 = {overpaid.model.a.toFixed(2)} + {overpaid.model.b.toFixed(3)} × 현재 능력 {overpaid.model.c1 < 0 ? '−' : '+'}{' '}
-              {Math.abs(overpaid.model.c1).toFixed(2)} × [21세 미만] {overpaid.model.c2 < 0 ? '−' : '+'} {Math.abs(overpaid.model.c2).toFixed(2)} × [30세 이상] (설명력 R²{' '}
-              {overpaid.model.r2.toFixed(2)}, 잔차 표준편차 {overpaid.model.s.toFixed(2)}).
-              {overpaid.model.scope === 'league'
-                ? ` 내 리그 ${overpaid.model.teams}개 팀의 선수 ${overpaid.model.n.toLocaleString()}명 기준.`
-                : ` 순위표를 읽지 못해 구단이 있는 모든 남자 선수 ${overpaid.model.n.toLocaleString()}명 기준.`}
+              기준선: 주급의 로그 = {overpaid.model.a.toFixed(2)} + {overpaid.model.b.toFixed(3)} × (현재 능력 − 145) {overpaid.model.b2 < 0 ? '−' : '+'}{' '}
+              {Math.abs(overpaid.model.b2).toFixed(3)} × ((현재 능력 − 145) ÷ 10)² {overpaid.model.c1 < 0 ? '−' : '+'} {Math.abs(overpaid.model.c1).toFixed(2)} × [21세 미만]{' '}
+              {overpaid.model.c2 < 0 ? '−' : '+'} {Math.abs(overpaid.model.c2).toFixed(2)} × [30세 이상] (설명력 R² {overpaid.model.r2.toFixed(2)}, 잔차 표준편차{' '}
+              {overpaid.model.s.toFixed(2)}). 제곱 항이 음수이면 능력이 아주 높은 선수의 주급은 능력에 비례하는 만큼 늘지 않는다는 뜻입니다.
+              {` 내 리그 ${overpaid.model.teams}개 팀의 선수 ${overpaid.model.n.toLocaleString()}명 기준(순위표를 읽지 못한 리그는 기준을 세우지 않습니다).`}
               {` 의심: 기대 주급의 ${Math.exp(overpaid.model.s * OVERPAID_Z).toFixed(2)}배(+${OVERPAID_Z}σ) 이상, 강한 의심: ${Math.exp(overpaid.model.s * OVERPAID_Z_STRONG).toFixed(2)}배(+${OVERPAID_Z_STRONG}σ) 이상.`}
               {overpaid.model.removed > 0 && ` 주급이 기대와 크게 어긋나는 선수 ${overpaid.model.removed}명(3σ 넘게 벗어남)은 빼고 다시 맞췄습니다.`}
               {overpaid.total > overpaid.rows.length && ` 기준을 넘는 선수는 모두 ${overpaid.total}명입니다.`}

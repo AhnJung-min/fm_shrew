@@ -15,6 +15,7 @@ import {
   TIER_CUMULATIVE_SHARE,
   TIER_MEANING,
   TIER_MIN_TOTAL,
+  STATURE_CLUB_MARGIN,
   STATURE_SPAN_CA,
   type SquadMoney
 } from '@shared/recommend'
@@ -22,6 +23,9 @@ import { formatPounds } from '@shared/playerView'
 import { CATEGORY_LABEL, PROSPECT_MIN_GAIN_SIGMA, type CandidateCategory, type CandidateRow } from '@shared/world'
 
 const percent = (share: number): number => Math.round(share * 100)
+
+/** 유망주 탭 위에 한 줄로 알린다: 성장 예측이 한 시점의 세이브로 어림한 값이라는 것(5회차) */
+export const PROSPECT_UNCERTAINTY_LINE = '성장 예측은 한 시점의 세이브로 어림한 값이라, 조금만 달라져도 이 탭 위쪽 순위가 크게 바뀔 수 있습니다.'
 
 /** 점수가 어떻게 계산되는지(유형별 가중치 표) */
 function Explainer(props: { category: CandidateCategory; baseline: SquadMoney | null; need: number | null; norm: RoleNorm | null }) {
@@ -79,11 +83,15 @@ function Explainer(props: { category: CandidateCategory; baseline: SquadMoney | 
           <p>
             유망주는 나이가 어릴수록 점수가 높습니다(17세 이하 1, 26세 이상 0). 성숙 시 이득(잠재와 현재의 차이 × 나이별 성장 몫 × 역할의 기울기)이 {PROSPECT_MIN_GAIN_SIGMA} 표준편차보다
             작은 선수는 유망주로 보지 않습니다. 그런 선수도 즉시 전력·로테이션 탭에는 그대로 남습니다.
+            역할의 기울기는 어린 선수가 실제로 지나가는 현재 능력 110~180 구간에서 잰 값을 쓰고, 골키퍼는 늦게 크는 별도 성장 몫 표를 씁니다.
             어릴수록 실제 성장의 편차가 큽니다(같은 잠재 능력이라도 다 컸을 때 현재 능력이 ±10쯤 달라집니다). 점수는 기대값만 쓰므로 어린 선수일수록 불확실합니다.
+            {' '}{PROSPECT_UNCERTAINTY_LINE}
           </p>
         )}
         <p>
-          {REALISM_LABEL}: 소속이 있는 선수가 내 팀 최고 주급의 {REALISM_WAGE_RATIO}배 이상을 받거나, 소속 팀의 핵심·중요 선수이면서 현재 능력이 내 주전보다 {STATURE_SPAN_CA} 이상 높으면 붙는 표지입니다.
+          {REALISM_LABEL}: 소속이 있는 선수가 내 팀 최고 주급의 {REALISM_WAGE_RATIO}배 이상을 받거나, 소속 팀의 핵심·중요 선수이면서 현재 능력이 내 주전보다 {STATURE_SPAN_CA} 이상 높거나,
+          소속 구단의 주전 수준(그 팀 선수 11명의 중간 능력)이 우리와 비슷하거나({STATURE_CLUB_MARGIN} 이내로 낮은 것까지) 더 높은데 그 팀의 핵심·중요·주전 선수이면 붙는 표지입니다.
+          소속이 없어도 다른 구단과 계약을 마친 선수에게도 붙습니다(그 선수는 자유 계약이 아니라 소속 칸에 “구단명(입단 예정)”으로 적습니다).
           이 이적 의사·평판·예산을 읽지 못하는 동안의 임시 장치로, 총점과 순서는 그대로 두고 등급만 “고려”까지로 제한합니다.
           임대 중인 선수는 원 소속 구단을 소속으로 보여 줍니다(이적료를 받는 쪽). 계약·주급은 세이브에 적힌 값 그대로입니다.
         </p>
@@ -134,6 +142,8 @@ export function RecommendPanel(props: {
           <span className="muted">표에서 선수를 누른 뒤 여기를 열면 추천 점수가 어떻게 나왔는지 항목별로 보입니다.</span>
         )}
       </button>
+
+      {category === 'prospect' && <p className="muted reco-note">{PROSPECT_UNCERTAINTY_LINE}</p>}
 
       {open && (
         <div className="reco-body" id="reco-body">

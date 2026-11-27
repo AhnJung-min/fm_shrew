@@ -42,6 +42,15 @@ export function daysBetween(from: Ymd, to: Ymd): number {
   return Math.round((Date.UTC(to.year, to.month - 1, to.day) - Date.UTC(from.year, from.month - 1, from.day)) / DAY_MS)
 }
 
+/**
+ * 임대로 온 선수가 원 소속 팀으로 돌아가는 날(5회차). 세이브의 임대 기록에는 만료일이 없어 오늘 이후 첫 6월 30일(오늘이 6월 30일이면 오늘)로 어림한다.
+ * 이 날짜는 추정이다(임대 만료일을 읽을 수 있는지는 켜진 게임에서 확인한다). 화면에는 "추정"을 붙인다.
+ */
+export function loanEndFrom(today: Ymd): Ymd {
+  const thisSeason: Ymd = { year: today.year, month: 6, day: 30 }
+  return daysBetween(today, thisSeason) >= 0 ? thisSeason : { year: today.year + 1, month: 6, day: 30 }
+}
+
 // ---------- 보강 필요도 ----------
 
 /**
@@ -68,7 +77,7 @@ export const NEED_FACTOR_HELP: Record<NeedFactorId, string> = {
   quality: '주전의 적합도가 같은 역할의 상위권 선수들(평균 μ점)에 견줘 얼마나 낮은가. 역할마다 점수 눈금이 달라 같은 역할 선수들의 보통 점수 차이로 재고, 주전의 포지션 숙련이 20보다 낮으면 그만큼 뺀 점수로 봅니다.',
   depth: '이 자리를 뛸 수 있는 후보가 몇 명이고, 첫 후보가 주전과 얼마나 차이 나는가.',
   age: '주전이 31세 이상(골키퍼는 34세 이상)이면 곧 내려갈 것으로 봅니다.',
-  contract: '주전의 계약이 12개월 안에 끝나는가. 가까울수록 위험합니다.'
+  contract: '주전의 계약이 12개월 안에 끝나는가. 가까울수록 위험합니다. 임대로 온 주전은 임대가 끝나는 날(오늘 이후 첫 6월 30일로 어림)에 원 소속 팀으로 돌아가므로 그날을 계약이 끝나는 날로 봅니다.'
 }
 
 /** 주전 전력 위험 = clamp01((1 - z_eff) / 3): z_eff +1 이상이면 0, 0이면 0.33, -1이면 0.67, -2 이하면 1 (z_eff = 포지션 숙련 감점을 뺀 적합도의 z) */
@@ -201,6 +210,8 @@ export interface SlotAnalysis {
   backupScore: number | null
   /** 첫 후보의 숙련 감점을 뺀 적합도 */
   backupEff: number | null
+  /** 첫 후보의 나이(첫 후보에게도 주전과 같은 나이 하락을 빼는 데 쓴다). 모르면 null */
+  backupAge: number | null
   /** 이 자리를 뛸 수 있는 내 선수 수(주전 포함) */
   eligible: number
   need: number
@@ -395,6 +406,7 @@ export function analyseTactic(input: TacticInput): TacticAnalysis | null {
       starterCa: starter ? (personOf.get(starter.idx)?.ca ?? null) : null,
       backupScore: slot.backups[0]?.score ?? null,
       backupEff: slot.backups[0]?.effScore ?? null,
+      backupAge: slot.backups[0] ? (personOf.get(slot.backups[0].idx)?.age ?? null) : null,
       eligible,
       need,
       level: level.id,
@@ -481,15 +493,23 @@ function buildGroups(analysed: SlotAnalysis[]): SlotGroup[] {
         }
       }
       let backup: DepthPlayer | null = null
+      let backupAge: number | null = null
+      const distinct = new Set<number>()
       for (const each of members) {
+        for (const candidate of each.slot.backups) distinct.add(candidate.idx)
         const next = each.slot.backups[0]
-        if (next && (!backup || next.effScore > backup.effScore)) backup = next
+        if (next && (!backup || next.effScore > backup.effScore)) {
+          backup = next
+          backupAge = each.backupAge
+        }
       }
       const bench: CandidateBench = {
         starter: weakest
           ? { name: weakest.slot.starter!.name, score: weakest.starterEff!, ca: weakest.starterCa ?? 0, age: weakest.starterAge, shownScore: weakest.starterScore! }
           : null,
-        backup: backup ? { name: backup.name, score: backup.effScore, shownScore: backup.score } : null
+        backup: backup ? { name: backup.name, score: backup.effScore, shownScore: backup.score, age: backupAge } : null,
+        // 얇음: 그룹의 서로 다른 후보가 2명 미만(로테이션 창을 넓게 연다. 5회차)
+        thin: distinct.size < 2
       }
       const roleLabel = first.roleLabel
       const base = (groupsOfPosition.get(position) ?? 1) > 1 ? `${first.positionLabel}(${roleLabel})` : first.positionLabel
@@ -572,7 +592,14 @@ function needOf(args: {
   const penalty = starter.score - eff > 0.05 ? ` 포지션 숙련이 ${starter.rating}이라 적합도 ${starter.score}점에서 ${round1(starter.score - eff)}점 빼고 견주었습니다.` : ''
   const temporary = starter.temporary ? ` 숙련 ${starter.rating}이라 임시로 세웠습니다.` : ''
   risks.quality.note = `주전 ${name}의 적합도 ${round1(eff)}점은 ${base}(${round1(norm.mu)}점)보다 ${Math.abs(round1(eff - norm.mu))}점 ${eff >= norm.mu ? '높고' : '낮고'}, 이 역할의 보통 점수 차이(${round1(norm.sigma)}점)로 보면 ${zWords(z)}.${penalty}${temporary}`
-  risks.quality.phrase = `주전 ${name}의 적합도(${round1(eff)}점)는 ${normSource === 'world' ? '이 역할 상위권' : '팀 주전'} 평균(${round1(norm.mu)}점)보다 ${eff >= norm.mu ? '조금 높은 수준입니다' : z >= -1 ? '조금 낮습니다' : '크게 낮습니다'}`
+  const crowd = normSource === 'world' ? '이 역할 상위권' : '팀 주전'
+  // 0 ≤ z < 1: 평균보다 조금 높지만 뛰어난 수준(μ+σ)에는 못 미친다. "조금 높은 수준"만 쓰면 괜찮다는 뜻으로 읽혀 보강 이유와 어긋난다(5회차 P9)
+  risks.quality.phrase =
+    z >= 1
+      ? `주전 ${name}의 적합도(${round1(eff)}점)는 ${crowd} 평균(${round1(norm.mu)}점)보다 높은 수준입니다`
+      : z >= 0
+        ? `주전 ${name}의 적합도(${round1(eff)}점)는 ${crowd} 평균(${round1(norm.mu)}점)보다 조금 높지만, 뛰어난 수준(${round1(norm.mu + norm.sigma)}점)에는 못 미칩니다`
+        : `주전 ${name}의 적합도(${round1(eff)}점)는 ${crowd} 평균(${round1(norm.mu)}점)보다 ${z >= -1 ? '조금 낮습니다' : '크게 낮습니다'}`
 
   // 후보 두께
   const backups = slot.backups.length
@@ -610,15 +637,23 @@ function needOf(args: {
     risks.age.note = `주전의 나이를 ${unknownNote}`
   }
 
-  // 주전 계약
-  if (starterPerson?.contractEnd && today) {
-    const days = daysBetween(today, starterPerson.contractEnd)
+  // 주전 계약. 임대로 온 주전은 원 소속과 맺은 계약이 아니라 임대가 끝나는 날(오늘 이후 첫 6월 30일, 추정)에 떠난다(5회차 P2)
+  const loan = starterPerson?.row.loan
+  const endDate = loan?.end ?? starterPerson?.contractEnd ?? null
+  if (endDate && today) {
+    const days = daysBetween(today, endDate)
     const raw = days > CONTRACT_RISK_DAYS ? 0 : days < 0 ? 1 : CONTRACT_RISK_BASE + (1 - CONTRACT_RISK_BASE) * (1 - days / CONTRACT_RISK_DAYS)
     risks.contract.risk = raw * relief
     risks.contract.assumed = false
     const left = days < 31 ? `${Math.max(0, days)}일` : `${Math.round(days / 30.44)}개월`
-    risks.contract.note = raw === 0 ? `주전 ${name}의 계약은 12개월 넘게 남았습니다.` : `주전 ${name}의 계약이 ${left} 남았습니다.${reliefNote}`
-    risks.contract.phrase = raw === 0 ? '' : `주전 ${name}의 계약이 ${left} 남았습니다`
+    if (loan) {
+      const back = `주전 ${withJosa(name, '은/는')} 임대 선수라 ${endDate.month}월 ${endDate.day}일에 원 소속 팀${loan.from ? `(${loan.from})` : ''}으로 돌아갑니다`
+      risks.contract.note = `${back}(${left} 남음). 임대 끝 날짜는 세이브에 적혀 있지 않아 오늘 이후 첫 6월 30일로 어림한 값입니다(추정).${reliefNote}`
+      risks.contract.phrase = back
+    } else {
+      risks.contract.note = raw === 0 ? `주전 ${name}의 계약은 12개월 넘게 남았습니다.` : `주전 ${name}의 계약이 ${left} 남았습니다.${reliefNote}`
+      risks.contract.phrase = raw === 0 ? '' : `주전 ${name}의 계약이 ${left} 남았습니다`
+    }
   } else {
     risks.contract.note = `주전의 계약 만료일을 ${unknownNote}`
   }

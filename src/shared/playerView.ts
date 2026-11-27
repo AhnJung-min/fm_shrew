@@ -101,8 +101,13 @@ export function formatWon(won: number): string {
   if (size >= 1e10) return `${sign}${comma(Math.round(size / 1e8))}억 원`
   if (size >= 1e9) return `${sign}${trim((size / 1e8).toFixed(1))}억 원`
   if (size >= 1e8) return `${sign}${trim((size / 1e8).toFixed(2))}억 원`
-  if (size >= 1e4) return `${sign}${comma(Math.round(size / 1e4))}만 원`
-  return `${sign}${comma(Math.round(size))}원`
+  // 반올림한 결과가 10,000만이면 1억이다(99,995,000원이 "10,000만 원"으로 나오던 것. 5회차)
+  if (size >= 1e4) {
+    const tenThousands = Math.round(size / 1e4)
+    return tenThousands >= 10_000 ? `${sign}1억 원` : `${sign}${comma(tenThousands)}만 원`
+  }
+  const whole = Math.round(size)
+  return whole >= 10_000 ? `${sign}1만 원` : `${sign}${comma(whole)}원`
 }
 
 /** 게임의 몸값 범위 "1,560억 원 - 2,350억 원"을 표에 맞게 "1,560~2,350억 원"으로 줄인다(단위가 다르거나 범위가 아니면 그대로) */

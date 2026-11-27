@@ -16,6 +16,11 @@ export interface RoleNorm {
   sigma: number
   /** 현재 능력(CA) 1점이 적합도 몇 점에 해당하는지(CA에 대한 적합도의 회귀 기울기). 성장 예측에 쓴다 */
   beta: number
+  /**
+   * 성장 예측에 쓰는 기울기 β_grow(5회차): 이 역할 풀(숙련 ≥ 15, 여자 아님)에서 현재 능력 110~180인 선수의 적합도-현재 능력 기울기.
+   * 표본이 40명 미만이거나 기울기가 0 이하이면 β와 같다. 없으면(옛 기록) β를 쓴다(shared/world.ts의 growthBetaOf)
+   */
+  betaGrow?: number
   /** 모집단의 선수 수 */
   n: number
   /** 기준 현재 능력 C*: 내 1군 상위 11명 중간값 - 10(최저 100). 모든 역할이 같은 값이다(4회차) */
@@ -46,6 +51,9 @@ export const DEFAULT_BETA = 0.28
 /** 기울기를 구하는 데 쓰는 선수의 최소 현재 능력과 최소 인원 */
 export const BETA_MIN_CA = 60
 export const BETA_MIN_POPULATION = 40
+/** 성장 기울기 β_grow를 재는 현재 능력 구간(5회차): 어린 선수가 실제로 지나가는 구간. 이 구간 표본이 BETA_MIN_POPULATION 미만이면 β */
+export const BETA_GROW_MIN_CA = 110
+export const BETA_GROW_MAX_CA = 180
 
 /**
  * 기준 분포를 못 구했을 때(옛 호출, 미리보기) 쓰는 값.
@@ -87,12 +95,12 @@ export function pickCaRef(abilities: ArrayLike<number>, start: number): number {
 }
 
 /** 점수를 현재 능력에 단순 회귀한 기울기. minCa 미만은 제외. 표본이 minN 미만이거나 분산이 0이거나 기울기가 0 이하이면 null */
-function slopeOf(scores: ArrayLike<number>, abilities: ArrayLike<number>, minCa: number, minN: number): number | null {
+function slopeOf(scores: ArrayLike<number>, abilities: ArrayLike<number>, minCa: number, minN: number, maxCa = Infinity): number | null {
   let n = 0
   let sumX = 0
   let sumY = 0
   for (let i = 0; i < scores.length; i++) {
-    if (abilities[i] < minCa) continue
+    if (abilities[i] < minCa || abilities[i] > maxCa) continue
     n++
     sumX += abilities[i]
     sumY += scores[i]
@@ -103,7 +111,7 @@ function slopeOf(scores: ArrayLike<number>, abilities: ArrayLike<number>, minCa:
   let covariance = 0
   let variance = 0
   for (let i = 0; i < scores.length; i++) {
-    if (abilities[i] < minCa) continue
+    if (abilities[i] < minCa || abilities[i] > maxCa) continue
     covariance += (abilities[i] - meanX) * (scores[i] - meanY)
     variance += (abilities[i] - meanX) ** 2
   }
@@ -118,6 +126,14 @@ export function betaFromScores(scores: ArrayLike<number>, abilities: ArrayLike<n
 }
 
 /**
+ * 성장 예측용 기울기 β_grow(5회차): 현재 능력 110~180인 선수의 적합도-현재 능력 기울기. 표본이 40명 미만이거나 기울기가 0 이하이면 β를 돌려준다.
+ * β는 현재 능력 60 이상 전체의 기울기라 유망주가 지나가는 구간(110~180)과 어긋난다: 이 세이브에서 스트라이커 0.237 → 0.279, 수비형 미드 0.313 → 0.259.
+ */
+export function betaGrowFromScores(scores: ArrayLike<number>, abilities: ArrayLike<number>, beta: number): number {
+  return slopeOf(scores, abilities, BETA_GROW_MIN_CA, BETA_MIN_POPULATION, BETA_GROW_MAX_CA) ?? beta
+}
+
+/**
  * 한 역할의 기준 분포. scores·abilities는 그 역할의 자리를 뛸 수 있는(숙련 15 이상) 여자가 아닌 선수들의 적합도와 현재 능력이다.
  * startCa는 referenceCa()가 준 기준 능력 C*.
  *
@@ -129,6 +145,7 @@ export function betaFromScores(scores: ArrayLike<number>, abilities: ArrayLike<n
 export function normFromScores(scores: ArrayLike<number>, abilities: ArrayLike<number>, startCa: number, meanCaStar?: number): RoleNorm {
   const poolCa = pickCaRef(abilities, startCa)
   const beta = betaFromScores(scores, abilities)
+  const betaGrow = betaGrowFromScores(scores, abilities, beta)
   let n = 0
   let sum = 0
   let sumCa = 0
@@ -138,7 +155,7 @@ export function normFromScores(scores: ArrayLike<number>, abilities: ArrayLike<n
     sum += scores[i]
     sumCa += abilities[i]
   }
-  if (n === 0) return { ...FALLBACK_NORM, beta, caRef: startCa, poolCa, shift: 0 }
+  if (n === 0) return { ...FALLBACK_NORM, beta, betaGrow, caRef: startCa, poolCa, shift: 0 }
   const mean = sum / n
   let squares = 0
   for (let i = 0; i < scores.length; i++) {
@@ -151,6 +168,7 @@ export function normFromScores(scores: ArrayLike<number>, abilities: ArrayLike<n
     mu: mean + shift,
     sigma: Math.max(NORM_MIN_SIGMA, Math.sqrt(squares / n)),
     beta,
+    betaGrow,
     n,
     caRef: startCa,
     poolCa,

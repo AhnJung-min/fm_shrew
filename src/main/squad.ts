@@ -1,6 +1,7 @@
 import { FIELDS, FIELD_BY_ID } from '@shared/fields'
 import { formatPounds as pounds } from '@shared/playerView'
 import { positionOrder, positionsLabel } from '@shared/positions'
+import { loanEndFrom } from '@shared/tactic'
 import type { CellValue, ColumnInfo, PlayerRow, SquadResult } from '@shared/types'
 import { SAVE_ATTRIBUTE_ORDER, shownValue, SQUAD_STATUS_LABEL } from '@shared/world'
 import { calendar } from './save/contracts'
@@ -38,8 +39,12 @@ const money = (value: number): CellValue => (value > 0 ? { raw: pounds(value), n
 
 export type SquadTable = Pick<SquadResult, 'columns' | 'rows' | 'today' | 'clubUid'>
 
-/** 내 팀 선수들을 표로 만든다. 내 팀을 모르면 빈 표. */
-export function squadTable(world: SaveWorld): SquadTable {
+/**
+ * 내 팀 선수들을 표로 만든다. 내 팀을 모르면 빈 표.
+ * loanedInFrom(k)은 k번 선수가 다른 구단에서 임대로 온 선수이면 원 소속 구단 이름(모르면 빈 글자)을, 아니면 null을 돌려준다.
+ * 임대로 온 선수의 줄에는 임대가 끝나는 날(오늘 이후 첫 6월 30일, 추정)과 원 소속을 실어 보강 필요도와 계약 카드가 쓴다(5회차).
+ */
+export function squadTable(world: SaveWorld, loanedInFrom?: (k: number) => string | null): SquadTable {
   if (world.teamId === undefined) return { columns: COLUMNS, rows: [] }
   const today = world.gameDate ? calendar(world.gameDate) : undefined
   const mine: number[] = []
@@ -70,11 +75,13 @@ export function squadTable(world: SaveWorld): SquadTable {
       squadStatus: cell(SQUAD_STATUS_LABEL[world.squadStatus[k]] ?? '')
     }
     for (const id of VISIBLE_ATTRIBUTES) values[id] = cell(attribute(id))
+    const from = loanedInFrom && today ? loanedInFrom(k) : null
     return {
       idx: world.uids[k],
       name: world.names[k],
       cells: Object.fromEntries(COLUMN_IDS.map((id) => [FIELD_BY_ID[id].label, values[id]])),
-      ratings: positionsOf(k)
+      ratings: positionsOf(k),
+      ...(from !== null && today ? { loan: { end: loanEndFrom(today), from } } : {})
     }
   })
   const first = mine.find((k) => world.club[k] >= 0)

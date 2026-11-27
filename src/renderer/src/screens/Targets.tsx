@@ -38,7 +38,12 @@ const NAME = info('이름', 'name', '이름', false)
 const KIND: ColumnInfo = { ...info('유형', 'candidateKind', '이 선수가 드는 유형(영입 현실성이 낮으면 표지가 붙습니다)', false), width: 250 }
 const RECO: ColumnInfo = { ...info('추천 점수', 'recommend', TERM_HELP.recommend, true), width: 160 }
 const SCORE = info('적합도', 'roleScore', TERM_HELP.fit, true)
-const GAP = info('주전 대비', 'starterGap', '이 자리(역할) 내 주전과의 적합도 차이', true)
+const GAP = info(
+  '주전 대비',
+  'starterGap',
+  '이 자리(역할) 내 주전과의 차이. 포지션 숙련과 나이를 감안한 비교 점수로 잰 값이라, 점수 풀이의 “주전보다 ○점 높습니다”와 같은 기준입니다. 칸에 마우스를 올리면 화면에 보이는 적합도끼리의 차이도 보입니다.',
+  true
+)
 const AGE = info('나이', 'age', '나이', true)
 const POSITION = info('포지션', 'position', '포지션', false)
 const CLUB: ColumnInfo = { ...info('소속 구단', 'club', '소속 구단. 임대 중이면 원 소속 구단(이적료를 받는 쪽)입니다', false), width: 250 }
@@ -88,7 +93,8 @@ function toRow(row: CandidateRow, idx: number, market: PlayerMarket | undefined)
     [RECO.header]: number(row.recommend.total, String(Math.round(row.recommend.total))),
     [KIND.header]: text(row.categories.length > 0 ? row.categories.map((category) => CATEGORY_LABEL[category]).join(', ') : '어느 유형에도 들지 않음'),
     [SCORE.header]: number(row.score, String(Math.round(row.score))),
-    [GAP.header]: number(row.gap, row.gap === null ? '' : `${row.gap > 0 ? '+' : ''}${row.gap.toFixed(1)}`),
+    // 표의 "주전 대비"는 설명 문장과 같은 기준(비교 적합도 - 주전 기준)이다. 화면 적합도끼리의 차이는 칸의 마우스 설명으로만 보여 준다(5회차)
+    [GAP.header]: number(row.gapEff, row.gapEff === null ? '' : `${row.gapEff > 0 ? '+' : ''}${row.gapEff.toFixed(1)}`),
     [AGE.header]: number(row.age),
     [POSITION.header]: text(row.position),
     [CLUB.header]: text(row.club || market?.club || '알 수 없음'),
@@ -302,6 +308,14 @@ export function Targets(props: {
           {candidate.clubUid ? <ClubLogo uid={candidate.clubUid} size={18} /> : null}
           <span>{name}</span>
           {candidate.loanedTo && <span className="tag">임대 중: {candidate.loanedTo}</span>}
+        </span>
+      )
+    }
+    if (col.field === 'starterGap' && candidate.gapEff !== null && candidate.gap !== null) {
+      const shown = candidate.gap
+      return (
+        <span title={`화면에 보이는 적합도끼리는 ${shown > 0 ? '+' : shown < 0 ? '−' : ''}${Math.abs(shown).toFixed(1)}`}>
+          {row.cells[col.header]?.raw}
         </span>
       )
     }
