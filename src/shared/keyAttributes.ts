@@ -40,6 +40,9 @@ export function keyAttributesOf(roleId: string, overrides: Record<string, Record
   return keyAttributesFrom(effectiveWeights(roleId, overrides))
 }
 
+/** 양수 가중치의 합 */
+const positiveSum = (weights: Readonly<Record<string, number>>): number => Object.values(weights).reduce((sum, weight) => (weight > 0 ? sum + weight : sum), 0)
+
 /**
  * 자리 프로파일에서 가중치가 걸린 능력치: 두 국면 역할의 가중치를 비중으로 섞은 표(compositeWeights)에서 무거운 것부터, 같으면 게임 화면 순서.
  * 섞지 않는 경우(두 국면의 역할이 같거나, 두 표가 같거나, 비중이 100 또는 0)는 그 역할의 가중치 그대로라 keyAttributesOf와 같다.
@@ -61,9 +64,6 @@ export function profileKeyAttributes(catalog: RoleCatalog, profile: SlotProfile,
     return { id: key.id, weight, core: weight >= KEY_WEIGHT_MIN }
   })
 }
-
-/** 양수 가중치의 합 */
-const positiveSum = (weights: Readonly<Record<string, number>>): number => Object.values(weights).reduce((sum, weight) => (weight > 0 ? sum + weight : sum), 0)
 
 /** 스쿼드 표에서 고르는 포지션 묶음 */
 export interface PositionGroup {

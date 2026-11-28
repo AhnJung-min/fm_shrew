@@ -366,6 +366,11 @@ export interface TacticSlotQuery {
 /** 자리를 기준으로 찾는 두 꼴. 새 꼴을 받는 것은 본체(WorldService)가 새 꼴을 처리하게 된 뒤다(CandidateQuery.slot의 주석) */
 export type CandidateSlotQuery = LegacySlotQuery | TacticSlotQuery
 
+/** 새 꼴(`{ tactic, index }`)인가. 옛 꼴은 formation과 slotRoles가 있다 */
+export function isTacticSlot(slot: CandidateSlotQuery): slot is TacticSlotQuery {
+  return 'tactic' in slot && slot.tactic !== undefined
+}
+
 export interface CandidateQuery {
   /**
    * 역할 id. 전술의 자리를 기준으로 찾으면 그 자리의 역할이 우선이다. 역할만 고른 찾기는 이 역할의 참조 프로파일(역할 하나, 비중 100,

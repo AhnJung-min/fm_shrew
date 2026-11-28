@@ -575,6 +575,8 @@ export function overpaidPlayers(players: FirstTeamPlayer[], model: WageScale, ex
  *
  * - 적합도 50: 자리가 있으면 ②와 같은 f_eff(숙련 감점을 뺀 적합도)로 그 자리 첫 후보와의 차이를 그 자리 역할의 σ로 잰다. 가장 작은 자리가 "가장 가까운 자리".
  *     f_eff,i,s = f_i,s - σ_s · posPenaltySigma(r_i,s),  bench_s = 첫 후보의 f_eff(없으면 주전의 f_eff),  gapσ = min_s max(0, bench_s - f_eff,i,s)/σ_s
+ *     (2단계: f_i,s는 그 자리 프로파일의 합성 가중치로 낸 적합도이고, 두 국면의 포지션이 다른 자리의 감점은 점유 시·비점유 시 숙련을 비중으로 섞은 mixedPenaltySigma다.
+ *      뛸 수 있는 자리인지는 점유 시 포지션만 본다. 두 국면이 같으면 위 식 그대로다)
  *   현재 전술에 뛸 자리가 없으면(3회차): 선수가 숙련 10 이상인 모든 (역할, 포지션) 가운데 가장 좋은 쪽의 z(= (f - μ_R)/σ_R - posPenaltySigma(r))를
  *   지금 전술 필드 주전 가운데 가장 낮은 z_eff와 견주고, 거기에 "자리가 없다"는 가산 NO_SLOT_PREMIUM을 더한다.
  *     gapσ = max(0, z_min - z_best) + NO_SLOT_PREMIUM,  위험 = clamp01(gapσ / FIT_GAP_SIGMAS)

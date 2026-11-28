@@ -20,7 +20,7 @@ import { groupIdOf, mixedPenaltySigma, type SlotProfile } from '../src/shared/sl
 import { analyseTactic, type TacticAnalysis } from '../src/shared/tactic'
 import { legacyTactic, presetTactic, type Lane, type Line, type Tactic } from '../src/shared/tacticModel'
 import type { CellValue, ColumnInfo, PlayerRow } from '../src/shared/types'
-import { categoriesOf, effectiveFit, effectiveScore, rotationWindowOf, type CandidateBench } from '../src/shared/world'
+import { categoriesOf, effectiveFit, effectiveScore, isTacticSlot, rotationWindowOf, type CandidateBench } from '../src/shared/world'
 import { seeded, SQUAD_COLUMNS, syntheticSquad } from './helpers/syntheticWorld'
 
 // ---------- 가짜 카탈로그: 국면마다 역할 둘 ----------
@@ -555,6 +555,11 @@ describe('옛 전술의 화면 줄은 옛 포메이션 그대로이고, 새 전�
     expect(preset.formation.rows).toEqual([['ST'], ['AML', 'AMR'], ['MC', 'MC'], ['WBL', 'WBR'], ['DC', 'DC', 'DC'], ['GK']])
     // 줄 번호가 formation.rows의 줄이고, 같은 선수들이 같은 자리 순서로 주전이 된다
     expect(preset.slots.map((each) => each.slot.starter?.idx)).toEqual(legacy.slots.map((each) => each.slot.starter?.idx))
+  })
+
+  it('자리를 기준으로 찾는 요청의 두 꼴을 가른다(옛 꼴은 포메이션과 자리별 역할, 새 꼴은 전술)', () => {
+    expect(isTacticSlot({ formation: '4-4-2', slotRoles: {}, index: 3 })).toBe(false)
+    expect(isTacticSlot({ tactic: legacyTactic('4-4-2', {}), index: 3 })).toBe(true)
   })
 
   it('옛 꼴로 부른 분석은 옛 전술과 옛 카탈로그를 싣는다', () => {
