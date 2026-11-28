@@ -1,6 +1,8 @@
 import { FIELDS } from './fields'
 import { parsePositions } from './positions'
-import { effectiveWeights, ROLES } from './roles'
+import { effectiveRoleWeights, LEGACY_CATALOG, profileWeights, type RoleCatalog, type RoleOverrides } from './roleCatalog'
+import { effectiveWeights } from './roles'
+import type { SlotProfile } from './slotProfile'
 
 /**
  * 표에서 "주요 능력치만" 볼 때 쓰는 능력치 목록.
@@ -24,12 +26,25 @@ const SCREEN_ORDER = new Map(FIELDS.filter((field) => field.isAttr).map((field, 
 
 const atScreen = (id: string): number => SCREEN_ORDER.get(id) ?? Number.MAX_SAFE_INTEGER
 
-/** 역할 하나에서 가중치가 걸린 능력치. 무거운 것부터, 같으면 게임 화면 순서 */
-export function keyAttributesOf(roleId: string, overrides: Record<string, Record<string, number>>): KeyAttribute[] {
-  return Object.entries(effectiveWeights(roleId, overrides))
+/** 가중치 표에서 가중치가 걸린 능력치. 무거운 것부터, 같으면 게임 화면 순서 */
+function keyAttributesFrom(weights: Readonly<Record<string, number>>): KeyAttribute[] {
+  return Object.entries(weights)
     .filter(([id, weight]) => weight > 0 && SCREEN_ORDER.has(id))
     .sort(([a, x], [b, y]) => y - x || atScreen(a) - atScreen(b))
     .map(([id, weight]) => ({ id, weight, core: weight >= KEY_WEIGHT_MIN }))
+}
+
+/** 역할 하나에서 가중치가 걸린 능력치(옛 14역할). 무거운 것부터, 같으면 게임 화면 순서 */
+export function keyAttributesOf(roleId: string, overrides: Record<string, Record<string, number>>): KeyAttribute[] {
+  return keyAttributesFrom(effectiveWeights(roleId, overrides))
+}
+
+/**
+ * 자리 프로파일에서 가중치가 걸린 능력치: 두 국면 역할의 가중치를 비중으로 섞은 표(profileWeights)에서 무거운 것부터, 같으면 게임 화면 순서.
+ * 두 국면의 역할이 같거나 비중이 100이면 점유 시 역할의 가중치 그대로라 keyAttributesOf와 같다.
+ */
+export function profileKeyAttributes(catalog: RoleCatalog, profile: SlotProfile, overrides: RoleOverrides): KeyAttribute[] {
+  return keyAttributesFrom(profileWeights(catalog, profile, overrides))
 }
 
 /** 스쿼드 표에서 고르는 포지션 묶음 */
@@ -51,16 +66,18 @@ export const POSITION_GROUPS: PositionGroup[] = [
 export const GROUP_WEIGHT_MIN = 2
 
 /**
- * 포지션 묶음의 주요 능력치. 그 묶음의 자리를 맡는 역할들의 가중치를 평균해(안 쓰는 역할은 0),
+ * 포지션 묶음의 주요 능력치. 그 묶음의 자리를 맡을 수 있는 역할들의 가중치를 평균해(안 쓰는 역할은 0),
  * 평균이 GROUP_WEIGHT_MIN 이상인 능력치만 무거운 것부터 놓는다. 평균이 KEY_WEIGHT_MIN 이상이면 핵심이다.
  * 역할마다 다 합치면(한 역할이라도 쓰는 능력치) 20개 가까이 되어 다시 길어지므로 평균으로 고른다.
+ * 카탈로그가 점유 시·비점유 시 역할을 따로 두면 점유 시 역할(국면이 없는 옛 역할 포함)만 센다: 표의 포지션 묶음 보기는 점유 시 자리로 본다.
+ * 카탈로그를 주지 않으면 옛 14역할이다.
  */
-export function groupKeyAttributes(group: PositionGroup, overrides: Record<string, Record<string, number>>): KeyAttribute[] {
-  const roles = ROLES.filter((role) => role.positions.some((position) => group.positions.includes(position)))
+export function groupKeyAttributes(group: PositionGroup, overrides: Record<string, Record<string, number>>, catalog: RoleCatalog = LEGACY_CATALOG): KeyAttribute[] {
+  const roles = catalog.roles.filter((role) => role.selectable && role.phase !== 'oop' && role.positions.some((position) => group.positions.includes(position)))
   if (roles.length === 0) return []
   const total = new Map<string, number>()
   for (const role of roles) {
-    for (const [id, weight] of Object.entries(effectiveWeights(role.id, overrides))) {
+    for (const [id, weight] of Object.entries(effectiveRoleWeights(catalog, role.id, overrides))) {
       if (weight > 0 && SCREEN_ORDER.has(id)) total.set(id, (total.get(id) ?? 0) + weight)
     }
   }

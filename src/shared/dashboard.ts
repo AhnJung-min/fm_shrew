@@ -1,11 +1,14 @@
 import { withJosa } from './korean'
 import { K } from './ledger'
+import { SHARE_SCALE } from './limits'
 import { zOf, type RoleNorms } from './norms'
 import { formatPounds } from './playerView'
 import { parsePositions, posPenaltySigma, ratingAt, RATING_UNKNOWN_ASSUMED } from './positions'
 import type { Realism, RecommendTierId } from './recommend'
-import { attributesOf, effectiveWeights, ROLES, scoreRole, type AttributeValue } from './roles'
+import { effectiveRoleWeights, LEGACY_CATALOG, profileWeights, type RoleCatalog } from './roleCatalog'
+import { attributesOf, scoreRole, type AttributeValue } from './roles'
 import type { SeasonMatch, SeasonTableRow } from './season'
+import { mixedPenaltySigma, type RatingInput, type SlotProfile } from './slotProfile'
 import { dateFromNumber, daysBetween, isContractSoon, type SlotAnalysis, type TacticAnalysis, type Ymd } from './tactic'
 import type { ColumnInfo, PlayerRow } from './types'
 import {
@@ -152,8 +155,10 @@ export interface OverpaidRow extends DashPlayer {
 
 export interface RecommendSlot {
   formation: string
+  /** 이 자리가 든 전술의 번호(대시보드 카드에서 영입 후보로 넘어갈 때 `{ tacticId, index }`로 가리킨다) */
+  tacticId: string
   index: number
-  /** "중앙 수비 2자리"처럼 같은 포지션·역할의 자리 수까지 붙인 이름 */
+  /** "중앙 수비 2자리"처럼 같은 프로파일의 자리 수까지 붙인 이름 */
   label: string
   roleLabel: string
   need: number
@@ -169,12 +174,14 @@ export interface RecommendSlot {
 /**
  * 가장 급한 자리를 대시보드 영입 추천의 기준으로 바꾼다. 영입 후보 화면처럼 같은 포지션·역할의 자리를 한 그룹으로 보고
  * 그 그룹의 비교 기준을 쓴다(그래야 카드의 "주전과 적합도 +5.3"이 위에 적힌 주전과 맞는다).
+ * tacticId는 분석한 전술의 번호(analysis.tactic.id). 주지 않으면 옛 포메이션 설정으로 만든 옛 전술의 번호(`legacy:${formation}`)다.
  */
-export function recommendSlotOf(formation: string, need: SlotAnalysis): RecommendSlot {
+export function recommendSlotOf(formation: string, need: SlotAnalysis, tacticId: string = `legacy:${formation}`): RecommendSlot {
   const { group } = need
   const count = group.slots.length
   return {
     formation,
+    tacticId,
     index: need.slot.index,
     label: count > 1 ? `${need.positionLabel} ${count}자리` : need.label,
     roleLabel: need.roleLabel,
@@ -629,7 +636,7 @@ export function surplusScore(input: SurplusInput): SurplusScore {
 
 /** 적합도 위험을 어떻게 정했는가(이유 문장이 쓴다) */
 type FitBasis =
-  | { kind: 'slot'; label: string; gap: number; sigma: number; benchmarkName: string; rating: number; penaltyPoints: number }
+  | { kind: 'slot'; label: string; gap: number; sigma: number; benchmarkName: string; rating: number; oopRating: number | null; penaltyPoints: number }
   | { kind: 'noSlot'; formation: string; roleLabel: string; zMin: number; zBest: number }
   | { kind: 'keeper'; total: number }
   | { kind: 'unknown'; formation: string }
@@ -644,7 +651,16 @@ function surplusReason(player: FirstTeamPlayer, scored: SurplusScore, basis: Fit
     if (basis.gap >= 0.5) {
       stem(`가장 가까운 ${basis.label} 자리에서도 첫 후보 ${basis.benchmarkName}보다 적합도가 ${basis.gap.toFixed(1)}점(이 역할의 보통 점수 차이의 약 ${(basis.gap / basis.sigma).toFixed(1)}배) 낮`, '고', '습니다')
     } else stem(`${basis.label} 자리 첫 후보 ${basis.benchmarkName}와 실력은 비슷하지만 그 자리가 이미 찼`, '고', '습니다')
-    if (basis.penaltyPoints >= 0.05) stem(`그 자리 포지션 숙련이 ${basis.rating}이라 ${basis.penaltyPoints.toFixed(1)}점 뺐`, '고', '습니다')
+    if (basis.penaltyPoints >= 0.05) {
+      // 두 국면의 숙련이 달라 감점이 두 숙련을 섞은 값일 때만 두 숙련을 함께 적는다(같으면 지금 글 그대로)
+      stem(
+        basis.oopRating === null
+          ? `그 자리 포지션 숙련이 ${basis.rating}이라 ${basis.penaltyPoints.toFixed(1)}점 뺐`
+          : `그 자리 포지션 숙련(점유 시 ${basis.rating}, 비점유 시 ${basis.oopRating})에 따라 ${basis.penaltyPoints.toFixed(1)}점 뺐`,
+        '고',
+        '습니다'
+      )
+    }
   } else if (basis.kind === 'noSlot') {
     const diff = basis.zMin - basis.zBest
     const lead = `지금 ${basis.formation}에는 ${withJosa(player.name, '이/가')} 뛸 자리가 없습니다. 가장 잘 맞는 역할(${basis.roleLabel})로 보면 주전 가운데 가장 약한 선수보다 이 역할의 보통 점수 차이의 ${Math.abs(diff).toFixed(1)}배만큼`
@@ -672,6 +688,15 @@ function surplusReason(player: FirstTeamPlayer, scored: SurplusScore, basis: Fit
   return `${clauses.map(([joined, last], i) => (i === clauses.length - 1 ? last : joined)).join(' ')}.`
 }
 
+/**
+ * 이 자리 프로파일에서 선수의 숙련 감점 입력. 두 국면의 포지션이 같으면 숫자 하나(옛 계산 그대로),
+ * 다르면 점유 시·비점유 시 숙련과 비중(두 숙련을 섞은 감점)이다.
+ */
+function slotRatingInput(profile: SlotProfile, ratingOf: (position: string) => number, oopRatingOf: (position: string) => number): RatingInput {
+  const ip = ratingOf(profile.ip.position)
+  return profile.oop.position === profile.ip.position ? ip : { ip, oop: oopRatingOf(profile.oop.position), sharePct: profile.sharePct }
+}
+
 interface ProspectVerdict {
   /** ③의 유망주 자격 전체를 넘는가 */
   ok: boolean
@@ -691,17 +716,21 @@ function prospectVerdict(args: {
   player: FirstTeamPlayer
   attrs: Record<string, AttributeValue>
   playable: string[]
+  /** 그 포지션의 숙련(숫자를 모르면 뛸 수 있다고 적힌 자리만 20, 아니면 0) */
   ratingOf: (position: string) => number
+  /** 비점유 시 포지션의 숙련(숫자를 모르면 20). 두 국면의 포지션이 다른 자리의 감점에만 쓴다 */
+  oopRatingOf: (position: string) => number
+  catalog: RoleCatalog
   slots: Array<{ slot: SlotAnalysis; weights: Record<string, number> }>
   norms: RoleNorms | undefined
   roleWeights: Record<string, Record<string, number>>
   zMin: number | null
 }): ProspectVerdict | null {
-  const { player, attrs, playable, ratingOf, slots, norms, roleWeights, zMin } = args
+  const { player, attrs, playable, ratingOf, oopRatingOf, catalog, slots, norms, roleWeights, zMin } = args
   const { age, ca, pa } = player
   if (age === null || ca === null || pa === null) return null
 
-  // (1) 전술에 뛸 자리가 있다
+  // (1) 전술에 뛸 자리가 있다(점유 시 포지션을 뛸 수 있는 자리. 감점은 두 국면의 숙련을 섞은 값)
   let bestSlot: { check: ProspectCheck; label: string } | null = null
   let canPlaySomewhere = false
   for (const { slot, weights } of slots) {
@@ -709,7 +738,7 @@ function prospectVerdict(args: {
     const result = scoreRole(attrs, weights)
     if (!result) continue
     canPlaySomewhere = true
-    const check = prospectCheck({ score: result.score, age, ca, pa, rating: ratingOf(slot.slot.position) }, slot.group.bench, slot.norm, slot.slot.position === 'GK')
+    const check = prospectCheck({ score: result.score, age, ca, pa, rating: slotRatingInput(slot.slot.profile, ratingOf, oopRatingOf) }, slot.group.bench, slot.norm, slot.slot.position === 'GK')
     if (!check.room) continue
     if (!bestSlot || check.margin > bestSlot.check.margin) bestSlot = { check, label: slot.label }
   }
@@ -725,17 +754,18 @@ function prospectVerdict(args: {
     // 역할 기준 분포가 없으면 예전처럼 클 여지만 본다(대표 기울기와 σ)
     return hasGrowthRoom(age, ca, pa, K.REPRESENTATIVE_BETA, K.REPRESENTATIVE_SIGMA) ? { ok: true, gain: growthGain(age, ca, pa, K.REPRESENTATIVE_BETA), lead: '' } : null
   }
+  // 자리가 없는 선수는 카탈로그의 참조 프로파일(역할 하나, 비중 100)을 돈다. 옛 14역할은 ROLES 순서 그대로다
   let best: { margin: number; gain: number } | null = null
-  for (const role of ROLES) {
-    const norm = norms[role.id]
+  for (const reference of catalog.references('ip')) {
+    const norm = norms[reference.key]
     if (!norm) continue
-    const goalkeeper = role.positions.includes('GK')
+    const goalkeeper = reference.goalkeeper
     const beta = growthBetaOf(norm)
     if (!hasGrowthRoom(age, ca, pa, beta, norm.sigma, goalkeeper)) continue
-    const result = scoreRole(attrs, effectiveWeights(role.id, roleWeights))
+    const result = scoreRole(attrs, effectiveRoleWeights(catalog, reference.roleId, roleWeights))
     if (!result) continue
     const gain = growthGain(age, ca, pa, beta, goalkeeper)
-    for (const position of role.positions) {
+    for (const position of reference.positions) {
       const rating = ratingOf(position)
       if (rating < K.TEMPORARY_MIN_RATING) continue
       const margin = (result.score + gain - norm.mu) / norm.sigma - posPenaltySigma(rating) - (zMin - K.STARTER_TOLERANCE_SIGMAS)
@@ -751,6 +781,9 @@ function prospectVerdict(args: {
  * 정리 후보 TOP 5와 임대 보낼 유망주.
  * 선발이거나 어느 자리의 첫 후보이면 대상이 아니다(analyseTactic의 depth 결과를 그대로 쓴다).
  * norms는 역할별 기준 분포(squad.roleNorms). 없으면 전술에 뛸 자리가 없는 선수의 적합도 위험은 보통(0.5)으로 본다.
+ *
+ * 자리 경로는 그 자리 프로파일의 합성 가중치로 점수를 내고 숙련 감점은 두 국면의 숙련을 섞은 값이며, 뛸 수 있는지는 점유 시 포지션만 본다.
+ * 전술에 뛸 자리가 없는 선수는 카탈로그의 참조 프로파일(역할 하나)을 돈다. 옛 14역할은 두 길 모두 지금과 같다.
  */
 export function surplusReport(args: {
   players: FirstTeamPlayer[]
@@ -758,6 +791,8 @@ export function surplusReport(args: {
   columns: ColumnInfo[]
   analysis: TacticAnalysis
   roleWeights: Record<string, Record<string, number>>
+  /** 분석에 쓴 역할 카탈로그(analysis를 만들 때 쓴 것과 같아야 한다). 없으면 옛 14역할 */
+  catalog?: RoleCatalog
   norms?: RoleNorms
   /** 주급 기대치 모델. 없으면 주급 위험은 보통(0.5) */
   wageModel?: WageScale | null
@@ -766,7 +801,7 @@ export function surplusReport(args: {
   /** 이 점수 미만은 보여 주지 않는다(기본 SURPLUS_MIN_SHOWN) */
   minScore?: number
 }): { rows: SurplusRow[]; prospects: ProspectRow[] } {
-  const { players, rows, columns, analysis, roleWeights, norms, wageModel, loanedIn = new Set<number>(), minScore = K.SURPLUS_MIN_SHOWN } = args
+  const { players, rows, columns, analysis, roleWeights, catalog = LEGACY_CATALOG, norms, wageModel, loanedIn = new Set<number>(), minScore = K.SURPLUS_MIN_SHOWN } = args
   const used = new Set<number>()
   for (const slot of analysis.slots) {
     if (slot.slot.starter) used.add(slot.slot.starter.idx)
@@ -777,7 +812,7 @@ export function surplusReport(args: {
   const rowOf = new Map(rows.map((row) => [row.idx, row]))
   const slots = analysis.slots.map((slot) => ({
     slot,
-    weights: effectiveWeights(slot.slot.roleId, roleWeights),
+    weights: profileWeights(catalog, slot.slot.profile, roleWeights),
     bench: slot.slot.backups[0]?.effScore ?? slot.slot.starter?.effScore ?? null,
     benchmarkName: slot.slot.backups[0]?.name ?? slot.slot.starter?.name ?? '',
     sigma: slot.norm.sigma
@@ -808,10 +843,12 @@ export function surplusReport(args: {
     const attrs = row ? attributesOf(row, columns) : {}
     /** 그 자리 포지션 숙련. 숫자가 없으면 뛸 수 있다고 적힌 자리는 20(감점 없음), 아니면 0 */
     const ratingOf = (position: string): number => ratingAt(row?.ratings, position) ?? (playable.includes(position) ? RATING_UNKNOWN_ASSUMED : 0)
+    /** 비점유 시 포지션 숙련. 숫자가 없으면 20(모르는 값으로 깎지 않는다). 두 국면의 포지션이 다른 자리의 감점에만 쓴다 */
+    const oopRatingOf = (position: string): number => ratingAt(row?.ratings, position) ?? RATING_UNKNOWN_ASSUMED
 
     let basis: FitBasis
     let fitRisk: number | null
-    let best: { gap: number; sigma: number; label: string; benchmarkName: string; rating: number; penaltyPoints: number } | null = null
+    let best: { gap: number; sigma: number; label: string; benchmarkName: string; rating: number; oopRating: number | null; penaltyPoints: number } | null = null
     let bestRole: { roleLabel: string; z: number } | null = null
     if (keeperIds.has(player.uid)) {
       basis = { kind: 'keeper', total: keepers.length }
@@ -823,29 +860,33 @@ export function surplusReport(args: {
         const result = scoreRole(attrs, weights)
         if (!result) continue
         const rating = ratingOf(slot.slot.position)
-        const penaltyPoints = sigma * posPenaltySigma(rating)
+        // 숙련 감점은 두 국면의 숙련을 점유 시 비중으로 섞은 값이다. 두 국면의 포지션이 같으면 숙련 하나라 옛 감점 그대로다.
+        // 풀이 글에 두 숙련을 적는 것은 두 숙련이 달라 감점이 정말 섞였을 때뿐이다
+        const oopRating = slot.slot.oopPosition === slot.slot.position ? rating : oopRatingOf(slot.slot.oopPosition)
+        const penaltyPoints = sigma * mixedPenaltySigma(rating, oopRating, slot.slot.profile.sharePct)
         const gap = Math.max(0, bench - (result.score - penaltyPoints))
         if (!best || gap / sigma < best.gap / best.sigma) {
-          best = { gap, sigma, label: slot.label, benchmarkName, rating, penaltyPoints }
+          best = { gap, sigma, label: slot.label, benchmarkName, rating, oopRating: oopRating !== rating && slot.slot.profile.sharePct < SHARE_SCALE ? oopRating : null, penaltyPoints }
         }
       }
       if (best) {
-        basis = { kind: 'slot', label: best.label, gap: best.gap, sigma: best.sigma, benchmarkName: best.benchmarkName, rating: best.rating, penaltyPoints: best.penaltyPoints }
+        basis = { kind: 'slot', label: best.label, gap: best.gap, sigma: best.sigma, benchmarkName: best.benchmarkName, rating: best.rating, oopRating: best.oopRating, penaltyPoints: best.penaltyPoints }
         fitRisk = fitRiskOf(best.gap / best.sigma)
       } else {
         // 뛸 자리가 전술에 없다: 숙련 10 이상인 모든 (역할, 포지션) 가운데 가장 좋은 z(숙련 감점 반영)로 최약 주전과 견준다
         if (norms) {
-          for (const role of ROLES) {
-            const norm = norms[role.id]
+          // 참조 프로파일(역할 하나, 비중 100)을 돈다. 옛 14역할은 ROLES 순서 그대로다
+          for (const reference of catalog.references('ip')) {
+            const norm = norms[reference.key]
             if (!norm) continue
-            const result = scoreRole(attrs, effectiveWeights(role.id, roleWeights))
+            const result = scoreRole(attrs, effectiveRoleWeights(catalog, reference.roleId, roleWeights))
             if (!result) continue
-            for (const position of role.positions) {
+            for (const position of reference.positions) {
               const rating = ratingOf(position)
               if (rating < K.TEMPORARY_MIN_RATING) continue
               const z = zOf(norm, result.score) - posPenaltySigma(rating)
               if (!bestRole || z > bestRole.z) {
-                bestRole = { roleLabel: role.label, z }
+                bestRole = { roleLabel: reference.label, z }
               }
             }
           }
@@ -862,7 +903,7 @@ export function surplusReport(args: {
 
     // 임대 보내 키울 선수 = ③의 유망주 자격 전체(클 여지 ∧ 다 컸을 때 우리 주전 수준). 클 여지만 있고 다 커도 못 미치면 정리 후보로 계산한다(5회차)
     const room = player.ca !== null && player.pa !== null ? player.pa - player.ca : null
-    const verdict = room === null ? null : prospectVerdict({ player, attrs, playable, ratingOf, slots, norms, roleWeights, zMin })
+    const verdict = room === null ? null : prospectVerdict({ player, attrs, playable, ratingOf, oopRatingOf, catalog, slots, norms, roleWeights, zMin })
     if (verdict && verdict.ok && room !== null) {
       prospects.push({
         ...asPlayer(player),
