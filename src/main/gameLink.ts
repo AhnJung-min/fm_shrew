@@ -32,6 +32,7 @@ const wait = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(
 export class GameLink {
   private game: GameStatus = NO_GAME
   private roster: string[] = []
+  private rosterUids: number[] = []
   private busy = false
   private stopped = false
   private lastLive = 0
@@ -50,6 +51,11 @@ export class GameLink {
   /** 게임이 알려 준 내 팀 선수 이름 */
   rosterNames(): string[] {
     return this.roster
+  }
+
+  /** 게임이 알려 준 내 팀 선수의 고유 번호(세이브의 선수 번호와 같다). 읽지 못한 선수는 빠지고, 옛 플러그인(0.14.0 미만)이거나 게임이 꺼져 있으면 빈 목록이다 */
+  rosterIds(): number[] {
+    return this.rosterUids
   }
 
   status(): ExtendedLinkStatus {
@@ -133,11 +139,13 @@ export class GameLink {
           manager: state.manager,
           team: state.team,
           teamShort: state.teamShort,
-          // 게임 판은 플러그인 0.14.0부터 알려 준다. 옛 플러그인이면 이 칸이 없다
-          ...(state.gameVersion === undefined ? {} : { gameVersion: state.gameVersion })
+          // 게임 판과 오늘 날짜는 플러그인 0.14.0부터 알려 준다. 옛 플러그인이면 이 칸들이 없다
+          ...(state.gameVersion === undefined ? {} : { gameVersion: state.gameVersion }),
+          ...(state.gameDate === undefined ? {} : { gameDate: state.gameDate })
         }
       : NO_GAME
     this.roster = state?.players ?? []
+    this.rosterUids = (state?.playerIds ?? []).filter((id) => id > 0)
     this.world.setLiveOff(!next.connected ? GAME_OFF : next.pluginOld ? oldPluginNote(next.pluginVersion) : null)
     this.world.setMarketOff(
       !next.connected

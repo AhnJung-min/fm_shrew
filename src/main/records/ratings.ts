@@ -12,11 +12,13 @@ import { RATINGS_FILE, type RecordStore } from './store'
  *   {"v":1,"gameDate":"2025-12-30","comp":"<대회 이름>","compUid":11,
  *    "home":{"id":533,"uid":676,"name":"<구단>","goals":3},"away":{"id":528,"uid":671,"name":"<구단>","goals":1},
  *    "myTeamId":533,"full":90,
- *    "players":[{"uid":19058734,"side":"home","pos":1,"min":90,"rating":6.49,"inc":0,"t":0,"slot":0}]}
+ *    "players":[{"uid":19058734,"side":"home","pos":1,"min":90,"rating":6.49,"inc":0,"t":0,"slot":0,"goals":0,"assists":1}]}
  * - id는 팀 기록 번호로, 앱의 world.teamId와 같은 수다(myTeamId와 견준다). uid는 게임의 고유 번호(덤). 모두 모르면 null.
  * - full은 경기 시간(분. 연장이면 120). 안 뛴 후보는 적지 않는다.
  * - pos는 PositionMask 비트(positionFromMask). min은 뛴 시간(분), 모르면 null. rating은 소수 둘째 자리까지.
  * - inc(게임의 IncidentType: 0 없음, 1 교체 투입, 2 교체 아웃), t(그 분), slot(선발 칸 번호, 이미 나갔으면 -1)은 나중에 확인하려고 그대로 둔 값이다.
+ * - goals, assists는 그 선수가 그 경기에서 넣은 골과 도운 골(플러그인 0.14.0부터). 선택 칸이라 없어도 읽힌다: 0.13.0까지의 줄과, 값을 읽지 못했거나 0보다 작은 값이 온 선수에게는 이 칸이 없다.
+ *   값을 읽었으면 0도 적혀 있다(없음은 "모름", 0은 "넣지 못함"). 있으면 0 이상의 정수여야 하고, 아니면 그 줄을 읽지 않는다(플러그인은 0보다 작은 값을 적지 않는다).
  */
 
 export interface RatingPlayer {
@@ -29,6 +31,10 @@ export interface RatingPlayer {
   inc?: number
   t?: number
   slot?: number
+  /** 그 경기에서 넣은 골(플러그인 0.14.0부터. 없으면 모름) */
+  goals?: number
+  /** 그 경기에서 도운 골(플러그인 0.14.0부터. 없으면 모름) */
+  assists?: number
 }
 
 export interface RatingTeam {
@@ -99,6 +105,8 @@ export function positionFromMask(code: number): DecodedPosition | null {
 const isObject = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value)
 const num = (value: unknown): value is number => typeof value === 'number' && Number.isFinite(value)
 const numOrNull = (value: unknown): boolean => value === null || num(value)
+/** 선택 칸: 없거나, 0 이상의 정수 */
+const optionalCount = (value: unknown): boolean => value === undefined || (typeof value === 'number' && Number.isInteger(value) && value >= 0)
 
 function validTeam(value: unknown): value is RatingTeam {
   return isObject(value) && typeof value.name === 'string' && numOrNull(value.id) && (value.uid === undefined || numOrNull(value.uid)) && (value.goals === undefined || numOrNull(value.goals))
@@ -111,7 +119,9 @@ function validPlayer(value: unknown): value is RatingPlayer {
     (value.side === 'home' || value.side === 'away') &&
     Number.isInteger(value.pos) &&
     numOrNull(value.min) &&
-    num(value.rating)
+    num(value.rating) &&
+    optionalCount(value.goals) &&
+    optionalCount(value.assists)
   )
 }
 

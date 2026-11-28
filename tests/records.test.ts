@@ -331,6 +331,92 @@ describe('경기 평점 가져오기', () => {
     expect(saved()).toHaveLength(1)
     expect(keeper.summaries()[0]).toMatchObject({ label: 'save-a', ratedMatches: 1, snapshots: 0, lastSnapshot: null })
   })
+
+  /**
+   * 선수별 득점과 도움(플러그인 0.14.0부터). 견본 tests/fixtures/plugin/ratings.jsonl은 플러그인이 쓰는 줄 꼴 그대로이고, 지어낸 이름과 번호다:
+   * 첫 줄은 0.14.0(모든 선수에게 goals, assists), 둘째 줄은 0.13.0까지의 줄(그 칸이 없다)이다.
+   */
+  describe('득점과 도움', () => {
+    const fixtureLines = readFileSync(join(__dirname, 'fixtures', 'plugin', 'ratings.jsonl'), 'utf8').split('\n').filter(Boolean)
+    const [withStats, withoutStats] = fixtureLines
+    const TEAM = 9001
+    const sumOf = (match: NonNullable<ReturnType<typeof parseRatingLine>>, side: 'home' | 'away', key: 'goals' | 'assists'): number =>
+      match.players.filter((each) => each.side === side).reduce((total, each) => total + (each[key] ?? 0), 0)
+
+    it('견본에는 득점·도움이 있는 줄과 없는 줄이 한 줄씩 있고, 둘 다 읽힌다(옛 줄도 그대로 읽힌다)', () => {
+      expect(fixtureLines).toHaveLength(2)
+      const now = parseRatingLine(withStats)
+      const before = parseRatingLine(withoutStats)
+      expect(now).not.toBeNull()
+      expect(before).not.toBeNull()
+      // 새 줄: 뛴 선수 모두에게 득점과 도움이 수로 있다(0도 적혀 있다)
+      expect(now!.players).toHaveLength(24)
+      expect(now!.players.every((each) => Number.isInteger(each.goals) && Number.isInteger(each.assists))).toBe(true)
+      expect(now!.players.filter((each) => each.goals === 0 && each.assists === 0).length).toBeGreaterThan(10)
+      // 옛 줄: 그 칸이 하나도 없다. 다른 칸은 그대로 읽힌다
+      expect(before!.players).toHaveLength(24)
+      expect(before!.players.every((each) => each.goals === undefined && each.assists === undefined)).toBe(true)
+      expect(before!.players[0]).toEqual({ uid: 90_000_101, side: 'home', pos: 1, min: 90, rating: 6.4, inc: 0, t: 0, slot: 0 })
+    })
+
+    it('새 줄의 값은 그대로 읽힌다: 팀마다 득점의 합이 그 팀의 점수와 같고, 도움은 골마다 한 명이다', () => {
+      const now = parseRatingLine(withStats)!
+      expect(sumOf(now, 'home', 'goals')).toBe(now.home.goals)
+      expect(sumOf(now, 'away', 'goals')).toBe(now.away.goals)
+      expect(sumOf(now, 'home', 'assists')).toBe(2)
+      expect(sumOf(now, 'away', 'assists')).toBe(1)
+      expect(now.players.find((each) => each.uid === 90_000_010)).toMatchObject({ goals: 1, assists: 0, rating: 8.2 })
+      expect(now.players.find((each) => each.uid === 90_000_011)).toMatchObject({ goals: 0, assists: 1 })
+      // 교체로 들어온 선수도 자기 몫이 있다(여기서는 둘 다 0)
+      expect(now.players.find((each) => each.uid === 90_000_012)).toMatchObject({ inc: 1, goals: 0, assists: 0 })
+    })
+
+    it('플러그인이 쓰는 칸 순서 그대로다(뒤에 goals, assists가 붙는다)', () => {
+      const now = parseRatingLine(withStats)!
+      for (const each of now.players) expect(Object.keys(each)).toEqual(['uid', 'side', 'pos', 'min', 'rating', 'inc', 't', 'slot', 'goals', 'assists'])
+      expect(Object.keys(parseRatingLine(withoutStats)!.players[0])).toEqual(['uid', 'side', 'pos', 'min', 'rating', 'inc', 't', 'slot'])
+    })
+
+    it('선택 칸이라 한 칸만 있어도 읽고, 잘못된 값(글자, 음수, 소수, null)이 있으면 그 줄은 읽지 않는다', () => {
+      const base = JSON.parse(withoutStats) as { players: Array<Record<string, unknown>> }
+      const one = (change: Record<string, unknown>): string => JSON.stringify({ ...base, players: [{ ...base.players[0], ...change }] })
+      expect(parseRatingLine(one({}))).not.toBeNull()
+      expect(parseRatingLine(one({ goals: 0, assists: 0 }))).not.toBeNull()
+      expect(parseRatingLine(one({ goals: 2 }))).not.toBeNull()
+      expect(parseRatingLine(one({ assists: 1 }))).not.toBeNull()
+      // 플러그인이 적는 값은 0 이상의 정수(C# int의 최댓값까지)다. 쓰는 쪽이 적는 범위가 읽는 쪽이 받는 범위 안에 있어야 줄을 잃지 않는다
+      expect(parseRatingLine(one({ goals: 2_147_483_647, assists: 2_147_483_647 }))).not.toBeNull()
+      for (const bad of [{ goals: '1' }, { goals: -1 }, { goals: 1.5 }, { goals: null }, { assists: 'x' }, { assists: -2 }, { assists: null }, { goals: 1, assists: [] }]) {
+        expect(parseRatingLine(one(bad)), JSON.stringify(bad)).toBeNull()
+      }
+    })
+
+    it('가져올 때 줄을 고치지 않는다: 옛 줄 뒤에 새 줄이 붙어도 둘 다 들어가고, 득점·도움은 그대로 남는다', () => {
+      // 플러그인을 올리기 전에 쌓인 옛 줄을 먼저 가져오고, 올린 뒤의 새 줄을 나중에 가져온다
+      writeFileSync(source, withoutStats + '\n')
+      expect(run(TEAM)).toEqual({ imported: 1, duplicates: 0, otherTeam: 0, malformed: 0 })
+      appendFileSync(source, withStats + '\n')
+      expect(run(TEAM)).toEqual({ imported: 1, duplicates: 0, otherTeam: 0, malformed: 0 })
+      expect(saved()).toEqual([withoutStats, withStats])
+      const [old, fresh] = saved().map((text) => parseRatingLine(text)!)
+      expect(old.players.every((each) => each.goals === undefined)).toBe(true)
+      expect(fresh.players.map((each) => each.goals)).toEqual(parseRatingLine(withStats)!.players.map((each) => each.goals))
+      expect(store.meta('save-a')!.ratedMatches).toBe(2)
+    })
+
+    it('견본에는 지어낸 이름과 번호만 있다(실제 구단·선수 이름이 없다)', () => {
+      const strangers: string[] = []
+      const walk = (value: unknown, key = ''): void => {
+        if (Array.isArray(value)) value.forEach((each) => walk(each, key))
+        else if (value && typeof value === 'object') Object.entries(value).forEach(([k, each]) => walk(each, k))
+        else if (typeof value === 'string' && !/^(가상 .+|home|away|\d{4}-\d{2}-\d{2})$/.test(value)) strangers.push(`${key}: ${value}`)
+      }
+      for (const text of fixtureLines) walk(JSON.parse(text))
+      expect(strangers).toEqual([])
+      const uids = fixtureLines.flatMap((text) => parseRatingLine(text)!.players.map((each) => each.uid))
+      expect(uids.every((uid) => uid !== null && uid >= 90_000_001 && uid <= 90_000_999)).toBe(true)
+    })
+  })
 })
 
 describe('경기 기록의 자리 코드', () => {

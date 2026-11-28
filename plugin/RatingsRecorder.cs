@@ -7,13 +7,14 @@ namespace FmBojwagwan.Bridge;
 /// <summary>
 /// 경기 평점 기록(개편 요구서 F-10의 기록 부분).
 /// 내 팀의 "방금 끝난 경기"(Human.Team.LastFixture)가 바뀌면, 두 팀 선수의 경기 기록 목록(PlayerMatchStats)에서
-/// 고유 번호, 평점, 뛴 시간, 뛴 자리를 모아 %LOCALAPPDATA%\FmBojwagwan\records\ratings.jsonl에 경기 한 줄로 덧붙인다.
+/// 고유 번호, 평점, 뛴 시간, 뛴 자리, 득점과 도움을 모아 %LOCALAPPDATA%\FmBojwagwan\records\ratings.jsonl에 경기 한 줄로 덧붙인다.
 /// 앱이 이 파일을 세이브별 기록으로 옮겨 간다. 숙련 감점 계수를 실제 평점으로 어림하는 자료다(반영은 나중 단계).
 ///
 /// 확인한 것(FM26 26.3, 읽기만 해서):
 ///   경기에 "홈 팀인가"(isHomeTeam)를 조건으로 붙이면 그 팀의 목록이 온다. 줄마다
 ///   Player.UniqueId, TotalRating(안 뛴 교체 선수는 값이 없다), Position(선발만. 포지션 비트 + 왼쪽·오른쪽 표시),
-///   IncidentType(0 없음, 1 교체로 들어옴, 2 교체로 나감), MatchTime(그 분), PlayerTeamSelectionIndex(맡은 자리 번호, 나갔으면 -1).
+///   IncidentType(0 없음, 1 교체로 들어옴, 2 교체로 나감), MatchTime(그 분), PlayerTeamSelectionIndex(맡은 자리 번호, 나갔으면 -1),
+///   Goals, Assists(0.14.0부터 줄에 적는다. 값이 오지 않았거나 0보다 작은 선수는 그 칸을 적지 않는다. 0.13.0까지의 줄에는 없다).
 ///   선발은 목록의 0~10번 줄이고 줄 번호가 처음 자리 번호다. 교체로 들어온 선수는 대신한 선발의 자리 번호를 이어받는다.
 /// 경기 중에는 읽지 않는다. 게임 화면은 건드리지 않고, 우리 이름(fmb.r)의 마디만 잠깐 올렸다가 지운다.
 /// </summary>
@@ -29,7 +30,7 @@ internal static class RatingsRecorder
     private const int MaxFailures = 5;
     private static readonly string[] KeyPaths = { "FixtureDate", "HomeTeam.UniqueId", "AwayTeam.UniqueId", "HomeScore", "AwayScore" };
     private static readonly string[] MetaPaths = { "HomeTeam", "AwayTeam", "HomeTeam.Name", "AwayTeam.Name", "Competition.Name", "Competition.UniqueId" };
-    private static readonly string[] RowPaths = { "Player.UniqueId", "TotalRating", "Position", "IncidentType", "MatchTime", "PlayerTeamSelectionIndex" };
+    private static readonly string[] RowPaths = { "Player.UniqueId", "TotalRating", "Position", "IncidentType", "MatchTime", "PlayerTeamSelectionIndex", "Goals", "Assists" };
 
     private static readonly Stopwatch Clock = Stopwatch.StartNew();
     /// <summary>0: 방금 끝난 경기를 지켜봄, 1: 두 팀 목록을 기다림, 2: 줄마다 항목을 기다림</summary>
@@ -187,6 +188,9 @@ internal static class RatingsRecorder
         public int Incident;
         public int Minute;
         public int Slot = -1;
+        /// <summary>그 경기의 득점과 도움. 값이 오지 않았으면 null. 줄에는 0 이상일 때만 적는다</summary>
+        public int? Goals;
+        public int? Assists;
     }
 
     private static string BuildLine()
@@ -207,7 +211,9 @@ internal static class RatingsRecorder
                     Position = Long($"{item}.Position") ?? 0,
                     Incident = Int($"{item}.IncidentType") ?? 0,
                     Minute = Int($"{item}.MatchTime") ?? 0,
-                    Slot = Int($"{item}.PlayerTeamSelectionIndex") ?? -1
+                    Slot = Int($"{item}.PlayerTeamSelectionIndex") ?? -1,
+                    Goals = Int($"{item}.Goals"),
+                    Assists = Int($"{item}.Assists")
                 });
             }
         }
@@ -262,6 +268,10 @@ internal static class RatingsRecorder
                 json.Append(",\"inc\":").Append(row.Incident);
                 json.Append(",\"t\":").Append(row.Minute);
                 json.Append(",\"slot\":").Append(row.Slot);
+                // 득점과 도움은 값이 오지 않았거나 0보다 작으면 적지 않는다(0은 적는다. 옛 줄에는 이 칸이 없어 앱이 "적지 않음"과 "0"을 가린다).
+                // 앱은 이 칸이 0 이상의 정수가 아니면 그 경기 줄 전체를 읽지 않는다. 게임이 "없음"에 쓰는 음수(-1)가 와도 줄을 잃지 않게 그 칸만 뺀다
+                if (row.Goals is >= 0) json.Append(",\"goals\":").Append(Num(row.Goals));
+                if (row.Assists is >= 0) json.Append(",\"assists\":").Append(Num(row.Assists));
                 json.Append('}');
             }
         }
