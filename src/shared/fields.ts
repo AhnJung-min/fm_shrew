@@ -42,6 +42,10 @@ const info = (id: string, label: string, aliases: string[], group: ColumnGroup =
  * 앱이 아는 항목 사전.
  * 한국어 열 이름은 게임 버전과 뷰에 따라 표기가 조금씩 달라서 별칭을 넉넉히 둔다.
  * 그래도 못 알아본 열은 설정 화면에서 직접 지정할 수 있다.
+ *
+ * 능력치의 이름(label)은 게임 역할 화면의 한국어 이름을 따른다(2단계 리드 결정 4). 앱이 예전에 쓰던 이름은 별칭으로 남겨 옛 파일의 열도 알아본다.
+ * 다만 옛 이름 "수비 조율"은 남기지 않는다: 예전에 앱의 "수비 조율"은 게임의 "페널티 박스 장악력"(commandOfArea)을 가리켰고,
+ * 게임의 "수비 조율"은 communication이라서 이제 communication의 이름이다. 항목 id는 바뀌지 않는다.
  */
 export const FIELDS: FieldDef[] = [
   // 기본 정보
@@ -87,7 +91,7 @@ export const FIELDS: FieldDef[] = [
   attr('heading', 'technical', '헤더', '헤더', ['heading', 'hea', '헤딩']),
   attr('longShots', 'technical', '중거리 슛', '중슛', ['long shots', 'lon', '중거리슛', '롱슛']),
   attr('longThrows', 'technical', '롱 스로인', '스로', ['long throws', 'l th', 'lth', '장거리 스로인', '스로인']),
-  attr('marking', 'technical', '대인 방어', '마크', ['marking', 'mar', '대인 수비', '대인 마크', '마킹']),
+  attr('marking', 'technical', '일대일 마크', '마크', ['marking', 'mar', '대인 방어', '대인 수비', '대인 마크', '마킹']),
   attr('passing', 'technical', '패스', '패스', ['passing', 'pas']),
   attr('penalty', 'technical', '페널티킥', 'PK', ['penalty taking', 'penalties', 'pen', '승부차기']),
   attr('tackling', 'technical', '태클', '태클', ['tackling', 'tck']),
@@ -104,7 +108,7 @@ export const FIELDS: FieldDef[] = [
   attr('flair', 'mental', '천재성', '천재', ['flair', 'fla', '창의성']),
   attr('leadership', 'mental', '리더십', '리더', ['leadership', 'ldr', '통솔력']),
   attr('offTheBall', 'mental', '오프 더 볼', '오프', ['off the ball', 'otb', '공 없는 움직임']),
-  attr('positioning', 'mental', '위치 선정', '위치', ['positioning', 'pos', '포지셔닝']),
+  attr('positioning', 'mental', '수비 위치 선정', '위치', ['positioning', 'pos', '위치 선정', '포지셔닝']),
   attr('teamwork', 'mental', '팀워크', '팀웍', ['teamwork', 'tea']),
   attr('vision', 'mental', '시야', '시야', ['vision', 'vis']),
   attr('workRate', 'mental', '활동량', '활동', ['work rate', 'wor', '운동량']),
@@ -112,7 +116,7 @@ export const FIELDS: FieldDef[] = [
   // 신체
   attr('acceleration', 'physical', '가속도', '가속', ['acceleration', 'acc', '순간 속도']),
   attr('agility', 'physical', '민첩성', '민첩', ['agility', 'agi']),
-  attr('balance', 'physical', '밸런스', '밸런', ['balance', 'bal', '균형 감각', '균형']),
+  attr('balance', 'physical', '균형 감각', '균형', ['balance', 'bal', '밸런스']),
   attr('jumping', 'physical', '점프 거리', '점프', ['jumping reach', 'jumping', 'jum', '점프력', '제공권']),
   attr('naturalFitness', 'physical', '타고난 체력', '체력', ['natural fitness', 'nat', '천부적 체력', '자연 체력']),
   attr('pace', 'physical', '주력', '주력', ['pace', 'pac', '속도', '스피드']),
@@ -120,16 +124,16 @@ export const FIELDS: FieldDef[] = [
   attr('strength', 'physical', '몸싸움', '몸쌈', ['strength', 'str', '힘', '근력']),
 
   // 골키퍼
-  attr('aerialReach', 'goalkeeping', '공중볼 처리', '공중', ['aerial reach', 'aer', '공중볼 장악', '공중 장악']),
-  attr('commandOfArea', 'goalkeeping', '수비 조율', '조율', ['command of area', 'cmd', '지역 장악', '페널티 지역 장악']),
-  attr('communication', 'goalkeeping', '의사소통', '소통', ['communication', 'com']),
+  attr('aerialReach', 'goalkeeping', '공중 장악력', '공중', ['aerial reach', 'aer', '공중볼 처리', '공중볼 장악', '공중 장악']),
+  attr('commandOfArea', 'goalkeeping', '페널티 박스 장악력', '박스', ['command of area', 'cmd', '지역 장악', '페널티 지역 장악']),
+  attr('communication', 'goalkeeping', '수비 조율', '조율', ['communication', 'com', '의사소통']),
   attr('eccentricity', 'goalkeeping', '엉뚱함', '엉뚱', ['eccentricity', 'ecc', '기이함', '돌발 행동']),
-  attr('handling', 'goalkeeping', '핸들링', '핸들', ['handling', 'han', '볼 핸들링']),
+  attr('handling', 'goalkeeping', '볼 핸들링', '핸들', ['handling', 'han', '핸들링']),
   attr('kicking', 'goalkeeping', '골킥', '골킥', ['kicking', 'kic', '킥']),
-  attr('oneOnOnes', 'goalkeeping', '일대일', '1대1', ['one on ones', '1v1', '1대1', '일대일 대처']),
+  attr('oneOnOnes', 'goalkeeping', '일대일 방어', '1대1', ['one on ones', '1v1', '1대1', '일대일', '일대일 대처']),
   attr('punching', 'goalkeeping', '펀칭', '펀칭', ['punching', 'pun', 'punching tendency', '펀칭 성향']),
   attr('reflexes', 'goalkeeping', '반사 신경', '반사', ['reflexes', 'ref', '반사신경']),
-  attr('rushingOut', 'goalkeeping', '달려 나오기', '전진', ['rushing out', 'tro', 'rushing out tendency', '뛰쳐나오기', '전진 수비']),
+  attr('rushingOut', 'goalkeeping', '돌진(빈도)', '돌진', ['rushing out', 'tro', 'rushing out tendency', '달려 나오기', '뛰쳐나오기', '전진 수비']),
   attr('throwing', 'goalkeeping', '던지기', '던짐', ['throwing', 'thr', '스로잉'])
 ]
 
