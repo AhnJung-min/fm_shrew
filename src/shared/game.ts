@@ -43,6 +43,11 @@ export interface GameStatus {
    * 앱이 확인한 판인지는 shared/compat.ts의 checkGameVersion으로 본다
    */
   gameVersion?: string
+  /**
+   * 켜져 있는 게임이 알려 준 오늘 날짜 "yyyy-MM-dd"(플러그인 TACTIC_PLUGIN 이상이 알려 준다. 게임이 아직 모르면 빈 글자). 플러그인이 더 낮으면 없다.
+   * 세이브에 적힌 날짜가 아니라 게임이 지금 보여 주는 날짜라서, 게임에서 하루를 넘기면 바뀐다
+   */
+  gameDate?: string
 }
 
 /** 앱이 확인한 게임 판인지의 판정(shared/compat.ts): ok 확인한 판, unsupported 읽었지만 확인하지 않은 판, unknown 읽지 못함 */

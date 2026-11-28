@@ -4,7 +4,7 @@
  * 플러그인(C#)을 올릴 때 응답 모양이 바뀌면 이 검사가 앱 쪽에서 먼저 알려 준다.
  *
  * 녹화본은 club, health, people, roles, roster다. state는 녹화본이 없어 bridge.ts가 읽는 모양대로 직접 만들었다.
- * 0.14.0의 새 창구(/tactic, /rolestars, /state의 게임 버전)는 아직 켜진 게임에서 녹화하지 않았다. 견본(state-0.14, tactic, rolestars)은
+ * 0.14.0의 새 창구(/tactic, /rolestars, /state의 게임 버전·게임 날짜·선수 번호)는 아직 켜진 게임에서 녹화하지 않았다. 견본(state-0.14, tactic, rolestars)은
  * 게임에서 읽어 둔 비트와 역할 번호의 꼴에 지어낸 이름과 번호를 입힌 것이고, 사용자가 게임에서 새 창구를 확인한 뒤 실제 응답 녹화본으로 바꾼다(docs/checklist.md).
  * 모든 이름(선수, 구단, 경기장, 리그, 나라, 감독)과 고유 번호는 지어낸 값이다.
  */
@@ -15,6 +15,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 import { ClubService, firstTeam } from '../src/main/clubService'
+import { GameLink } from '../src/main/gameLink'
 import { POSITION_COUNT } from '../src/main/save/reader'
 import type { SaveWorld } from '../src/main/save/world'
 import { importTactic, readGameTactic, type GameTacticInput } from '../src/main/tacticImportService'
@@ -22,7 +23,7 @@ import { gameClub, gameHealth, gameNames, gamePeople, gameRoleStars, gameState, 
 import { WorldService } from '../src/main/worldService'
 import { buildSnapshot, HEALTH_PER_REQUEST, type RosterPlayer } from '../src/shared/club'
 import { gameReadGate } from '../src/shared/compat'
-import { CLUB_PLUGIN, MARKET_PLUGIN, NEEDED_PLUGIN, TACTIC_PLUGIN, versionOlder, type GameStatus, type LinkStatus } from '../src/shared/game'
+import { CLUB_PLUGIN, MARKET_PLUGIN, NEEDED_PLUGIN, NO_DATA, TACTIC_PLUGIN, versionOlder, type GameStatus, type LinkStatus } from '../src/shared/game'
 import { parseRoleStars } from '../src/shared/roleStars'
 import { LEGACY_CATALOG } from '../src/shared/roleCatalog'
 import { parseTacticAnswer } from '../src/shared/tacticImport'
@@ -57,6 +58,8 @@ let emptyFor = new Set<number>()
 let busy = false
 /** /tactic의 답을 견본 대신 이 글자로 돌려준다(null이면 견본) */
 let tacticOverride: string | null = null
+/** /state의 답을 견본 대신 이 글자로 돌려준다(null이면 견본) */
+let stateOverride: string | null = null
 const asked: string[] = []
 
 beforeAll(async () => {
@@ -66,7 +69,7 @@ beforeAll(async () => {
     const json = (body: string): void => void response.writeHead(200, { 'content-type': 'application/json' }).end(body)
     if (request.headers['x-bridge-token'] !== 'secret') response.writeHead(401).end('bad token')
     else if (url === '/ping') response.end('fm-bojwagwan-bridge 0.9.0')
-    else if (url === '/state') (oldPlugin ? response.writeHead(404).end('unknown path') : json(plugin === '0.14.0' ? state14 : plugin === '0.13.0' ? state13 : state))
+    else if (url === '/state') (oldPlugin ? response.writeHead(404).end('unknown path') : json(stateOverride ?? (plugin === '0.14.0' ? state14 : plugin === '0.13.0' ? state13 : state)))
     else if (plugin === '0.14.0' && url.startsWith('/tactic?')) {
       const query = new URL(url, 'http://localhost').searchParams
       if (busy) response.writeHead(503).end('game busy')
@@ -296,7 +299,7 @@ describe('앱이 아직 읽지 않는 녹화본: roles(게임의 역할과 별�
 function strangersIn(value: unknown, found: string[] = [], key = ''): string[] {
   if (Array.isArray(value)) value.forEach((each) => strangersIn(each, found, key))
   else if (value && typeof value === 'object') Object.entries(value).forEach(([k, each]) => strangersIn(each, found, k))
-  else if (typeof value === 'string' && !/^(\d+|True|False|ok|ip|oop|가상.*|선수\d\d|\d+\.\d+\.\d+(\+\d+)?)$/.test(value)) found.push(`${key}: ${value}`)
+  else if (typeof value === 'string' && !/^(\d+|True|False|ok|ip|oop|가상.*|선수\d\d|\d+\.\d+\.\d+(\+\d+)?|\d{4}-\d{2}-\d{2})$/.test(value)) found.push(`${key}: ${value}`)
   return found
 }
 
@@ -390,6 +393,159 @@ describe('플러그인 0.14.0 문(N-02): 새 기능만 열고 닫는다', () => 
     } finally {
       plugin = '0.11.0'
     }
+  })
+})
+
+describe('/state의 게임 날짜와 내 팀 선수 번호(0.14.0)', () => {
+  const names = roster.map((each) => each.name)
+  const ids = roster.map((each) => each.uid)
+  /** 견본 /state에서 몇 칸만 바꾼 응답 */
+  const stateWith = (change: Record<string, unknown>): string => JSON.stringify({ ...JSON.parse(state14), ...change })
+
+  it('견본의 날짜와 번호: 번호는 이름과 같은 순서·같은 수이고, 이름과 번호 모두 지어낸 값이다', () => {
+    const sample = JSON.parse(state14) as { gameDate: string; players: string[]; playerIds: number[] }
+    expect(sample.gameDate).toMatch(/^\d{4}-\d{2}-\d{2}$/)
+    expect(sample.playerIds).toHaveLength(sample.players.length)
+    expect(sample.players).toEqual(names)
+    expect(sample.playerIds).toEqual(ids)
+    expect(sample.playerIds.every((id) => id >= 90_000_001 && id <= 90_000_999)).toBe(true)
+  })
+
+  it('0.14.0의 /state에서 날짜와 선수 번호를 읽는다', async () => {
+    plugin = '0.14.0'
+    try {
+      const read = await gameState()
+      expect(read).toEqual({
+        version: '0.14.0',
+        gameVersion: '26.3.2+2329565',
+        gameDate: '2026-08-15',
+        loaded: true,
+        manager: '가상 감독',
+        team: '가상 FC',
+        teamShort: '가상',
+        players: names,
+        playerIds: ids
+      })
+    } finally {
+      plugin = '0.11.0'
+    }
+  })
+
+  it('옛 플러그인(0.13.0, 0.11.0)의 /state에는 두 칸이 아예 없다(빈 값이 아니라 "모름"으로 읽힌다)', async () => {
+    for (const old of ['0.13.0', '0.11.0'] as const) {
+      plugin = old
+      try {
+        const read = await gameState()
+        expect(read?.version, old).toBe(old)
+        expect(read, old).not.toHaveProperty('gameDate')
+        expect(read, old).not.toHaveProperty('playerIds')
+        expect(read?.players, old).toEqual(names)
+      } finally {
+        plugin = '0.11.0'
+      }
+    }
+  })
+
+  it('게임이 날짜를 아직 모르면 빈 글자, 읽을 수 없는 글자도 빈 글자다', async () => {
+    plugin = '0.14.0'
+    try {
+      for (const sent of ['', '2026-8-15', '15/08/2026', '2026-08-15T00:00:00', 20260815, null]) {
+        stateOverride = stateWith({ gameDate: sent })
+        const read = await gameState()
+        // 숫자나 null처럼 글자가 아니면 칸이 없는 것으로 읽는다. 글자인데 날짜가 아니면 빈 글자(아직 모름)다
+        if (typeof sent === 'string') expect(read?.gameDate, String(sent)).toBe('')
+        else expect(read, String(sent)).not.toHaveProperty('gameDate')
+      }
+    } finally {
+      stateOverride = null
+      plugin = '0.11.0'
+    }
+  })
+
+  it('읽지 못한 번호(0, 음수, 소수, 글자)는 0으로 자리를 지킨다: 이름과 같은 순서를 깨지 않는다', async () => {
+    plugin = '0.14.0'
+    try {
+      stateOverride = stateWith({ playerIds: [ids[0], 0, -5, 1.5, '90000005', null, ...ids.slice(6)] })
+      const read = await gameState()
+      expect(read?.playerIds).toEqual([ids[0], 0, 0, 0, 0, 0, ...ids.slice(6)])
+      expect(read?.playerIds).toHaveLength(read!.players.length)
+      // 목록이 아니면 칸이 없는 것으로 읽는다
+      stateOverride = stateWith({ playerIds: 'x' })
+      expect(await gameState()).not.toHaveProperty('playerIds')
+    } finally {
+      stateOverride = null
+      plugin = '0.11.0'
+    }
+  })
+
+  describe('GameLink가 앱 안에 알린다', () => {
+    const world = {
+      path: null,
+      status: () => NO_DATA,
+      extras: () => ({ check: { ok: true, problems: [] }, teamNote: '' }),
+      setLiveOff: () => undefined,
+      setMarketOff: () => undefined
+    } as never
+    /** 게임 상태를 한 번 읽는다(앱은 3초마다 읽는다) */
+    const poll = (link: GameLink): Promise<void> => (link as unknown as { check(): Promise<void> }).check()
+
+    it('오늘 날짜는 상태(game.gameDate)에 실리고, 선수 번호는 rosterIds()로 나온다(읽지 못한 0은 뺀다)', async () => {
+      const notified: LinkStatus[] = []
+      const link = new GameLink(world, () => tmpdir(), (status) => notified.push(status))
+      expect(link.rosterIds()).toEqual([])
+      plugin = '0.14.0'
+      try {
+        await poll(link)
+        expect(link.status().game).toMatchObject({ connected: true, pluginVersion: '0.14.0', loaded: true, gameVersion: '26.3.2+2329565', gameDate: '2026-08-15' })
+        expect(link.rosterIds()).toEqual(ids)
+        expect(link.rosterNames()).toEqual(names)
+        expect(notified).toHaveLength(1)
+        // 같은 답이면 다시 알리지 않고, 게임에서 하루가 지나 날짜가 바뀌면 알린다
+        await poll(link)
+        expect(notified).toHaveLength(1)
+        stateOverride = stateWith({ gameDate: '2026-08-16' })
+        await poll(link)
+        expect(link.status().game.gameDate).toBe('2026-08-16')
+        expect(notified).toHaveLength(2)
+        // 일부 번호를 읽지 못했으면 그 선수만 빠지고, 이름은 그대로 모두 남는다
+        stateOverride = stateWith({ playerIds: [0, ids[1], 0, ...ids.slice(3)] })
+        await poll(link)
+        expect(link.rosterIds()).toEqual([ids[1], ...ids.slice(3)])
+        expect(link.rosterNames()).toEqual(names)
+      } finally {
+        stateOverride = null
+        plugin = '0.11.0'
+      }
+    })
+
+    it('옛 플러그인이거나 게임이 꺼지면 날짜는 없고 선수 번호는 빈 목록이다', async () => {
+      const link = new GameLink(world, () => tmpdir(), () => undefined)
+      const home = process.env.LOCALAPPDATA
+      try {
+        plugin = '0.14.0'
+        await poll(link)
+        expect(link.rosterIds()).toHaveLength(25)
+        // 플러그인이 0.13.0으로 돌아갔다: 날짜 칸이 없고 번호는 모른다(이름은 그대로 온다)
+        plugin = '0.13.0'
+        await poll(link)
+        expect(link.status().game).not.toHaveProperty('gameDate')
+        expect(link.rosterIds()).toEqual([])
+        expect(link.rosterNames()).toEqual(names)
+        // 게임이 꺼져 /state도 /ping도 답하지 않으면 모두 비운다
+        plugin = '0.14.0'
+        await poll(link)
+        expect(link.rosterIds()).toHaveLength(25)
+        process.env.LOCALAPPDATA = join(tmpdir(), 'fmb-contract-none')
+        await poll(link)
+        expect(link.status().game.connected).toBe(false)
+        expect(link.status().game).not.toHaveProperty('gameDate')
+        expect(link.rosterIds()).toEqual([])
+        expect(link.rosterNames()).toEqual([])
+      } finally {
+        process.env.LOCALAPPDATA = home
+        plugin = '0.11.0'
+      }
+    })
   })
 })
 

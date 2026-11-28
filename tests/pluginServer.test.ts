@@ -193,6 +193,39 @@ describe('플러그인 버전', () => {
   })
 })
 
+describe('/state의 게임 날짜와 내 팀 선수 번호(LiveState.cs, 0.14.0)', () => {
+  const code = read('LiveState.cs').replace(/\/\/.*$/gm, '')
+  const build = /private static string Build\([\s\S]*?\n    }\n/.exec(code)?.[0] ?? ''
+
+  it('답에 gameDate와 playerIds가 들어가고, 응답을 만드는 Build는 게임에 묻지 않는다(서버 스레드가 부를 수 있다)', () => {
+    expect(build).toContain(String.raw`Append(",\"gameDate\":").Append(Quote(date))`)
+    expect(build).toContain(String.raw`Append(",\"playerIds\":[")`)
+    // 기존 칸은 그대로다
+    for (const key of ['version', 'gameVersion', 'loaded', 'manager', 'team', 'teamShort', 'records', 'players']) expect(build, key).toContain(`\\"${key}\\":`)
+    expect(build).not.toContain('GameData.')
+    expect(build).not.toContain('Application.')
+  })
+
+  it('날짜는 게임의 오늘 날짜(game.CurrentGameDate)를 게임 함수로 풀어 싣고, 모르면 빈 글자다', () => {
+    expect(code).toContain('"game.CurrentGameDate"')
+    expect(code).toContain('GameData.Want(CurrentDate);')
+    expect(code).toContain('GameData.DateOf(CurrentDate) ?? ""')
+    // 세이브를 불러오기 전(Human이 없을 때)과 게임 데이터가 꺼졌을 때는 날짜도 번호도 비어 있다
+    expect([...code.matchAll(/Build\(false, "", "", "", new List<string>\(\), "", new List<long>\(\)\)/g)]).toHaveLength(3)
+  })
+
+  it('선수 번호는 이름과 같은 선수 목록(최대 MaxPlayers명)에서 같은 순서로 싣는다: 번호를 읽지 못해도 이름은 빠지지 않는다(0)', () => {
+    expect(code).toContain('GameData.Want(item + ".Name");')
+    expect(code).toContain('GameData.Want(item + ".UniqueId");')
+    // 이름이 없는 줄만 건너뛰고, 이름과 번호는 같은 줄에서 함께 더한다
+    const loop = /for \(var i = 0; i < placed; i\+\+\)\s*\{[\s\S]*?\n        \}\n/.exec(code)?.[0] ?? ''
+    expect(loop).toMatch(/if \(string\.IsNullOrEmpty\(name\)\) continue;\s*names\.Add\(name\);\s*ids\.Add\(/)
+    expect(loop).toContain('id > 0 ? id : 0')
+    expect([...code.matchAll(/ids\.Add\(/g)]).toHaveLength(1)
+    expect(code).toMatch(/var count = Math\.Min\(MaxPlayers, GameData\.Count\(Players\)\);/)
+  })
+})
+
 describe('경기 평점 기록의 득점과 도움(RatingsRecorder.cs, 0.14.0)', () => {
   const code = read('RatingsRecorder.cs').replace(/\/\/.*$/gm, '')
 

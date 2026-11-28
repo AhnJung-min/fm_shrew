@@ -298,6 +298,8 @@ export interface GameState {
   version: string
   /** 게임의 버전 글자(플러그인 0.14.0부터. 게임이 알려 주지 못했으면 빈 글자, 옛 플러그인이면 없다) */
   gameVersion?: string
+  /** 게임이 알려 준 오늘 날짜 "yyyy-MM-dd"(플러그인 0.14.0부터. 아직 모르거나 읽을 수 없는 글자면 빈 글자, 옛 플러그인이면 없다) */
+  gameDate?: string
   /** 세이브를 불러와 감독으로 들어가 있는지 */
   loaded: boolean
   manager: string
@@ -305,7 +307,12 @@ export interface GameState {
   teamShort: string
   /** 내 팀 선수 이름 */
   players: string[]
+  /** 내 팀 선수의 게임 고유 번호(플러그인 0.14.0부터, 옛 플러그인이면 없다). players와 같은 순서·같은 수이고, 읽지 못한 선수는 0이다 */
+  playerIds?: number[]
 }
+
+/** 플러그인이 주는 날짜 글자 */
+const GAME_DATE = /^\d{4}-\d{2}-\d{2}$/
 
 /** 게임의 상태. 게임이 꺼져 있으면 null. 옛 플러그인(상태를 모르는 것)이면 연결됐다는 것만 알려 준다 */
 export async function gameState(): Promise<GameState | null> {
@@ -317,11 +324,15 @@ export async function gameState(): Promise<GameState | null> {
         version: String(raw.version ?? ''),
         // 옛 플러그인(0.14.0 미만)은 게임 버전을 알려 주지 않는다. 키가 없는 것과 빈 글자(읽지 못함)를 가른다
         ...(typeof raw.gameVersion === 'string' ? { gameVersion: raw.gameVersion } : {}),
+        // 날짜도 0.14.0부터다. 읽을 수 없는 글자는 "아직 모름"(빈 글자)으로 둔다
+        ...(typeof raw.gameDate === 'string' ? { gameDate: GAME_DATE.test(raw.gameDate) ? raw.gameDate : '' } : {}),
         loaded: raw.loaded === true,
         manager: String(raw.manager ?? ''),
         team: String(raw.team ?? ''),
         teamShort: String(raw.teamShort ?? ''),
-        players: Array.isArray(raw.players) ? raw.players.map(String) : []
+        players: Array.isArray(raw.players) ? raw.players.map(String) : [],
+        // 번호는 players와 같은 순서를 지킨다: 양의 정수가 아닌 값은 0(모름)으로 두고 빼지 않는다
+        ...(Array.isArray(raw.playerIds) ? { playerIds: raw.playerIds.map((id) => (typeof id === 'number' && Number.isInteger(id) && id > 0 ? id : 0)) } : {})
       }
     } catch {
       return null
