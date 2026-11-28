@@ -376,8 +376,9 @@ describe('후보 판정: 비교용 적합도에 섞은 감점이 들어가 유�
 
 // ---------- 후계자 ----------
 
-/** 오른쪽 공격(점유 시) → 오른쪽 미드(비점유 시) 자리(비중 60)의 기준 분포 열쇠 */
-const AMR_MR_KEY = FAKE.normKey({ ip: { position: 'AMR', roleId: 'ip.finisher' }, oop: { position: 'MR', roleId: 'oop.stopper' }, sharePct: 60 })
+/** 오른쪽 공격(점유 시) → 오른쪽 미드(비점유 시) 자리의 기준 분포 열쇠(비중마다 다르다) */
+const amrMrKey = (sharePct: number): string => FAKE.normKey({ ip: { position: 'AMR', roleId: 'ip.finisher' }, oop: { position: 'MR', roleId: 'oop.stopper' }, sharePct })
+const AMR_MR_KEY = amrMrKey(60)
 
 describe('후계자: 23세 이하가 점유 시 포지션을 뛰고, 두 숙련을 섞은 감점을 빼고도 주전에 크게 뒤지지 않으면 이어받을 수 있다(AMR → MR 자리)', () => {
   // 기준 분포 σ 4. 주전은 75점(숙련 20·20이라 감점 없음)이라 문턱은 75 - 2.5 · 4 = 65점이다. 후계 후보는 합성 점수 70점
@@ -408,14 +409,64 @@ describe('후계자: 23세 이하가 점유 시 포지션을 뛰고, 두 숙련�
   })
 })
 
+// ---------- 자리 분석의 값 ----------
+
+describe('자리 분석의 값: 뛸 수 있는 선수 수와 선수 목록의 표시는 점유 시 포지션 기준이고, 주전의 두 숙련이 함께 나온다(AMR → MR 자리 + 최전방 자리)', () => {
+  const ST_SLOT: [Spot, Spot] = [['ST', 'C', 'ip.finisher'], ['ST', 'C', 'oop.stopper']]
+  const norms = {
+    [amrMrKey(60)]: { mu: 60, sigma: 4 },
+    [amrMrKey(100)]: { mu: 60, sigma: 4 },
+    'ST|ip.finisher|oop.stopper|60': { mu: 60, sigma: 4 }
+  }
+  // 합성 점수는 능력치를 모두 같은 값으로 두어 5 · 값이다. 가는 점유 시 20·비점유 시 12, 나는 20·20이고, 다는 오른쪽 미드가 자연스러워 오른쪽 공격은 12다
+  const first = player({ name: '시험 선수 가', position: 'AM (R)', level: 15, ratings: { AMR: 20, MR: 12 } })
+  const second = player({ name: '시험 선수 나', position: 'AM (R)', level: 13, ratings: { AMR: 20, MR: 20 } })
+  const wing = player({ name: '시험 선수 다', position: 'M (R)', level: 14, ratings: { MR: 20, AMR: 12 } })
+  const striker = player({ name: '시험 선수 라', position: 'ST (C)', level: 10, ratings: { ST: 20 } })
+  const analysis = analyse([first, second, wing, striker], tacticOf([AMR_TO_MR, ST_SLOT], 60), norms)
+
+  it('주전의 두 숙련이 함께 나오고, 이 자리를 뛸 수 있는 선수는 점유 시 포지션(오른쪽 공격)을 뛴다고 적힌 선수만 센다', () => {
+    const slot = analysis.slots[0]
+    expect(slot.slot.starter?.idx).toBe(first.idx)
+    expect([slot.starterRating, slot.starterOopRating]).toEqual([20, 12])
+    // 가와 나 둘이다. 오른쪽 미드가 자연스러운 다는 비점유 시 포지션이라 세지 않는다
+    expect(slot.eligible).toBe(2)
+  })
+
+  it('"이 자리에 맞는 내 선수" 목록은 뛸 수 있는지를 점유 시 포지션으로 표시하고, 다른 자리 주전이면 그 자리의 점유 시 포지션 이름을 적는다', () => {
+    const [rightWing, centreForward] = analysis.slots
+    expect(rightWing.options.map((each) => [each.name, each.role, each.playable, each.elsewhere])).toEqual([
+      ['시험 선수 가', 'starter', true, null],
+      ['시험 선수 다', 'bench', false, null],
+      ['시험 선수 나', 'bench', true, null],
+      ['시험 선수 라', 'elsewhere', false, '최전방']
+    ])
+    // 최전방 자리의 목록에서 가는 오른쪽 공격(점유 시) 자리의 주전이다. 비점유 시 포지션(오른쪽 미드)의 이름이 아니다
+    expect(centreForward.options[0].note).toBe(
+      '지금은 오른쪽 공격 자리 주전이지만 이 역할 적합도 75점으로 이 자리 주전(시험 선수 라, 50점)보다 25점 높습니다. 다만 이 자리 숙련도가 낮아 실제로는 어색할 수 있습니다.'
+    )
+  })
+
+  it('주전 전력 이유: 두 숙련이 다르고 비중이 100 미만일 때만 두 숙련을 적고, 비중이 100이면 점유 시 숙련 하나로 적는다', () => {
+    const noteOf = (row: PlayerRow, sharePct: number): string =>
+      analyse([row], tacticOf([AMR_TO_MR], sharePct), norms).slots[0].factors.find((factor) => factor.id === 'quality')!.note
+    // 비중 60: 75점에서 4 · (0.6 · 0 + 0.4 · 1.3) = 2.08점을 뺀다
+    expect(noteOf(first, 60)).toContain('포지션 숙련(점유 시 20, 비점유 시 12)에 따라 적합도 75점에서 2.1점 빼고 견주었습니다.')
+    // 비중 100: 점유 시 숙련만 본다. 점유 시 16이면 4 · 0.32 = 1.28점을 빼고, 비점유 시 숙련(12)은 적지 않는다
+    const sixteen = player({ name: '시험 선수 마', position: 'AM (R)', level: 15, ratings: { AMR: 16, MR: 12 } })
+    expect(noteOf(sixteen, 100)).toContain('포지션 숙련이 16이라 적합도 75점에서 1.3점 빼고 견주었습니다.')
+    expect(noteOf(sixteen, 100)).not.toContain('비점유 시')
+  })
+})
+
 // ---------- 정리 후보와 임대 유망주 ----------
 
 describe('정리 후보와 임대 유망주: 자리 경로는 그 자리 프로파일(합성 가중치, 섞은 감점)로, 자리 없는 경로는 점유 시 참조 프로파일로 본다(AMR → MR 자리)', () => {
   // 기준 분포 σ 4. 합성 가중치(비중 60)의 점수는 마무리 평균 F, 압박 평균 T일 때 5 · (0.6F + 0.4T)다
   const sigma = 4
-  const tactic = tacticOf([AMR_TO_MR], 60)
   const norms = {
     [AMR_MR_KEY]: { mu: 60, sigma },
+    [amrMrKey(100)]: { mu: 60, sigma },
     // 참조 프로파일의 기준 분포(열쇠는 `ref:<역할 id>`). 비점유 시 역할의 참조는 점유 시 참조를 돌 때 쓰이지 않는다: 쓰이면 압박에 강한 선수의 z가 아주 크게 나온다
     'ref:ip.finisher': { mu: 60, sigma },
     'ref:oop.stopper': { mu: 20, sigma: 2 }
@@ -438,9 +489,9 @@ describe('정리 후보와 임대 유망주: 자리 경로는 그 자리 프로�
       wage: null,
       contractEnd: null
     }))
-  /** 정리 후보와 임대 유망주. pa는 선수 번호 → 잠재 능력(안 적으면 현재 능력과 같아 클 여지가 없다) */
-  const run = (rows: PlayerRow[], pa: Record<number, number> = {}) => {
-    const analysis = analyse(rows, tactic, norms)
+  /** 정리 후보와 임대 유망주. pa는 선수 번호 → 잠재 능력(안 적으면 현재 능력과 같아 클 여지가 없다). 비중은 안 적으면 60 */
+  const run = (rows: PlayerRow[], pa: Record<number, number> = {}, sharePct = 60) => {
+    const analysis = analyse(rows, tacticOf([AMR_TO_MR], sharePct), norms)
     const result = surplusReport({ players: firstTeam(rows, pa), rows, columns: COLUMNS, analysis, roleWeights: {}, catalog: FAKE, norms: context(norms).norms, minScore: 0 })
     return { analysis, ...result }
   }
@@ -465,6 +516,17 @@ describe('정리 후보와 임대 유망주: 자리 경로는 그 자리 프로�
     expect(rowOf('시험 선수 다')).toMatchObject({ fit: 'slot', fitGap: 2.3 })
     expect(rowOf('시험 선수 다').reason).toContain('그 자리 포지션 숙련이 16이라 1.3점 뺐')
     expect(rowOf('시험 선수 다').reason).not.toContain('점유 시 16')
+  })
+
+  it('비중이 100이면 숙련을 섞지 않는다: 점유 시 숙련 하나로 감점하고, 비점유 시 숙련이 달라도 지금 문장 그대로다', () => {
+    // 비중 100은 점유 시 역할(마무리)만 본다: 주전 75점, 첫 후보 70점, 후보감은 마무리 평균 12라 60점. 점유 시 16이면 4 · 0.32 = 1.28점을 빼 격차 11.28점이다
+    const first = player({ name: '시험 주전', position: 'AM (R)', level: 15, ratings: { AMR: 20, MR: 20 } })
+    const second = player({ name: '시험 후보', position: 'AM (R)', level: 14, ratings: { AMR: 20, MR: 20 } })
+    const odd = player({ name: '시험 선수 가', position: 'AM (R)', level: 10, levels: { finishing: 12, dribbling: 12 }, age: 27, ratings: { AMR: 16, MR: 12 } })
+    const row = run([first, second, odd], {}, 100).rows.find((each) => each.name === '시험 선수 가')!
+    expect(row).toMatchObject({ fit: 'slot', fitGap: 11.3 })
+    expect(row.reason).toContain('그 자리 포지션 숙련이 16이라 1.3점 뺐')
+    expect(row.reason).not.toContain('비점유 시')
   })
 
   it('임대 유망주도 같은 감점을 쓴다: 20세(현재 능력 86, 잠재 150)가 점유 시 20·비점유 시 12면 63.92 + 9.12 = 73.04점이라 기준선(74.0점)에 못 미치고, 20·20이면 75.12점이라 넘는다', () => {
