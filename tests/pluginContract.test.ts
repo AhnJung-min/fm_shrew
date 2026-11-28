@@ -688,11 +688,12 @@ describe('게임에서 전술 가져오기(창구): 읽기 전에 보는 조건'
     positions: new Uint8Array(players.length * POSITION_COUNT).fill(1)
   } as unknown as SaveWorld
   const connected: GameStatus = { connected: true, pluginVersion: '0.14.0', pluginOld: false, loaded: true, manager: '가상 감독', team: '가상 FC', teamShort: '가상', gameVersion: '26.3.2+2329565' }
-  const deps = (game: GameStatus, overrides: { world?: SaveWorld | null; path?: string | null; catalog?: string } = {}): Parameters<typeof importTactic>[0] =>
+  /** roster는 게임이 /state로 알려 준 지금 내 팀 선수 이름(알려 주지 않았으면 빈 목록) */
+  const deps = (game: GameStatus, overrides: { world?: SaveWorld | null; path?: string | null; catalog?: string; roster?: string[] } = {}): Parameters<typeof importTactic>[0] =>
     ({
       settings: { get: () => ({ catalog: overrides.catalog ?? 'fm26', customRoles: [] }) },
       world: { world: overrides.world === undefined ? world : overrides.world, path: overrides.path === undefined ? '가상.fm' : overrides.path },
-      link: { status: () => ({ game, data: { club: '가상 FC' }, busy: false }) }
+      link: { status: () => ({ game, data: { club: '가상 FC' }, busy: false }), rosterNames: () => overrides.roster ?? [] }
     }) as never
 
   it('세이브가 없거나 내 팀을 모르거나 게임에 세이브가 없거나 다른 팀이면 게임에 묻지 않는다', async () => {
@@ -726,6 +727,34 @@ describe('게임에서 전술 가져오기(창구): 읽기 전에 보는 조건'
       asked.length = 0
       expect((await importTactic(deps(connected, { catalog: 'legacy14' }))).message).toContain('옛 14역할')
       expect(asked.filter((url) => url.startsWith('/tactic?'))).toEqual([])
+    } finally {
+      plugin = '0.11.0'
+      missing = new Set()
+    }
+  })
+
+  it('저장한 뒤에 팀을 떠난 선수는 건너뛴다: 게임이 알려 준 지금 내 팀 선수 이름에 있는 선수에게만 묻는다(다른 팀의 전술이 오지 않게)', async () => {
+    plugin = '0.14.0'
+    // 모두 404로 답하게 해, 어느 선수에게 물었는지만 본다
+    missing = new Set(roster.map((each) => each.uid))
+    const bySaveOrder = [...roster].sort((a, b) => a.name.localeCompare(b.name, 'ko'))
+    const asks = (): string[] => asked.filter((url) => url.startsWith('/tactic?'))
+    const ask = (uids: number[]): string[] => uids.map((uid) => `/tactic?team=${TEAM}&uid=${uid}`)
+    try {
+      // 세이브 순서의 앞 세 명이 지금은 내 팀이 아니다: 네 번째부터 세 명에게 묻는다
+      asked.length = 0
+      await importTactic(deps(connected, { roster: bySaveOrder.slice(3).map((each) => each.name) }))
+      expect(asks()).toEqual(ask(bySaveOrder.slice(3, 6).map((each) => each.uid)))
+      // 지금 내 팀 선수가 한 명뿐이면 그 선수에게만 묻는다
+      asked.length = 0
+      await importTactic(deps(connected, { roster: [bySaveOrder[6].name] }))
+      expect(asks()).toEqual(ask([bySaveOrder[6].uid]))
+      // 게임이 이름을 알려 주지 않았거나(빈 목록) 하나도 겹치지 않으면 세이브의 순서 그대로 묻는다
+      for (const names of [[], ['가상 다른 선수']]) {
+        asked.length = 0
+        await importTactic(deps(connected, { roster: names }))
+        expect(asks(), JSON.stringify(names)).toEqual(ask(bySaveOrder.slice(0, 3).map((each) => each.uid)))
+      }
     } finally {
       plugin = '0.11.0'
       missing = new Set()

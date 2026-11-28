@@ -1,4 +1,5 @@
 import { activeCatalog } from '@shared/catalogs'
+import type { RosterPlayer } from '@shared/club'
 import { gameReadGate } from '@shared/compat'
 import type { GameStatus } from '@shared/game'
 import type { RoleCatalog } from '@shared/roleCatalog'
@@ -100,6 +101,17 @@ export async function readGameTactic(input: GameTacticInput): Promise<TacticImpo
   }
 }
 
+/**
+ * 전술을 물을 선수 번호들(앞에서부터 해 본다). 게임은 선수를 거쳐 "그 선수의 지금 팀"의 전술을 주므로, 그 선수가 지금도 내 팀이어야 한다.
+ * 세이브의 소속은 마지막으로 저장했을 때의 것이라, 저장한 뒤에 팔았거나 2군으로 내린 선수가 앞에 있으면 다른 팀의 전술이 올 수 있다.
+ * 그래서 게임이 알려 준 지금 내 팀 선수 이름(/state)에 있는 선수만 쓴다. 게임이 이름을 알려 주지 않았거나 겹치는 선수가 하나도 없으면 세이브의 순서 그대로다.
+ */
+function playersToAsk(mine: RosterPlayer[], currentNames: readonly string[]): number[] {
+  const now = new Set(currentNames)
+  const present = mine.filter((player) => now.has(player.name))
+  return (present.length > 0 ? present : mine).map((player) => player.uid)
+}
+
 export async function importTactic(deps: Phase2Deps, options?: { readRoleLists?: boolean }): Promise<TacticImportResult> {
   const link = deps.link.status()
   const world = deps.world.world
@@ -116,7 +128,7 @@ export async function importTactic(deps: Phase2Deps, options?: { readRoleLists?:
   return readGameTactic({
     game: link.game,
     teamId: world.teamId,
-    uids: firstTeam(world).map((player) => player.uid),
+    uids: playersToAsk(firstTeam(world), deps.link.rosterNames()),
     catalog: activeCatalog(deps.settings.get()),
     readRoleLists: options?.readRoleLists === true,
     id: `game:${Date.now().toString(36)}`
