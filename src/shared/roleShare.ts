@@ -218,7 +218,17 @@ export function parseBundle(text: string): BundleParse {
 
 // ---------- 가져오기 미리 보기 ----------
 
-const roleName = (role: CatalogRole): string => (role.phase === 'both' ? role.label : `${role.label}(${PHASE_NAME[role.phase]})`)
+/** 미리 보기 결과의 첫 글(본체의 서비스와 미리보기 목업이 같이 쓴다). changeCount는 바뀌는 역할 수 */
+export function bundlePreviewMessage(changeCount: number): string {
+  return changeCount > 0 ? `역할 ${changeCount}개의 가중치가 바뀝니다. 아래를 확인한 뒤 합치기나 바꾸기를 골라 주세요.` : '이 파일로 바뀌는 가중치가 없습니다.'
+}
+
+/** 적용한 뒤의 글 */
+export function bundleAppliedMessage(changeCount: number, mode: 'merge' | 'replace'): string {
+  return changeCount > 0 ? `역할 ${changeCount}개의 가중치를 ${mode === 'replace' ? '바꾸었' : '합쳤'}습니다.` : '바뀐 가중치가 없습니다.'
+}
+
+const roleName =(role: CatalogRole): string => (role.phase === 'both' ? role.label : `${role.label}(${PHASE_NAME[role.phase]})`)
 
 /** 묶음의 실효 가중치 표를 가져오는 쪽의 원래 값과 견주어, 다른 칸만 고친 값으로 남긴다(0으로 끄는 칸도 고친 값이다) */
 function overridesFrom(table: Record<string, number>, base: Weights): Record<string, number> {

@@ -3,7 +3,7 @@ import { closeSync, openSync, readSync, statSync, writeFileSync } from 'node:fs'
 import { activeCatalog } from '@shared/catalogs'
 import { ROLE_BUNDLE_MAX_BYTES } from '@shared/limits'
 import type { CustomRole } from '@shared/roleCatalog'
-import { bundleToText, exportBundle, parseBundle, previewImport, type RoleBundle } from '@shared/roleShare'
+import { bundleAppliedMessage, bundlePreviewMessage, bundleToText, exportBundle, parseBundle, previewImport, type RoleBundle } from '@shared/roleShare'
 import { NOT_READY, roleBundlePreviewFailed, simpleFailed, type RoleBundlePreview, type SimpleResult } from '@shared/tacticApi'
 import type { Phase2Deps } from './tacticIpc'
 
@@ -85,7 +85,7 @@ export async function previewRoleBundle(deps: Phase2Deps): Promise<RoleBundlePre
   pending.set(deps, { token, bundle: parsed.bundle })
   return {
     ok: true,
-    message: changes.length > 0 ? `역할 ${changes.length}개의 가중치가 바뀝니다. 아래를 확인한 뒤 합치기나 바꾸기를 골라 주세요.` : '이 파일로 바뀌는 가중치가 없습니다.',
+    message: bundlePreviewMessage(changes.length),
     token,
     changes,
     warnings
@@ -97,12 +97,9 @@ export async function applyRoleBundle(deps: Phase2Deps, token: string, mode: 'me
   if (!held || token.length === 0 || held.token !== token) return simpleFailed('가져올 파일을 다시 골라 주세요.')
   // 미리 보고 난 사이에 설정이 바뀌었을 수 있어서, 지금 설정에 다시 맞춰 적용한다
   const settings = deps.settings.get()
-  const { patch, changes } = previewImport(held.bundle, settings, activeCatalog(settings), mode === 'replace' ? 'replace' : 'merge')
+  const how = mode === 'replace' ? 'replace' : 'merge'
+  const { patch, changes } = previewImport(held.bundle, settings, activeCatalog(settings), how)
   const next = deps.settings.set(patch)
   pending.delete(deps)
-  return {
-    ok: true,
-    message: changes.length > 0 ? `역할 ${changes.length}개의 가중치를 ${mode === 'replace' ? '바꾸었' : '합쳤'}습니다.` : '바뀐 가중치가 없습니다.',
-    settings: next
-  }
+  return { ok: true, message: bundleAppliedMessage(changes.length, how), settings: next }
 }
