@@ -321,7 +321,13 @@ describe('숙련: 자격은 점유 시 포지션만, 감점은 두 국면의 숙
     const different = effectiveFit(70, { ip: 16, oop: 12, sharePct: 60 }, 26, norm)
     // 3.15 · (0.6 · 0.32 + 0.4 · 1.3) = 2.2428
     expect(different.positionPoints).toBeCloseTo(3.15 * (0.6 * 0.32 + 0.4 * 1.3), 10)
-    expect(fitNoteOf(different, 16, 26)).toContain('점유 시 포지션 숙련 16, 비점유 시 12라 적합도에서 2.2점 뺐습니다')
+    expect(fitNoteOf(different, 16, 26)).toContain('포지션 숙련(공 소유 시 16, 공 미소유 시 12)에 따라 적합도에서 2.2점 뺐습니다')
+    // 숫자 뒤에 조사를 붙이지 않아서 숙련이 어떤 수여도 같은 꼴이다(1·2·3·6·7·10·12·20처럼 받침이 있거나 없는 수)
+    for (const [ip, oop] of [[1, 2], [3, 4], [6, 7], [10, 12], [20, 5]] as const) {
+      const note = fitNoteOf(effectiveFit(70, { ip, oop, sharePct: 60 }, 26, norm), ip, 26)
+      expect(note.startsWith(`포지션 숙련(공 소유 시 ${ip}, 공 미소유 시 ${oop})에 따라 적합도에서 `), `${ip}·${oop}`).toBe(true)
+      expect(note, `${ip}·${oop}`).toContain('점 뺐습니다')
+    }
     const alike = effectiveFit(70, { ip: 16, oop: 16, sharePct: 60 }, 26, norm)
     expect(fitNoteOf(alike, 16, 26)).toBe(fitNoteOf(effectiveFit(70, 16, 26, norm), 16, 26))
     expect(fitNoteOf(alike, 16, 26)).toContain('포지션 숙련 16이라 적합도에서 1.0점 뺐습니다')
