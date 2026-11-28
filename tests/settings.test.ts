@@ -445,6 +445,85 @@ describe('깨진 설정 파일은 말없이 버리지 않는다(N-05)', () => {
   })
 })
 
+describe('깨진 설정 파일의 이름을 바꾸지 못했을 때(다른 프로그램이 파일을 잡고 있을 때)', () => {
+  const BROKEN = '{"theme": "black", '
+  const NOT_KEPT = '설정 파일을 읽지 못해 기본값으로 시작했습니다. 읽지 못한 파일을 따로 남기지는 못했습니다.'
+  type Keeper = { keepBroken(this: SettingsStore): { problem: NonNullable<Settings['settingsProblem']>; saved: boolean } }
+  /** 깨진 파일을 따로 남기는 일을 바꿔 끼운다: 처음 fails번은 이름 바꾸기가 막힌 것처럼 못 남기고, 그 뒤에는 진짜로 남긴다(시작할 때 한 번 부른다) */
+  const blockKeeping = (fails: number): { calls(): number } => {
+    const original = (SettingsStore.prototype as unknown as Keeper).keepBroken
+    let calls = 0
+    vi.spyOn(SettingsStore.prototype as unknown as Keeper, 'keepBroken').mockImplementation(function (this: SettingsStore) {
+      return ++calls <= fails ? { problem: { at: FIXED.toISOString(), file: '', message: NOT_KEPT }, saved: false } : original.call(this)
+    })
+    return { calls: () => calls }
+  }
+
+  it('시작할 때는 그 자리에 새 파일을 쓰지 않고(깨진 파일이 유일한 사본일 수 있다), 첫 쓰기 전에 다시 남겨 보고 남기면 알림에 그 파일 이름을 적는다', () => {
+    write(BROKEN)
+    const keeping = blockKeeping(1)
+    const store = open()
+    expect(text()).toBe(BROKEN)
+    expect(names()).toEqual(['settings.json'])
+    expect(store.get().settingsProblem).toEqual({ at: FIXED.toISOString(), file: '', message: NOT_KEPT })
+    expect(keeping.calls()).toBe(1)
+    // 첫 쓰기 전에 다시 남긴다
+    store.set({ theme: 'blue' })
+    expect(keeping.calls()).toBe(2)
+    expect(names()).toEqual([BROKEN_NAME, 'settings.json'])
+    expect(text(BROKEN_NAME)).toBe(BROKEN)
+    expect(json().theme).toBe('blue')
+    expect(store.get().settingsProblem).toMatchObject({ file: BROKEN_NAME, message: expect.stringContaining(BROKEN_NAME) })
+    expect(json().settingsProblem).toEqual(store.get().settingsProblem)
+    // 그 뒤의 쓰기는 깨진 파일을 또 남기지 않는다
+    store.set({ theme: 'black' })
+    expect(keeping.calls()).toBe(2)
+    expect(names()).toEqual([BROKEN_NAME, 'settings.json'])
+    expect(open(LATER).get()).toEqual(store.get())
+  })
+
+  it('다시 해 봐도 못 남기면 쓰지 않고 던진다: 깨진 파일과 메모리의 설정이 그대로이고, 막힘이 풀리면 쓴다', () => {
+    write(BROKEN)
+    const keeping = blockKeeping(3)
+    quiet()
+    const store = open()
+    const before = store.get()
+    expect(() => store.set({ theme: 'blue' })).toThrow()
+    expect(ackMigration({ settings: store }).ok).toBe(false)
+    expect(keeping.calls()).toBe(3)
+    expect(text()).toBe(BROKEN)
+    expect(names()).toEqual(['settings.json'])
+    expect(store.get()).toBe(before)
+    // 막힘이 풀리면 깨진 파일을 남기고 쓴다
+    expect(store.set({ theme: 'blue' }).theme).toBe('blue')
+    expect(text(BROKEN_NAME)).toBe(BROKEN)
+    expect(json().theme).toBe('blue')
+    expect(names()).toEqual([BROKEN_NAME, 'settings.json'])
+  })
+
+  it('알림을 먼저 확인해서 지웠으면(그 확인이 다시 남기는 쓰기이기도 하다) 깨진 파일을 남긴 뒤에도 알림을 되살리지 않는다', () => {
+    write(BROKEN)
+    blockKeeping(1)
+    const store = open()
+    expect(ackMigration({ settings: store }).ok).toBe(true)
+    expect(text(BROKEN_NAME)).toBe(BROKEN)
+    expect('settingsProblem' in json()).toBe(false)
+    expect(store.get().settingsProblem).toBeUndefined()
+    expect(open(LATER).get().settingsProblem).toBeUndefined()
+  })
+
+  it('깨진 파일이 그 사이에 없어졌으면 남길 것이 없으니 그냥 쓴다', () => {
+    write(BROKEN)
+    const keeping = blockKeeping(1)
+    const store = open()
+    rmSync(file())
+    store.set({ theme: 'blue' })
+    expect(keeping.calls()).toBe(1)
+    expect(names()).toEqual(['settings.json'])
+    expect(json().theme).toBe('blue')
+  })
+})
+
 describe('원자적 쓰기는 이름 바꾸기가 잠깐 막히면 몇 번 다시 해 본다', () => {
   const busy = (code: string): NodeJS.ErrnoException => Object.assign(new Error(`${code}: 흉내 낸 오류`), { code })
   /** 처음 fails번은 오류로 막히고 그 뒤에는 진짜 이름 바꾸기를 하는, 바꿔 끼운 일. 이름 바꾸기 시도와 기다린 시간을 적는다 */

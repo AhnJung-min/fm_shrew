@@ -104,6 +104,8 @@ export class SettingsStore {
   private current: Settings
   /** 이전 때문에 settings.json을 바꾸기 전에 사본(settings.v1.json)을 남겨야 하는데 아직 못 남겼는가 */
   private backupDue = false
+  /** 읽지 못한 settings.json을 따로 남겨야 하는데 아직 못 남겼는가(남기지 못한 채 그 자리에 쓰면 깨진 파일이 사라진다) */
+  private brokenDue = false
 
   /** now는 시각을 주는 함수다(깨진 파일 이름과 이전 기록에 쓴다. 시험이 바꿔 끼운다) */
   constructor(
@@ -121,7 +123,9 @@ export class SettingsStore {
     if (read.kind === 'broken') {
       const kept = this.keepBroken()
       current = { ...current, settingsProblem: kept.problem }
-      // 깨진 파일을 따로 남기지 못했으면 그 자리에 새 파일을 쓰지 않는다(깨진 파일이 유일한 사본일 수 있다)
+      // 깨진 파일을 따로 남기지 못했으면 그 자리에 새 파일을 쓰지 않는다(깨진 파일이 유일한 사본일 수 있다).
+      // 처음 쓰기 전에 다시 남겨 보고(writeOut), 그래도 못 남기면 쓰지 않고 던진다
+      this.brokenDue = !kept.saved
       dirty = kept.saved
     }
 
@@ -205,18 +209,26 @@ export class SettingsStore {
   }
 
   /**
-   * 설정 파일에 쓰고, 실제로 쓴 설정을 돌려준다. 이전 때문에 사본(settings.v1.json)을 아직 못 남겼으면 쓰기 전에 남긴다(옛 파일을 지키려는 것이다).
-   * 남기면 쓰는 설정의 이전 기록에 사본 알림을 더하고, 못 남기면 쓰지 않고 던진다(그때는 아무것도 바뀌지 않는다).
-   * 사본이 이미 있어도 같은 결과라서, 쓰기가 실패한 뒤에 다시 해도 알림이 빠지지 않는다. 했다는 표시는 쓰기가 끝난 뒤에만 지운다.
+   * 설정 파일에 쓰고, 실제로 쓴 설정을 돌려준다. 쓰기 전에 못 끝낸 뒷일이 있으면 먼저 하고, 못 하면 쓰지 않고 던진다(그때는 아무것도 바뀌지 않는다):
+   * - 읽지 못한 설정 파일을 아직 따로 남기지 못했으면 다시 남겨 본다(그 자리에 쓰면 깨진 파일이 사라진다). 남기면 알림(settingsProblem)에 그 파일 이름을 적는다.
+   * - 이전 때문에 사본(settings.v1.json)을 아직 못 남겼으면 남긴다(옛 파일을 지키려는 것이다). 남기면 이전 기록에 사본 알림을 더한다.
+   * 뒷일을 했다는 표시는 쓰기가 끝난 뒤에만 지운다. 사본은 이미 있어도 같은 결과라 쓰기가 실패한 뒤에 다시 해도 알림이 빠지지 않는다.
    */
   private writeOut(wanted: Settings): Settings {
     let next = wanted
+    if (this.brokenDue && existsSync(this.file)) {
+      const kept = this.keepBroken()
+      if (!kept.saved) throw new Error('settings broken file keep failed')
+      // 알림을 이미 확인해서 지웠으면 다시 만들지 않는다
+      if (next.settingsProblem) next = { ...next, settingsProblem: kept.problem }
+    }
     if (this.backupDue && existsSync(this.file)) {
       const backup = this.makeBackup()
       if (backup === null) throw new Error('settings backup failed')
       next = withBackupNote(next, backup)
     }
     writeFileAtomic(this.file, JSON.stringify(next, null, 2))
+    this.brokenDue = false
     this.backupDue = false
     return next
   }
