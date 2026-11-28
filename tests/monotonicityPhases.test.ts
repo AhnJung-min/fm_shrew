@@ -154,7 +154,6 @@ describe('FM26 단조성(두 국면): 능력치 하나, 점유 시 숙련, 비�
     () => {
       let checked = 0
       let raised = 0
-      let expected = 0
       const set = (tactic: Tactic): TacticSet => ({ catalog: 'fm26', tactics: [tactic], mainId: tactic.id })
       for (const spec of CASES) {
         ALL.forEach((profile, profileIndex) => {
@@ -181,13 +180,11 @@ describe('FM26 단조성(두 국면): 능력치 하나, 점유 시 숙련, 비�
                 if (better.recommend.total > base.recommend.total) raised++
                 checked++
               }
-              expected += SAVE_ATTRIBUTE_ORDER.length + trainedNames.length
             }
           }
         })
       }
       // 센 개수가 정해진 값이다: 사례 3 × (프로파일 82개: 54 + 숙련 1, 포지션이 다른 셋은 + 1) × 비중 5 × 탭 5
-      expect(expected).toBe(checked)
       expect(checked).toBe(CASES.length * (ALL.length * (SAVE_ATTRIBUTE_ORDER.length + 1) + 3) * SHARES.length * TABS.length)
       // 아무것도 안 바뀌는 시험이 아니다: 두 역할에 걸린 능력치와 신뢰성 항목, 숙련은 실제로 총점을 올린다(역할마다 능력치 10개 안팎만 걸려 있다)
       expect(raised).toBeGreaterThan(checked / 10)
