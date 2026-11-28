@@ -29,11 +29,45 @@ export function defaultSettings(documentsDir: string, saveDirOverride?: string):
   }
 }
 
+/** 이름 바꾸기가 잠깐 막힐 때 나오는 오류: Windows에서 백신이나 검색 색인이 방금 쓴 파일을 잠깐 잡고 있으면 이 셋으로 실패한다 */
+const RENAME_BUSY_CODES: ReadonlySet<string> = new Set(['EPERM', 'EBUSY', 'EACCES'])
+/** 이름 바꾸기를 해 보는 횟수와, 해 보는 사이에 기다리는 시간(밀리초). 막히지 않으면 기다리지 않고, 계속 막히면 0.1초쯤 뒤에 던진다 */
+const RENAME_TRIES = 5
+const RENAME_WAIT_MS = 30
+
+/** 파일을 쓸 때 바깥에 맡기는 두 일(시험이 바꿔 끼워 막힘을 흉내 낸다) */
+export interface AtomicIo {
+  rename(from: string, to: string): void
+  /** 멈춰서 기다린다(밀리초) */
+  sleep(ms: number): void
+}
+
+const SYSTEM_IO: AtomicIo = {
+  rename: renameSync,
+  // 본체는 잠깐 멈춰도 된다: 설정 쓰기는 드물고, 기다리는 것은 이름 바꾸기가 막혔을 때뿐이다
+  sleep: (ms) => void Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms)
+}
+
+/** 이름을 바꾼다. 잠깐 막히는 오류(RENAME_BUSY_CODES)만 몇 번 다시 해 보고, 그 밖의 오류는 바로, 계속 막히면 마지막 오류를 그대로 던진다 */
+function renameWithRetry(from: string, to: string, io: AtomicIo): void {
+  for (let attempt = 1; ; attempt++) {
+    try {
+      io.rename(from, to)
+      return
+    } catch (error) {
+      const code = (error as NodeJS.ErrnoException).code
+      if (attempt >= RENAME_TRIES || code === undefined || !RENAME_BUSY_CODES.has(code)) throw error
+      io.sleep(RENAME_WAIT_MS)
+    }
+  }
+}
+
 /**
  * 파일을 원자적으로 쓴다: 같은 폴더의 임시 파일에 다 쓰고 디스크에 내린 뒤 이름을 바꿔 덮는다.
  * 중간에 꺼지거나 쓰기가 실패해도 옛 파일은 그대로이고 반쯤 쓴 파일이 남지 않는다. 실패하면 던진다(임시 파일은 치운다).
+ * 이름 바꾸기가 잠깐 막히는 오류(EPERM, EBUSY, EACCES)는 몇 번 다시 해 본다.
  */
-function writeFileAtomic(file: string, text: string): void {
+export function writeFileAtomic(file: string, text: string, io: Partial<AtomicIo> = {}): void {
   mkdirSync(dirname(file), { recursive: true })
   const temp = `${file}.tmp`
   try {
@@ -44,7 +78,7 @@ function writeFileAtomic(file: string, text: string): void {
     } finally {
       closeSync(fd)
     }
-    renameSync(temp, file)
+    renameWithRetry(temp, file, { ...SYSTEM_IO, ...io })
   } catch (error) {
     try {
       rmSync(temp, { force: true })

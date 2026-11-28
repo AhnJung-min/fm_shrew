@@ -5,11 +5,11 @@
  * 깨진 파일은 settings.broken-<시각>.json으로 남고 알린다, 전술 묶음은 검사를 통과한 것만 쓰고 새 저장소로 읽어도 같다.
  * 시험 자료의 이름과 경로는 모두 지어낸 것이다. 시험마다 새 임시 폴더를 쓰고 끝나면 지운다.
  */
-import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { basename, join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { defaultSettings, SettingsStore } from '../src/main/settings'
+import { defaultSettings, SettingsStore, writeFileAtomic, type AtomicIo } from '../src/main/settings'
 import { ackMigration, saveTactics } from '../src/main/tacticStore'
 import { FM26_CATALOG } from '../src/shared/catalogFm26'
 import { DEFAULT_CATALOG } from '../src/shared/catalogs'
@@ -404,6 +404,102 @@ describe('깨진 설정 파일은 말없이 버리지 않는다(N-05)', () => {
     expect(open().get().settingsProblem).toBeUndefined()
     // 깨진 파일은 그대로 남는다
     expect(text(BROKEN_NAME)).toBe('{')
+  })
+})
+
+describe('원자적 쓰기는 이름 바꾸기가 잠깐 막히면 몇 번 다시 해 본다', () => {
+  const busy = (code: string): NodeJS.ErrnoException => Object.assign(new Error(`${code}: 흉내 낸 오류`), { code })
+  /** 처음 fails번은 오류로 막히고 그 뒤에는 진짜 이름 바꾸기를 하는, 바꿔 끼운 일. 이름 바꾸기 시도와 기다린 시간을 적는다 */
+  const flaky = (fails: number, code = 'EPERM'): { io: AtomicIo; renames: string[]; sleeps: number[] } => {
+    const renames: string[] = []
+    const sleeps: number[] = []
+    let left = fails
+    const io: AtomicIo = {
+      rename: (from, to) => {
+        renames.push(`${basename(from)} to ${basename(to)}`)
+        if (left-- > 0) throw busy(code)
+        renameSync(from, to)
+      },
+      sleep: (ms) => void sleeps.push(ms)
+    }
+    return { io, renames, sleeps }
+  }
+  const OLD = '옛 내용'
+  const NEW = '새 내용'
+
+  it.each(['EPERM', 'EBUSY', 'EACCES'])('%s로 세 번 막혀도 다시 해서 쓴다: 새 내용이 들어가고 임시 파일이 남지 않으며, 막힌 만큼 기다린다', (code) => {
+    writeFileSync(file(), OLD)
+    const { io, renames, sleeps } = flaky(3, code)
+    writeFileAtomic(file(), NEW, io)
+    expect(text()).toBe(NEW)
+    expect(names()).toEqual(['settings.json'])
+    expect(renames).toEqual(Array(4).fill('settings.json.tmp to settings.json'))
+    expect(sleeps).toHaveLength(3)
+    for (const ms of sleeps) expect(ms).toBeGreaterThan(0)
+    // 다 합쳐도 0.5초를 넘지 않는다(본체는 기다리는 동안 멈춰 있다)
+    expect(sleeps.reduce((sum, ms) => sum + ms, 0)).toBeLessThanOrEqual(500)
+  })
+
+  it('막히지 않으면 기다리지 않고 한 번에 쓴다', () => {
+    const { io, renames, sleeps } = flaky(0)
+    writeFileAtomic(file(), NEW, io)
+    expect(text()).toBe(NEW)
+    expect(renames).toHaveLength(1)
+    expect(sleeps).toEqual([])
+  })
+
+  it('계속 막히면(5번 해 보고) 오류를 그대로 던지고, 옛 파일이 그대로이며 임시 파일이 남지 않는다', () => {
+    writeFileSync(file(), OLD)
+    const { io, renames, sleeps } = flaky(99, 'EBUSY')
+    expect(() => writeFileAtomic(file(), NEW, io)).toThrow(/EBUSY/)
+    expect(renames).toHaveLength(5)
+    expect(sleeps).toHaveLength(4)
+    expect(text()).toBe(OLD)
+    expect(names()).toEqual(['settings.json'])
+  })
+
+  it.each(['ENOENT', 'EISDIR', 'ENOSPC', 'EXDEV'])('그 밖의 오류(%s)는 다시 해 보지 않고 바로 던진다', (code) => {
+    writeFileSync(file(), OLD)
+    const { io, renames, sleeps } = flaky(99, code)
+    expect(() => writeFileAtomic(file(), NEW, io)).toThrow(code)
+    expect(renames).toHaveLength(1)
+    expect(sleeps).toEqual([])
+    expect(text()).toBe(OLD)
+    expect(names()).toEqual(['settings.json'])
+  })
+
+  it('오류에 번호(code)가 없어도 멈추지 않고 그대로 던진다', () => {
+    writeFileSync(file(), OLD)
+    const io: AtomicIo = {
+      rename: () => {
+        throw new Error('번호 없는 오류')
+      },
+      sleep: () => undefined
+    }
+    expect(() => writeFileAtomic(file(), NEW, io)).toThrow('번호 없는 오류')
+    expect(text()).toBe(OLD)
+    expect(names()).toEqual(['settings.json'])
+  })
+
+  it('기다리는 일을 바꿔 끼우지 않으면 진짜로 멈춰 기다린다(막힌 만큼 시간이 걸린다)', () => {
+    writeFileSync(file(), OLD)
+    const { io } = flaky(2)
+    const started = performance.now()
+    writeFileAtomic(file(), NEW, { rename: io.rename })
+    const elapsed = performance.now() - started
+    expect(text()).toBe(NEW)
+    // 두 번 막혀 두 번 기다렸다(한 번에 30밀리초쯤). 아래쪽 경계만 본다
+    expect(elapsed).toBeGreaterThanOrEqual(40)
+  })
+
+  it('설정 저장소의 쓰기도 이 쓰기를 거친다: 임시 파일을 만들 수 없는 것은 이름 바꾸기가 막힌 것이 아니라서 기다리지 않고 바로 던진다', () => {
+    const original = write({ theme: 'black', catalog: 'legacy14' })
+    const store = open()
+    mkdirSync(file('settings.json.tmp'))
+    const started = performance.now()
+    expect(() => store.set({ theme: 'blue' })).toThrow()
+    expect(performance.now() - started).toBeLessThan(1000)
+    expect(text()).toBe(original)
   })
 })
 
