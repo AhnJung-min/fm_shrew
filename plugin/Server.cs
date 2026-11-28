@@ -217,6 +217,11 @@ internal static class Server
                 return ClubInfo.Club(Need("team"));
             case "/health":
                 return ClubInfo.Health(Need("uids"), query["team"]);
+            // 지금 게임 전술(자리 11개의 포지션·역할, 점유 시와 비점유 시)과 선수들의 역할 별점(0.14.0부터, 읽기만)
+            case "/tactic":
+                return TacticInfo.Tactic(Need("team"), Need("uid"), Flag("roles"));
+            case "/rolestars":
+                return TacticInfo.RoleStars(Need("team"), Need("uids"));
 
 #if DEV_ENDPOINTS
             // ── 아래는 개발용 창구(게임 구조 조사). -p:DevEndpoints=true로 빌드한 것에만 있다 ──

@@ -4,7 +4,7 @@ using System.Text;
 namespace FmBojwagwan.Bridge;
 
 /// <summary>
-/// 앱이 "지금 게임이 어떤 상태인가"를 물을 때 주는 답: 세이브를 불러왔는지, 감독과 팀, 내 팀 선수 이름.
+/// 앱이 "지금 게임이 어떤 상태인가"를 물을 때 주는 답: 플러그인 버전과 게임 버전, 세이브를 불러왔는지, 감독과 팀, 내 팀 선수 이름.
 ///
 /// 값은 게임 화면이 쓰는 것과 같은 통로(GameData)로 청해 두고, 화면 스레드에서 가끔 모아 글로 만들어 둔다.
 /// 앱의 요청(/state)은 만들어 둔 글을 그대로 돌려주므로 화면 스레드를 기다리지 않는다.
@@ -28,6 +28,12 @@ internal static class LiveState
     private static int placed;
     private static bool wanted;
     private static volatile string current = "";
+    /// <summary>
+    /// 게임 버전(유니티의 Application.version). 게임 스레드에서 한 번 읽어 둔다(다른 스레드에서 유니티를 부르지 않으려고). 못 읽으면 빈 글자.
+    /// 앱은 이것으로 게임이 앱이 확인한 판인지 본다(0.14.0부터).
+    /// </summary>
+    private static volatile string gameVersion = "";
+    private static bool versionRead;
 
     /// <summary>만들어 둔 상태 글(JSON). 어느 스레드에서 불러도 된다.</summary>
     public static string Json()
@@ -61,6 +67,7 @@ internal static class LiveState
     {
         var text = new StringBuilder("{");
         text.Append("\"version\":").Append(Quote(Plugin.Version));
+        text.Append(",\"gameVersion\":").Append(Quote(gameVersion));
         text.Append(",\"loaded\":").Append(loaded ? "true" : "false");
         text.Append(",\"manager\":").Append(Quote(manager));
         text.Append(",\"team\":").Append(Quote(team));
@@ -87,8 +94,24 @@ internal static class LiveState
         }
     }
 
+    /// <summary>화면 스레드에서 처음 한 번만 게임 버전을 읽어 둔다(읽지 못하면 빈 글자로 두고 다시 읽지 않는다)</summary>
+    private static void ReadGameVersion()
+    {
+        if (versionRead) return;
+        versionRead = true;
+        try
+        {
+            gameVersion = UnityEngine.Application.version ?? "";
+        }
+        catch (Exception error)
+        {
+            Plugin.Logger.LogWarning($"live state: game version: {error.Message}");
+        }
+    }
+
     private static void Step(long now)
     {
+        ReadGameVersion();
         if (!GameData.Available)
         {
             current = Build(false, "", "", "", new List<string>());
