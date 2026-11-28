@@ -10,7 +10,7 @@ import { activeCatalog } from '../src/shared/catalogs'
 import raw from '../src/shared/data/fm26-roles.json'
 import { FORMATIONS } from '../src/shared/formations'
 import { migrateSettings, migrationVersion, needsMigration, withBackupNote, type MigrationContext } from '../src/shared/migration'
-import { effectiveRoleWeights, LEGACY_CATALOG, withCustomRoles, type CustomRole, type RoleCatalog } from '../src/shared/roleCatalog'
+import { effectiveRoleWeights, LEGACY_CATALOG, withCustomRoles, type CustomRole, type Evidence, type RoleCatalog } from '../src/shared/roleCatalog'
 import { DEFAULT_ROLE, ROLES, rolesFor } from '../src/shared/roles'
 import { analyseTactic } from '../src/shared/tactic'
 import type { MigrationNote } from '../src/shared/tacticApi'
@@ -404,6 +404,56 @@ describe('프리셋 5개 × 옛 역할 고르기 전부', () => {
     expect(notes.filter((note) => note.text.startsWith('중앙 미드 자리'))).toEqual([
       { kind: 'slot', text: '중앙 미드 자리 6곳: 박스 투 박스와 딥라잉 플레이메이커는 FM26에서 수비형 미드 줄의 역할이라 중앙 미드필더로 바꿨습니다' }
     ])
+  })
+})
+
+describe('자리 역할을 옮길 때 고를 수 있는지는 저장 검사(validateTactic)와 같은 기준으로 가른다', () => {
+  /** 4-4-2의 순번 0은 최전방 둘 가운데 하나(ST.pair)다. 옛 타깃맨을 고른 설정 */
+  const OLD = oldSettings({ formation: '4-4-2', slotRoles: { '4-4-2:0': 'tm' } })
+  const ROLE = 'ip.TargetMan'
+  /** ST.pair 목록에서 타깃 포워드를 빼고 근거를 바꾼 카탈로그(포지션 최전방에서는 다른 칸 종류 ST.single이 여전히 타겟 포워드를 준다) */
+  const withoutTarget = (evidence: Evidence): RoleCatalog =>
+    createFm26Catalog({ ...data, slotKinds: { ...data.slotKinds, 'ST.pair': data.slotKinds['ST.pair'].filter((entry) => entry.roleId !== ROLE).map((entry) => ({ ...entry, evidence })) } })
+
+  it('칸 종류의 목록을 게임에서 확인하지 못한 자리(inferred, unknown)는 목록에 없어도 그 포지션의 역할이면 대응 역할을 쓴다(검사는 알림만 남기고 막지 않는다)', () => {
+    for (const evidence of ['inferred', 'unknown'] as const) {
+      const catalog = withoutTarget(evidence)
+      expect(catalog.choicesAt('ST', 'ip', 'ST.pair').some((choice) => choice.roleId === ROLE), evidence).toBe(false)
+      expect(catalog.role(ROLE)?.positions, evidence).toContain('ST')
+      const { settings, notes } = migrate(OLD, { ...CONTEXT, fm26: catalog })
+      const tactic = settings.tacticsDefault!.tactics[0]
+      expect(tactic.slots[0].ip.roleId, evidence).toBe(ROLE)
+      expect(notes.some((note) => note.text.startsWith('최전방 자리')), evidence).toBe(false)
+      // 저장 검사는 이 전술을 받아들이고, 확인 전이라는 알림만 그 자리에 남는다
+      const problems = validateTactic(tactic, catalog)
+      expect(blockingProblems(problems), evidence).toEqual([])
+      expect(problems.map((problem) => [problem.code, problem.level, problem.index, problem.phase]), evidence).toEqual([['roleUnconfirmed', 'note', 0, 'ip']])
+      expect(validateTacticSet(settings.tacticsDefault!, catalog), evidence).toEqual([])
+    }
+  })
+
+  it('목록을 게임에서 확인한(game) 칸에 없는 역할은 같은 대응 역할도 기본 역할로 바꾸고 알린다(검사가 막는 기준과 같다)', () => {
+    const catalog = withoutTarget('game')
+    const { settings, notes } = migrate(OLD, { ...CONTEXT, fm26: catalog })
+    const tactic = settings.tacticsDefault!.tactics[0]
+    expect(validateTactic({ ...tactic, slots: tactic.slots.map((slot, at) => (at === 0 ? { ...slot, ip: { ...slot.ip, roleId: ROLE } } : slot)) }, catalog).map((problem) => problem.code)).toEqual(['roleChoice'])
+    expect(tactic.slots[0].ip.roleId).toBe('ip.CentreForward')
+    expect(notes.find((note) => note.text.startsWith('최전방 자리'))).toEqual({ kind: 'slot', text: '최전방 자리 1곳: 타깃맨은 FM26에서 이 칸의 역할 목록에 없어 센터 포워드로 바꿨습니다' })
+    expect(blockingProblems(validateTactic(tactic, catalog))).toEqual([])
+  })
+
+  it.each([
+    ['그 포지션에서 고를 수 없는 역할(확인 전 칸이어도 막는 확실한 규칙)', { to: 'ip.FullBack', oneToOne: true }],
+    ['카탈로그에 없는 역할', { to: 'ip.없는역할', oneToOne: true }],
+    ['공 미소유 시 역할', { to: 'oop.OPCentreForward', oneToOne: true }]
+  ])('대응 역할이 %s이면 칸 종류의 근거와 상관없이 기본 역할로 바꾼다', (_name, target) => {
+    for (const evidence of ['inferred', 'game'] as const) {
+      const catalog = createFm26Catalog({ ...data, slotKinds: { ...data.slotKinds, 'ST.pair': data.slotKinds['ST.pair'].map((entry) => ({ ...entry, evidence })) }, legacyMap: { ...data.legacyMap, tm: target } })
+      const { settings, notes } = migrate(OLD, { ...CONTEXT, fm26: catalog })
+      expect(settings.tacticsDefault!.tactics[0].slots[0].ip.roleId, evidence).toBe('ip.CentreForward')
+      expect(notes.some((note) => note.text.startsWith('최전방 자리 1곳')), evidence).toBe(true)
+      expect(blockingProblems(validateTactic(settings.tacticsDefault!.tactics[0], catalog)), evidence).toEqual([])
+    }
   })
 })
 

@@ -6,7 +6,7 @@ import { DEFAULT_ROLE, type PositionKey } from './roles'
 import { defaultSharePct, shareLabel } from './slotProfile'
 import { POSITION_LABEL } from './tactic'
 import type { MigrationNote, MigrationRecord } from './tacticApi'
-import { cellPosition, legacyTactic, presetTactic, slotKindOf, validateTacticSet, type Tactic, type TacticSet } from './tacticModel'
+import { blockingProblems, cellPosition, legacyTactic, presetTactic, validateTactic, validateTacticSet, type Tactic, type TacticSet } from './tacticModel'
 import type { Settings } from './types'
 import { SAVE_ATTRIBUTE_ORDER } from './world'
 
@@ -90,21 +90,27 @@ interface Replaced {
 
 /**
  * 옛 포메이션과 자리 역할에서 FM26 전술 하나를 만든다. 칸과 자리 순서는 프리셋 그대로(옛 FORMATIONS 순서)이고, 두 국면 모두 칸 종류의 기본 역할에서 시작해
- * 공 소유 시 역할만 옛 역할의 대응 역할로 바꾼다(그 칸 종류에서 고를 수 있을 때). 자리 역할을 고친 적이 있으면 출처는 user, 아니면 preset이다.
+ * 공 소유 시 역할만 옛 역할의 대응 역할로 바꾼다(그 칸에서 고를 수 있을 때). 자리 역할을 고친 적이 있으면 출처는 user, 아니면 preset이다.
+ *
+ * "그 칸에서 고를 수 있는가"는 저장 검사(validateTactic)가 막는지로 가른다. 대응 역할을 모든 자리에 놓아 검사하고, 막힌 자리만 칸의 기본 역할로 되돌린다.
+ * 이전이 따로 엄격한 기준을 두면 저장 검사가 받아들일 역할(칸 종류의 목록을 게임에서 확인하지 못한 자리의 역할)을 기본 역할로 바꿔 버리기 때문이다.
+ * 확인 전인 칸에 남는 역할의 알림(roleUnconfirmed)은 검사가 전술을 볼 때 낸다.
  */
 function migratedTactic(formation: Formation, slotRoles: Record<string, string>, fm26: RoleCatalog): { tactic: Tactic; replaced: Replaced[] } {
   const base = presetTactic(formation.id, fm26, `migrated:${formation.id}`)
   const old = legacyTactic(formation.id, slotRoles)
   const map = fm26.legacyMap()
+  const wanted = old.slots.map((slot): string | null => (Object.hasOwn(map, slot.ip.roleId) ? map[slot.ip.roleId].to : null))
+  const trial: Tactic = { ...base, slots: base.slots.map((slot, index) => (wanted[index] === null ? slot : { ...slot, ip: { ...slot.ip, roleId: wanted[index] as string } })) }
+  const refused = new Set<number>()
+  for (const problem of blockingProblems(validateTactic(trial, fm26))) {
+    if (problem.phase === 'ip' && problem.index !== undefined) refused.add(problem.index)
+  }
   const replaced: Replaced[] = []
   const slots = base.slots.map((slot, index) => {
-    const oldRoleId = old.slots[index].ip.roleId
+    if (wanted[index] !== null && !refused.has(index)) return trial.slots[index]
     const position = cellPosition(slot.ip.cell)
-    const target = Object.hasOwn(map, oldRoleId) ? map[oldRoleId].to : null
-    if (position && target && fm26.choicesAt(position, 'ip', slotKindOf(base, index, 'ip')).some((choice) => choice.roleId === target)) {
-      return { ...slot, ip: { ...slot.ip, roleId: target } }
-    }
-    if (position) replaced.push({ position, oldRoleId, toRoleId: slot.ip.roleId })
+    if (position) replaced.push({ position, oldRoleId: old.slots[index].ip.roleId, toRoleId: slot.ip.roleId })
     return slot
   })
   return { tactic: { ...base, slots, source: isEdited(formation, slotRoles) ? 'user' : 'preset' }, replaced }
