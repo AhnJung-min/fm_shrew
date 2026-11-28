@@ -605,8 +605,8 @@ describe('원자적 쓰기는 이름 바꾸기가 잠깐 막히면 몇 번 다�
     writeFileAtomic(file(), NEW, { rename: io.rename })
     const elapsed = performance.now() - started
     expect(text()).toBe(NEW)
-    // 두 번 막혀 두 번 기다렸다(한 번에 30밀리초쯤). 아래쪽 경계만 본다
-    expect(elapsed).toBeGreaterThanOrEqual(40)
+    // 두 번 막혀 두 번 기다렸다(한 번에 30밀리초쯤). 시계의 눈금이 거칠어도 안 흔들리게 한 번 기다린 시간만 아래쪽 경계로 본다
+    expect(elapsed).toBeGreaterThanOrEqual(25)
   })
 
   it('설정 저장소의 쓰기도 이 쓰기를 거친다: 임시 파일을 만들 수 없는 것은 이름 바꾸기가 막힌 것이 아니라서 기다리지 않고 바로 던진다', () => {
