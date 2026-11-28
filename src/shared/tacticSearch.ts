@@ -323,8 +323,8 @@ const shapeKey = (tactic: Tactic): string =>
 
 const fitName = (name: string): string => Array.from(name).slice(0, TACTIC_NAME_MAX).join('')
 
-/** 추천으로 나온 전술의 번호와 이름(사용자가 저장하기 전의 초안이라 출처는 user) */
-const asRecommended = (tactic: Tactic, id: string, name: string): Tactic => ({ ...tactic, id, name: fitName(name), source: 'user' })
+/** 추천으로 나온 전술의 번호와 이름(사용자가 저장하기 전의 초안이라 출처는 user). 지금 전술과 자리 객체를 나눠 쓰지 않게 복사한다 */
+const asRecommended = (tactic: Tactic, id: string, name: string): Tactic => ({ ...structuredClone(tactic), id, name: fitName(name), source: 'user' })
 
 /** 같은 점유 시 포지션의 자리가 둘 이상이면 번호를 붙인 자리 이름(전술판의 자리 이름과 같다. 예: "중앙 수비 1") */
 function slotLabels(tactic: Tactic): string[] {

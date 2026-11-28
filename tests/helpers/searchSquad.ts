@@ -34,7 +34,7 @@ export const SEARCH_COLUMNS: ColumnInfo[] = [
   ...ATTRIBUTES.map((field): ColumnInfo => ({ header: field.label, field: field.id, group: field.group, short: field.short, label: field.label, isAttr: true, numeric: true }))
 ]
 
-/** 포지션마다 몇 명을 두는가(합 56명) */
+/** 포지션마다 몇 명을 두는가(합 52명) */
 const HEADCOUNT: Array<[PositionKey, number]> = [
   ['GK', 4], ['DL', 3], ['DC', 7], ['DR', 3], ['WBL', 2], ['WBR', 2], ['DM', 4], ['ML', 3], ['MC', 6], ['MR', 3], ['AML', 3], ['AMC', 3], ['AMR', 3], ['ST', 6]
 ]
@@ -55,7 +55,7 @@ const clamp = (value: number, low: number, high: number): number => Math.min(hig
 const num = (value: number): CellValue => ({ raw: String(value), num: value })
 
 /**
- * 지어낸 선수단 56명(고유 번호 9100001부터). 모든 포지션에 둘 이상이 있고, 선수마다 숙련 숫자가 있다.
+ * 지어낸 선수단 52명(고유 번호 9100001부터). 모든 포지션에 둘 이상이 있고, 선수마다 숙련 숫자가 있다.
  * 골키퍼는 골키퍼 능력치만 높고 나머지는 낮다. shuffle이 참이면 줄 순서만 바꾼다(번호는 그대로).
  */
 export function searchSquad(seed = 31, shuffle = false): PlayerRow[] {

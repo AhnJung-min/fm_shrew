@@ -1,6 +1,6 @@
 /**
  * 전술 추천 탐색(2단계 U8, A-20): 지금 전술과 프리셋 5개를 시작점으로 자리마다 주전에게 가장 맞는 (공 소유 시, 공 미소유 시) 역할 짝을 찾아
- * 순위로 견주고, 지금 전술의 자리별 제안을 낸다. 지어낸 선수단 56명과 고정 기준 분포로 돈다(세이브와 게임을 읽지 않는다).
+ * 순위로 견주고, 지금 전술의 자리별 제안을 낸다. 지어낸 선수단 52명과 고정 기준 분포로 돈다(세이브와 게임을 읽지 않는다).
  *
  * 받아들이는 조건: 1위의 목적 값은 지금 전술 이상이다, 두 번 돌려도 깊게 같고 선수 줄 순서를 섞어도 같다, 정해진 횟수 안에서 멈춘다,
  * 자리별 제안의 이득은 따로 구한 목적 값의 차이와 같다. 그 밖에 짝 고르기의 규칙(동점이면 지금 짝, 그다음 카탈로그 순서, 사용자 역할 제외),
@@ -12,6 +12,7 @@ import { buildDepthFor, depthObjective } from '../src/shared/depth'
 import { K, withLedger } from '../src/shared/ledger'
 import { SEARCH_MAX_ROUNDS, TACTIC_NAME_MAX } from '../src/shared/limits'
 import { FALLBACK_NORM, type RoleNorms } from '../src/shared/norms'
+import { POSITION_KEYS } from '../src/shared/positions'
 import { LEGACY_CATALOG, withCustomRoles, type CatalogRole, type CustomRole, type Evidence, type RoleCatalog } from '../src/shared/roleCatalog'
 import type { PositionKey } from '../src/shared/roles'
 import type { Phase, SlotProfile, Weights } from '../src/shared/slotProfile'
@@ -47,6 +48,18 @@ function objectiveOf(tactic: Tactic, cat: RoleCatalog = catalog, rows = squad, n
 
 /** 같은 모양인가(이름·번호·출처는 보지 않는다): 자리마다 두 국면의 칸과 역할, 비중 */
 const shapeOf = (tactic: Tactic): unknown => [tactic.sharePct, tactic.slots.map((slot) => [slot.ip.cell, slot.ip.roleId, slot.oop.cell, slot.oop.roleId])]
+
+describe('시험 자료', () => {
+  it('지어낸 선수단은 50명 이상이고, 모든 포지션에 둘 이상이 있으며, 선수마다 숙련 숫자가 있다', () => {
+    expect(squad.length).toBeGreaterThanOrEqual(50)
+    const positions = ['GK', 'DL', 'DC', 'DR', 'WBL', 'WBR', 'DM', 'ML', 'MC', 'MR', 'AML', 'AMC', 'AMR', 'ST']
+    for (const position of positions) {
+      const natural = squad.filter((row) => row.ratings && row.ratings[POSITION_KEYS.indexOf(position as (typeof POSITION_KEYS)[number])] >= 15)
+      expect(natural.length, position).toBeGreaterThanOrEqual(2)
+    }
+    expect(new Set(squad.map((row) => row.idx)).size).toBe(squad.length)
+  })
+})
 
 describe('순위: 지금 전술도 목록에 있고, 1위의 목적 값은 지금 전술 이상이다', () => {
   const currents: Array<[string, Tactic]> = [
@@ -169,6 +182,19 @@ describe('같은 입력은 늘 같은 결과이고, 선수 줄 순서에 기대�
     const before = JSON.stringify([args.current, args.presets, args.rows.map((row) => [row.idx, row.ratings])])
     searchTactics(args)
     expect(JSON.stringify([args.current, args.presets, args.rows.map((row) => [row.idx, row.ratings])])).toBe(before)
+  })
+
+  it('뛸 수 있는 선수가 없는 자리(골키퍼가 없는 선수단)는 비워 두고, 그 자리에는 제안이 없으며, 나머지는 그대로 돈다', () => {
+    const noKeeper = squad.filter((row) => (row.ratings?.[0] ?? 0) < 10)
+    expect(noKeeper.length).toBe(squad.length - 4)
+    const current = presetTactic('4-2-3-1', catalog)
+    const out = searchTactics(input({ rows: noKeeper, current }))
+    const now = out.ranked.find((candidate) => candidate.current)!
+    expect(now.filled).toBe(10)
+    expect(out.ranked[0].objective).toBeGreaterThanOrEqual(now.objective)
+    // 4-2-3-1의 골키퍼 자리는 마지막(10번)이다
+    expect(out.suggestions.some((suggestion) => suggestion.index === 10)).toBe(false)
+    expect(out.suggestions.length).toBeGreaterThan(0)
   })
 
   it('선수가 없어도 던지지 않는다: 채운 자리 0, 제안 없음', () => {
