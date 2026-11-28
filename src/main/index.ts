@@ -196,9 +196,9 @@ function registerIpc(): void {
   // 게임 연결과 세이브 적용
   ipcMain.handle('link:status', () => link.status())
   ipcMain.handle('link:saves', () => link.saves())
-  // 두 번째 값(allowUnknownVersion)은 받기만 한다. 모르는 게임 판의 세이브를 확인하는 처리는 게임 읽기 단위가 이 자리에 넣는다
-  ipcMain.handle('link:apply', async (_event, path: string, _options?: { allowUnknownVersion?: boolean }) => {
-    const result = await link.apply(String(path))
+  // 앱이 확인하지 않은 게임 판의 세이브는 allowUnknownVersion을 줘야(사용자가 확인한 뒤) 적용한다. 앱을 켤 때의 자동 적용(applyLastSave)은 주지 않아 건너뛴다
+  ipcMain.handle('link:apply', async (_event, path: string, options?: { allowUnknownVersion?: boolean }) => {
+    const result = await link.apply(String(path), { allowUnknownVersion: options?.allowUnknownVersion === true })
     if (result.ok) settings.set({ activeSave: String(path) })
     return result
   })

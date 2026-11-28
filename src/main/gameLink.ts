@@ -1,8 +1,10 @@
 import { existsSync, readdirSync, statSync } from 'node:fs'
 import { basename, join } from 'node:path'
+import { checkGameVersion, SUPPORTED_VERSIONS } from '@shared/compat'
 import type { ExtendedLinkStatus } from '@shared/connect'
 import { MARKET_PLUGIN, NEEDED_PLUGIN, NO_GAME, versionOlder, type ApplyResult, type GameStatus, type SaveFileInfo } from '@shared/game'
 import { oldPluginNotice } from '@shared/pluginGates'
+import { peekSaveVersion } from './save/peek'
 import { gameNames, gameState, liveAll, NAMES_PER_REQUEST } from './talk/bridge'
 import { isSaveFile } from './watcher'
 import type { WorldService } from './worldService'
@@ -34,6 +36,10 @@ export class GameLink {
   private stopped = false
   private lastLive = 0
   private learning = false
+  /** 세이브 파일마다 엿본 게임 판 글자. 파일이 같으면(저장 시각과 크기가 같으면) 다시 읽지 않는다 */
+  private readonly versions = new Map<string, { stamp: string; text: string | null }>()
+  /** 게임 판을 확인하지 못해 적용하지 않은 세이브의 안내. 적용한 세이브가 없는 동안 상태의 note로 보인다(앱을 켤 때 자동 적용을 건너뛴 까닭) */
+  private skipped: string | null = null
 
   constructor(
     private readonly world: WorldService,
@@ -47,24 +53,56 @@ export class GameLink {
   }
 
   status(): ExtendedLinkStatus {
-    return { game: this.game, data: this.world.status(), busy: this.busy, ...this.world.extras() }
+    const data = this.world.status()
+    // 적용한 세이브가 없는 동안에는 적용을 건너뛴 까닭(게임 판을 확인하지 못함)을 상태 글에 싣는다
+    return { game: this.game, data: this.skipped && !data.save ? { ...data, note: this.skipped } : data, busy: this.busy, ...this.world.extras() }
   }
 
   private changed(): void {
     this.notify(this.status())
   }
 
-  /** 세이브 폴더의 세이브 파일들, 최근에 저장한 것부터 */
+  /** 세이브를 저장한 게임의 판 글자(세이브 요약에서 엿본다). 읽지 못했으면 null. 같은 파일은 다시 읽지 않는다 */
+  private versionOf(path: string, mtimeMs: number, bytes: number): string | null {
+    const stamp = `${mtimeMs}|${bytes}`
+    const known = this.versions.get(path)
+    if (known && known.stamp === stamp) return known.text
+    const text = peekSaveVersion(path)
+    this.versions.set(path, { stamp, text })
+    return text
+  }
+
+  /** 세이브 폴더의 세이브 파일들, 최근에 저장한 것부터. 파일마다 저장한 게임의 판과 앱이 확인한 판인지를 싣는다 */
   saves(): SaveFileInfo[] {
     const dir = this.saveDir()
     if (!existsSync(dir)) return []
     return readdirSync(dir)
       .filter(isSaveFile)
-      .map((name) => {
-        const info = statSync(join(dir, name))
-        return { path: join(dir, name), name, savedAt: new Date(info.mtimeMs).toISOString(), bytes: info.size }
+      .map((name): SaveFileInfo => {
+        const path = join(dir, name)
+        const info = statSync(path)
+        const check = checkGameVersion(this.versionOf(path, info.mtimeMs, info.size))
+        return {
+          path,
+          name,
+          savedAt: new Date(info.mtimeMs).toISOString(),
+          bytes: info.size,
+          ...(check.version === null ? {} : { gameVersion: check.version }),
+          versionStatus: check.status
+        }
       })
       .sort((a, b) => b.savedAt.localeCompare(a.savedAt))
+  }
+
+  /** 이 세이브를 저장한 게임의 판을 앱이 확인하지 않았거나 읽지 못했을 때의 안내. 확인한 판이면 null */
+  private versionProblem(path: string): string | null {
+    const info = statSync(path)
+    const check = checkGameVersion(this.versionOf(path, info.mtimeMs, info.size))
+    if (check.status === 'ok') return null
+    const known = SUPPORTED_VERSIONS.map((row) => row.game).join(', ')
+    return check.status === 'unsupported'
+      ? `이 세이브는 게임 판 ${check.version}에서 저장한 것으로 보이는데, 앱이 확인한 판(${known})이 아닙니다. 세이브 형식이 달라졌을 수 있어 값이 틀리게 보일 수 있습니다. 그래도 읽으려면 한 번 더 확인해 주세요.`
+      : `이 세이브를 저장한 게임의 판을 읽지 못했습니다(확인 못 함). 앱이 확인한 판은 ${known}입니다. 세이브 형식이 달라졌을 수 있어 값이 틀리게 보일 수 있습니다. 그래도 읽으려면 한 번 더 확인해 주세요.`
   }
 
   /** 게임이 켜져 있는 동안 계속 돈다. */
@@ -89,7 +127,9 @@ export class GameLink {
           loaded: state.loaded,
           manager: state.manager,
           team: state.team,
-          teamShort: state.teamShort
+          teamShort: state.teamShort,
+          // 게임 판은 플러그인 0.14.0부터 알려 준다. 옛 플러그인이면 이 칸이 없다
+          ...(state.gameVersion === undefined ? {} : { gameVersion: state.gameVersion })
         }
       : NO_GAME
     this.roster = state?.players ?? []
@@ -125,11 +165,21 @@ export class GameLink {
     }
   }
 
-  /** 세이브를 골라 적용한다. 게임이 켜져 있으면 지금 값도 바로 받는다. */
-  apply(path: string): Promise<ApplyResult> {
+  /**
+   * 세이브를 골라 적용한다. 게임이 켜져 있으면 지금 값도 바로 받는다.
+   * 그 세이브를 저장한 게임의 판이 앱이 확인한 판(shared/compat.ts의 지원 표)이 아니거나 읽을 수 없으면, 적용하지 않고 needsConfirm으로 돌려준다.
+   * 사용자가 확인한 뒤 allowUnknownVersion으로 다시 부르면 적용한다. 앱을 켤 때의 자동 적용은 이 선택값 없이 불러서 그런 세이브를 저절로 건너뛴다.
+   */
+  apply(path: string, options: { allowUnknownVersion?: boolean } = {}): Promise<ApplyResult> {
     return this.working(async () => {
       try {
         if (!isSaveFile(path) || !existsSync(path)) return { ok: false, message: '세이브 파일을 찾지 못했습니다.' }
+        const unconfirmed = this.versionProblem(path)
+        if (unconfirmed !== null && options.allowUnknownVersion !== true) {
+          this.skipped = unconfirmed
+          return { ok: false, needsConfirm: true, message: unconfirmed }
+        }
+        this.skipped = null
         const world = this.world.apply(path)
         // 세이브를 다 읽었으면 바로 알린다. 게임의 지금 값을 받는 데는 몇 초 더 걸릴 수 있어, 그동안 화면이 비어 있지 않게
         this.changed()

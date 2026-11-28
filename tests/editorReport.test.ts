@@ -117,9 +117,9 @@ describe('전체 결과 글', () => {
 })
 
 describe('플러그인 버전 문', () => {
-  it('에디터 안전 기능은 앱의 버전 문 표에 있고 가장 높은 문이다', () => {
+  it('에디터 안전 기능은 앱의 버전 문 표에 있고, 모든 기능이 켜지는 버전은 그보다 낮지 않다(0.14.0에서 문이 하나 더 생겼다)', () => {
     expect(PLUGIN_GATES.some((gate) => gate.version === EDITOR_SAFE_PLUGIN)).toBe(true)
-    expect(FULL_PLUGIN).toBe(EDITOR_SAFE_PLUGIN)
+    expect(versionOlder(FULL_PLUGIN, EDITOR_SAFE_PLUGIN)).toBe(false)
     expect(versionOlder('0.12.0', EDITOR_SAFE_PLUGIN)).toBe(true)
     expect(versionOlder('0.13.0', EDITOR_SAFE_PLUGIN)).toBe(false)
   })
