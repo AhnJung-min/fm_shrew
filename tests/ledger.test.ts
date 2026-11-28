@@ -1,4 +1,5 @@
-import { readdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { K, LEDGER, SENSITIVE_BELOW, withLedger, type LedgerName } from '../src/shared/ledger'
@@ -124,7 +125,18 @@ const STRUCTURAL: Record<string, string> = {
   'korean.ts:FINALS': '한글 받침 개수',
   'playerView.ts:WON_PER_POUND': '화면에 원화로 바꿔 보여 주는 환율(표시용 환산, 점수에 쓰이지 않는다)',
   'recommend.ts:IMPORTANT_STATUS': '계약상 입지 코드의 분류(코드 번호의 뜻이라 조정 대상이 아니다)',
-  'recommend.ts:REALISM_STATUS': '계약상 입지 코드의 분류(핵심 선수 1, 중요 선수 2)'
+  'recommend.ts:REALISM_STATUS': '계약상 입지 코드의 분류(핵심 선수 1, 중요 선수 2)',
+  // 2단계(FM26 역할 체계)의 구조 상수(limits.ts). 점수 식의 조정 값이 아니라 자료의 모양과 한도다
+  'limits.ts:TACTIC_SLOTS': '전술의 자리 수(선수 11명). 경기 규칙이라 조정 대상이 아니다',
+  'limits.ts:TACTICS_PER_SAVE': '세이브마다 둘 수 있는 전술 수의 한도(저장 모양과 화면의 선택지. 점수에 영향 없음)',
+  'limits.ts:SHARE_SCALE': '점유 시 비중의 눈금(0~100 정수). 눈금 자체라 조정 대상이 아니다. 비중의 기본값은 대장의 IP_SHARE_DEFAULT',
+  'limits.ts:ROLE_WEIGHT_MAX': '역할 가중치의 최댓값(0~5 정수). 화면 입력의 범위이고, 합성 가중치의 정수 산술이 안전한 크기 안에 있게 하는 한도다',
+  'limits.ts:SEARCH_MAX_ROUNDS': '전술 추천 탐색이 되풀이하는 최대 횟수(알고리즘의 끝 조건이고 시간 예산을 지키는 한도)',
+  'limits.ts:TACTIC_NAME_MAX': '전술 이름의 최대 글자 수(저장 모양과 화면 입력의 한도)',
+  'limits.ts:ROLE_NAME_MAX': '사용자 역할 이름의 최대 글자 수(저장 모양과 화면 입력의 한도)',
+  'limits.ts:CUSTOM_ROLES_MAX': '사용자 역할의 최대 개수(설정 파일 크기의 한도)',
+  'limits.ts:ROLE_BUNDLE_MAX_BYTES': '가중치 묶음 파일의 최대 크기(바깥 파일을 읽기 전에 크기를 보는 한도, N-03)',
+  'limits.ts:STARS_PER_REQUEST': '게임 플러그인이 역할 별점을 한 번에 받는 선수 수(통신 규격. 플러그인의 별점 창구와 맞춘다)'
 }
 
 interface Found {
@@ -174,8 +186,15 @@ function isNumericTable(init: string): boolean {
   return /(?<![\w.$])(?:0x[0-9a-f_]+|\d[\d_]*(?:\.\d+)?(?:e[+-]?\d+)?)(?![\w$])/i.test(code)
 }
 
-function sharedFiles(): string[] {
-  return readdirSync(SHARED).filter((name) => name.endsWith('.ts') && name !== 'ledger.ts')
+/**
+ * 수식 모듈의 .ts 파일. src/shared의 하위 폴더까지 훑고, 맨 위 파일은 이름만, 하위 폴더 파일은 `폴더/이름.ts`로 적는다(구조 목록의 열쇠도 같은 꼴).
+ * 대장(맨 위의 ledger.ts)은 뺀다.
+ */
+function sharedFiles(root: string = SHARED, prefix = ''): string[] {
+  return readdirSync(root, { withFileTypes: true }).flatMap((entry) => {
+    if (entry.isDirectory()) return sharedFiles(join(root, entry.name), `${prefix}${entry.name}/`)
+    return entry.name.endsWith('.ts') && `${prefix}${entry.name}` !== 'ledger.ts' ? [`${prefix}${entry.name}`] : []
+  })
 }
 
 describe('수식 모듈에 대장 밖의 조정 상수가 없다(F-07)', () => {
@@ -208,6 +227,20 @@ describe('수식 모듈에 대장 밖의 조정 상수가 없다(F-07)', () => {
     const sample = ['export const MY_LIMIT = 12', 'const TABLE: Record<string, number> = {', '  a: 1,', '  b: 2', '}', "const LABEL = '12'", 'const f = (x: number) => x * 3', 'export const SET: ReadonlySet<number> = new Set([1, 2])']
     const found = topLevelConstants('x.ts', sample.join('\n'))
     expect(found.filter((each) => isNumericTable(each.init)).map((each) => each.name)).toEqual(['MY_LIMIT', 'TABLE', 'SET'])
+  })
+
+  it('검사가 src/shared의 하위 폴더에 둔 .ts까지 훑는다(하위 폴더의 상수는 `폴더/이름.ts:이름`으로 적는다)', () => {
+    const root = mkdtempSync(join(tmpdir(), 'fmb-shared-'))
+    try {
+      mkdirSync(join(root, 'sub', 'deep'), { recursive: true })
+      for (const file of ['a.ts', 'ledger.ts', 'notes.md', join('sub', 'b.ts'), join('sub', 'ledger.ts'), join('sub', 'deep', 'c.ts'), join('sub', 'data.json')]) {
+        writeFileSync(join(root, file), '')
+      }
+      // 맨 위의 ledger.ts만 뺀다. 하위 폴더의 파일은 폴더 이름을 붙여 적는다
+      expect(sharedFiles(root).sort()).toEqual(['a.ts', 'sub/b.ts', 'sub/deep/c.ts', 'sub/ledger.ts'])
+    } finally {
+      rmSync(root, { recursive: true, force: true })
+    }
   })
 
   it('대장에 옮긴 상수가 다른 모듈에 이름만 남아 값을 복사해 두지 않았다', () => {
