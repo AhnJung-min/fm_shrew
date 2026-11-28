@@ -11,7 +11,8 @@
  * 시간을 재는 세계는 FM26 카탈로그로 연다. tests/helpers/baselineWorld.ts의 openBaselineWorld는 카탈로그 없이 세계를 만들어 옛 14역할이 되고,
  * 그러면 본체가 FM26 프로파일을 모두 건너뛰어 기준 분포를 하나도 구하지 못한다(그 빈 답을 대신 값으로 채우면 아주 빨리 끝나서 시간이 의미 없다).
  * 그래서 요청한 열쇠가 답에 빠짐없이 있는지(빠진 수 0)도 함께 본다.
- * 본체(src/main/index.ts)가 deps.norms에 거는 "한 번에 받는 프로파일 수" 한도도 같은 값으로 흉내 내서, 서비스가 나눠 묻는지 실제 길로 본다.
+ * 본체(U5의 src/main/index.ts)가 deps.norms에 거는 "한 번에 받는 프로파일 수" 한도도 같은 값으로 흉내 내서, 서비스가 나눠 묻는지 실제 길로 본다.
+ * (index.ts는 electron을 불러서 시험에서 열 수 없어, 한도 값은 이 파일과 그쪽이 같아야 한다.)
  */
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -33,7 +34,7 @@ const SAVE = process.env.FMB_TEST_SAVE
 const TEAM = Number(process.env.FMB_TEST_TEAM)
 /** 빈 캐시에서 전술 추천 한 번의 예산(ms) */
 const BUDGET_MS = 2000
-/** 본체가 기준 분포 요청 하나에 받아 주는 프로파일 수(src/main/index.ts의 NORMS_PROFILES_MAX와 같은 값: 전술 하나의 자리 수 × 저장하는 전술 수) */
+/** 본체가 기준 분포 요청 하나에 받아 주는 프로파일 수(2단계 U5가 src/main/index.ts에 두는 NORMS_PROFILES_MAX와 같은 값: 전술 하나의 자리 수 × 저장하는 전술 수) */
 const NORMS_PROFILES_MAX = TACTIC_SLOTS * TACTICS_PER_SAVE
 /** 본체의 기준 분포 함수가 이 브랜치에 있는가(없으면 시간 시험은 건너뛴다) */
 const HAS_NORMS_FOR = typeof (WorldService.prototype as unknown as { normsFor?: unknown }).normsFor === 'function'
