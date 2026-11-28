@@ -13,7 +13,7 @@ import { createServer, type Server } from 'node:http'
 import type { AddressInfo } from 'node:net'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import { ClubService, firstTeam } from '../src/main/clubService'
 import { GameLink } from '../src/main/gameLink'
 import { POSITION_COUNT } from '../src/main/save/reader'
@@ -671,7 +671,7 @@ describe('게임에서 전술 가져오기(서비스): 문과 읽기 순서', ()
       const partial = await readGameTactic(await input({ readRoleLists: true }))
       expect(partial.ok).toBe(true)
       expect(partial.message).toContain('22곳(전체 22곳)을 읽어 20곳을 견주었고, 그 가운데 0곳이 앱의 목록과 달랐습니다')
-      expect(partial.problems).toEqual(['자리별 역할 목록 2곳은 자리를 찾지 못해 견주지 못했습니다.'])
+      expect(partial.problems).toEqual(['자리별 역할 목록 2곳은 자리를 찾지 못했거나 목록이 비어 있어 견주지 못했습니다.'])
 
       // 목록의 포지션이 하나도 오지 않았으면 하나도 견주지 못했다고 알린다(0곳이 달랐다고 하지 않는다)
       const none = JSON.parse(tacticText)
@@ -681,7 +681,7 @@ describe('게임에서 전술 가져오기(서비스): 문과 읽기 순서', ()
       expect(nothing.ok).toBe(true)
       expect(nothing.message).toContain('하나도 견주지 못했습니다(읽은 목록 22곳, 전체 22곳)')
       expect(nothing.message).not.toContain('달랐습니다')
-      expect(nothing.problems).toEqual(['자리별 역할 목록 22곳은 자리를 찾지 못해 견주지 못했습니다.'])
+      expect(nothing.problems).toEqual(['자리별 역할 목록 22곳은 자리를 찾지 못했거나 목록이 비어 있어 견주지 못했습니다.'])
 
       // 게임이 바빠 중간에 멈춰 일부만 받았고 받은 것을 모두 견주었으면, 견주지 못했다는 문제는 만들지 않는다(받은 수와 전체 수로 알린다)
       const early = JSON.parse(tacticText)
@@ -774,6 +774,56 @@ describe('게임에서 전술 가져오기(서비스): 문과 읽기 순서', ()
     }
   })
 
+  it('"게임이 바쁩니다" 안내는 계속 안 되면 FM을 껐다 켜 달라고 알린다', async () => {
+    plugin = '0.14.0'
+    busy = true
+    try {
+      const result = await readGameTactic(await input())
+      expect(result.message).toContain('계속 안 되면 FM을 껐다 켜 주세요.')
+      // 앞의 안내(이 세이브를 불러왔는지 확인)와 뒤의 안내(전술을 직접 만들기)는 그대로 있고, 순서도 같다
+      expect(result.message).toMatch(/다시 눌러 주세요\. 계속 안 되면 게임에서 이 세이브를 불러왔는지 확인해 주세요\..*계속 안 되면 FM을 껐다 켜 주세요\. 지금은 전술을 직접 만들어 주세요\.$/)
+    } finally {
+      plugin = '0.11.0'
+      busy = false
+    }
+  })
+
+  it('askNote가 있으면 게임에 물은 뒤의 결과 글 끝에 붙는다(성공, 읽을 수 없는 답, 게임이 바쁨). 묻기 전에 끝난 결과에는 붙지 않는다', async () => {
+    plugin = '0.14.0'
+    const askNote = '[선수를 맞춰 보지 못함]'
+    const endsWithNote = (message: string): boolean => message.endsWith(` ${askNote}`)
+    try {
+      const done = await readGameTactic(await input({ askNote }))
+      expect(done.ok, done.message).toBe(true)
+      expect(endsWithNote(done.message)).toBe(true)
+      // 알림이 없으면 글은 그대로다
+      expect((await readGameTactic(await input())).message).not.toContain(askNote)
+      // 읽을 수 없는 답
+      tacticOverride = '[]'
+      const unreadable = await readGameTactic(await input({ askNote }))
+      expect(unreadable.ok).toBe(false)
+      expect(endsWithNote(unreadable.message)).toBe(true)
+      tacticOverride = null
+      // 게임이 바쁨
+      busy = true
+      const waiting = await readGameTactic(await input({ askNote }))
+      expect(waiting.message).toContain('게임이 바쁩니다')
+      expect(endsWithNote(waiting.message)).toBe(true)
+      busy = false
+      // 묻기 전에 끝난 것: 게임 판이 표에 없음, 옛 14역할 목록
+      const base = await input({ askNote })
+      for (const change of [{ game: { ...base.game, gameVersion: '26.4.0' } }, { catalog: LEGACY_CATALOG }] as Array<Partial<GameTacticInput>>) {
+        const early = await readGameTactic({ ...base, ...change })
+        expect(early.ok).toBe(false)
+        expect(early.message).not.toContain(askNote)
+      }
+    } finally {
+      plugin = '0.11.0'
+      tacticOverride = null
+      busy = false
+    }
+  })
+
   it('답을 읽을 수 없으면(숫자로 온 역할 번호, 모양이 틀림) 읽지 못했다고 알리고 전술을 만들지 않는다', async () => {
     plugin = '0.14.0'
     try {
@@ -844,12 +894,19 @@ describe('게임에서 전술 가져오기(창구): 읽기 전에 보는 조건'
     positions: new Uint8Array(players.length * POSITION_COUNT).fill(1)
   } as unknown as SaveWorld
   const connected: GameStatus = { connected: true, pluginVersion: '0.14.0', pluginOld: false, loaded: true, manager: '가상 감독', team: '가상 FC', teamShort: '가상', gameVersion: '26.3.2+2329565' }
-  /** roster는 게임이 /state로 알려 준 지금 내 팀 선수 이름(알려 주지 않았으면 빈 목록) */
-  const deps = (game: GameStatus, overrides: { world?: SaveWorld | null; path?: string | null; catalog?: string; roster?: string[] } = {}): Parameters<typeof importTactic>[0] =>
+  /** roster는 게임이 /state로 알려 준 지금 내 팀 선수 이름, rosterIds는 그 선수들의 고유 번호(알려 주지 않았으면 빈 목록) */
+  const deps = (
+    game: GameStatus,
+    overrides: { world?: SaveWorld | null; path?: string | null; catalog?: string; roster?: string[]; rosterIds?: number[] } = {}
+  ): Parameters<typeof importTactic>[0] =>
     ({
       settings: { get: () => ({ catalog: overrides.catalog ?? 'fm26', customRoles: [] }) },
       world: { world: overrides.world === undefined ? world : overrides.world, path: overrides.path === undefined ? '가상.fm' : overrides.path },
-      link: { status: () => ({ game, data: { club: '가상 FC' }, busy: false }), rosterNames: () => overrides.roster ?? [] }
+      link: {
+        status: () => ({ game, data: { club: '가상 FC' }, busy: false }),
+        rosterNames: () => overrides.roster ?? [],
+        rosterIds: () => overrides.rosterIds ?? []
+      }
     }) as never
 
   it('세이브가 없거나 내 팀을 모르거나 게임에 세이브가 없거나 다른 팀이면 게임에 묻지 않는다', async () => {
@@ -915,5 +972,72 @@ describe('게임에서 전술 가져오기(창구): 읽기 전에 보는 조건'
       plugin = '0.11.0'
       missing = new Set()
     }
+  })
+
+  describe('전술을 물을 선수를 찾는 차례: 게임이 알려 준 번호, 이름, 세이브 순서', () => {
+    /** 세이브의 1군 순서(이 시험의 세이브는 자리가 모두 같아 이름순이다) */
+    const bySaveOrder = [...roster].sort((a, b) => a.name.localeCompare(b.name, 'ko'))
+    const uidsOf = (from: number, to: number): number[] => bySaveOrder.slice(from, to).map((each) => each.uid)
+    const namesOf = (from: number, to: number): string[] => bySaveOrder.slice(from, to).map((each) => each.name)
+    const asks = (): string[] => asked.filter((url) => url.startsWith('/tactic?'))
+    const ask = (uids: number[]): string[] => uids.map((uid) => `/tactic?team=${TEAM}&uid=${uid}`)
+    /** 세이브 순서로 물었다는 알림(결과 글 끝에 붙는다) */
+    const NOTE = '세이브 순서대로 물었습니다'
+
+    beforeEach(() => {
+      plugin = '0.14.0'
+      // 모두 404로 답하게 해, 어느 선수에게 물었는지와 결과 글만 본다
+      missing = new Set(roster.map((each) => each.uid))
+      asked.length = 0
+    })
+    afterEach(() => {
+      plugin = '0.11.0'
+      missing = new Set()
+    })
+
+    it('번호가 맞는 선수에게 먼저 묻는다: 게임이 이름을 알려 주지 않았거나 이름이 달라도, 세이브 순서의 앞 세 명이 떠났어도 알림은 붙지 않는다', async () => {
+      const result = await importTactic(deps(connected, { rosterIds: uidsOf(3, roster.length) }))
+      expect(asks()).toEqual(ask(uidsOf(3, 6)))
+      expect(result.message).toContain('게임이 바쁩니다')
+      expect(result.message).not.toContain(NOTE)
+      // 이름은 하나도 맞지 않아도 번호가 맞으면 된다(표기가 달라도, 같은 이름의 선수가 둘이어도 번호는 틀리지 않는다)
+      asked.length = 0
+      await importTactic(deps(connected, { roster: ['가상 다른 선수'], rosterIds: uidsOf(8, 9) }))
+      expect(asks()).toEqual(ask(uidsOf(8, 9)))
+    })
+
+    it('번호와 이름이 서로 다른 선수를 가리키면 번호가 이긴다(번호로 한 명이라도 찾으면 이름은 보지 않는다)', async () => {
+      await importTactic(deps(connected, { roster: namesOf(0, 3), rosterIds: uidsOf(10, 12) }))
+      expect(asks()).toEqual(ask(uidsOf(10, 12)))
+    })
+
+    it('번호가 세이브의 어느 선수와도 맞지 않으면 이름으로 찾는다(알림 없음)', async () => {
+      const result = await importTactic(deps(connected, { roster: namesOf(5, 7), rosterIds: [1, 2, 3] }))
+      expect(asks()).toEqual(ask(uidsOf(5, 7)))
+      expect(result.message).not.toContain(NOTE)
+    })
+
+    it('번호도 이름도 맞지 않으면 세이브 순서대로 묻고, 결과 글에 한 줄로 알린다(실패해도 붙고, 알림은 한 번뿐이다)', async () => {
+      for (const [names, ids] of [
+        [[], []],
+        [['가상 다른 선수'], [1, 2]],
+        [[], [0]]
+      ] as Array<[string[], number[]]>) {
+        asked.length = 0
+        const result = await importTactic(deps(connected, { roster: names, rosterIds: ids }))
+        expect(asks(), JSON.stringify([names, ids])).toEqual(ask(uidsOf(0, 3)))
+        expect(result.ok).toBe(false)
+        expect(result.message).toContain('게임이 바쁩니다')
+        expect(result.message.endsWith('전술일 수 있습니다).'), result.message).toBe(true)
+        expect(result.message.split(NOTE), result.message).toHaveLength(2)
+      }
+    })
+
+    it('게임에 묻기 전에 끝나면(옛 14역할 목록) 아무에게도 묻지 않았으니 알림도 붙지 않는다', async () => {
+      const result = await importTactic(deps(connected, { catalog: 'legacy14' }))
+      expect(result.message).toContain('옛 14역할')
+      expect(result.message).not.toContain(NOTE)
+      expect(asks()).toEqual([])
+    })
   })
 })

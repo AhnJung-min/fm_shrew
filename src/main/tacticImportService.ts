@@ -23,7 +23,11 @@ const QUICK_FAIL_MS = 10_000
 /** 자리 11개 × 두 국면 */
 const ROLE_LISTS_EXPECTED = 22
 
-const BUSY_MESSAGE = '게임이 바쁩니다. 날짜를 넘기는 중이거나 경기 중이면 끝난 뒤에 다시 눌러 주세요. 계속 안 되면 게임에서 이 세이브를 불러왔는지 확인해 주세요. 지금은 전술을 직접 만들어 주세요.'
+const BUSY_MESSAGE =
+  '게임이 바쁩니다. 날짜를 넘기는 중이거나 경기 중이면 끝난 뒤에 다시 눌러 주세요. 계속 안 되면 게임에서 이 세이브를 불러왔는지 확인해 주세요. 그래도 계속 안 되면 FM을 껐다 켜 주세요. 지금은 전술을 직접 만들어 주세요.'
+
+/** 전술을 물을 선수를 게임이 알려 준 선수와 맞춰 보지 못해 세이브 순서대로 물었을 때 결과 글 끝에 붙이는 한 줄 */
+const SAVE_ORDER_NOTE = '지금 내 팀 선수를 게임과 맞춰 보지 못해 세이브 순서대로 물었습니다(저장한 뒤 팀을 떠난 선수가 앞이면 다른 팀의 전술일 수 있습니다).'
 
 /** 자리별 역할 목록을 견준 결과 한 줄(안내 글 뒤에 붙는다). 읽은 수와 견준 수와 다른 수를 모두 적어, 견주지 못한 것이 "다른 곳 없음"으로 읽히지 않게 한다 */
 function roleListNote(received: number, compared: number, different: number): string {
@@ -44,6 +48,8 @@ export interface GameTacticInput {
   readRoleLists: boolean
   /** 새 전술의 번호 */
   id: string
+  /** 게임에 물은 뒤의 결과 글(성공이든 실패든) 끝에 붙일 한 줄. 게임에 묻기 전에 끝난 결과(게임 판·목록 문제)에는 붙지 않는다 */
+  askNote?: string
 }
 
 /** 게임에 묻고 풀어 전술 초안을 만든다. 게임이 켜져 있는지, 플러그인과 게임 판이 맞는지도 여기서 본다(나머지 조건은 importTactic이 본다) */
@@ -67,21 +73,22 @@ export async function readGameTactic(input: GameTacticInput): Promise<TacticImpo
     const read = parseTacticAnswer(raw)
     if (!read || read.ip.rows.length + read.oop.rows.length > 0) break
   }
-  if (raw === null) return tacticImportFailed(BUSY_MESSAGE)
+  const withNote = (message: string): string => (input.askNote ? `${message} ${input.askNote}` : message)
+  if (raw === null) return tacticImportFailed(withNote(BUSY_MESSAGE))
   const answer = parseTacticAnswer(raw)
-  if (!answer) return tacticImportFailed('게임이 준 전술 정보를 읽지 못했습니다. 게임 안 플러그인과 앱의 버전이 맞는지 확인해 주세요. 지금은 전술을 직접 만들어 주세요.')
+  if (!answer) return tacticImportFailed(withNote('게임이 준 전술 정보를 읽지 못했습니다. 게임 안 플러그인과 앱의 버전이 맞는지 확인해 주세요. 지금은 전술을 직접 만들어 주세요.'))
 
   const converted = tacticFromGame(answer, input.catalog, gate.row, input.id)
   const report = input.readRoleLists && converted.tactic ? roleListReport(answer, input.catalog, gate.row, converted.tactic) : null
   const gameName = answer.ip.name || answer.oop.name
   const formationName = answer.ip.formation || answer.oop.formation
-  // 받은 목록 가운데 자리를 찾지 못해 견주지 못한 것은 "다른 곳 없음"으로 읽히지 않게 따로 알린다(U4 자료의 "확인 전" 칸을 이 결과로 고친다)
+  // 받은 목록 가운데 자리를 찾지 못했거나 비어 있어 견주지 못한 것은 "다른 곳 없음"으로 읽히지 않게 따로 알린다(U4 자료의 "확인 전" 칸을 이 결과로 고친다)
   const received = answer.roleLists.length
   const notCompared = report ? received - report.compared : 0
   const problems = [
     ...converted.problems,
     ...(report?.lines ?? []),
-    ...(notCompared > 0 ? [`자리별 역할 목록 ${notCompared}곳은 자리를 찾지 못해 견주지 못했습니다.`] : [])
+    ...(notCompared > 0 ? [`자리별 역할 목록 ${notCompared}곳은 자리를 찾지 못했거나 목록이 비어 있어 견주지 못했습니다.`] : [])
   ]
   const listNote = report ? roleListNote(received, report.compared, report.different) : ''
   const message = converted.tactic
@@ -91,7 +98,7 @@ export async function readGameTactic(input: GameTacticInput): Promise<TacticImpo
     : '게임의 전술을 앱의 전술로 바꾸지 못했습니다. 아래 까닭을 확인하고 전술을 직접 만들어 주세요.'
   return {
     ok: converted.ok,
-    message,
+    message: withNote(message),
     ...(converted.tactic ? { draft: converted.tactic } : {}),
     problems,
     unknownBits: converted.unknownBits,
@@ -101,15 +108,23 @@ export async function readGameTactic(input: GameTacticInput): Promise<TacticImpo
   }
 }
 
+/** 전술을 물을 선수를 무엇으로 찾았는지: id 게임이 알려 준 고유 번호, name 게임이 알려 준 이름, save 맞는 선수가 없어 세이브의 순서 그대로 */
+type AskedBy = 'id' | 'name' | 'save'
+
 /**
  * 전술을 물을 선수 번호들(앞에서부터 해 본다). 게임은 선수를 거쳐 "그 선수의 지금 팀"의 전술을 주므로, 그 선수가 지금도 내 팀이어야 한다.
  * 세이브의 소속은 마지막으로 저장했을 때의 것이라, 저장한 뒤에 팔았거나 2군으로 내린 선수가 앞에 있으면 다른 팀의 전술이 올 수 있다.
- * 그래서 게임이 알려 준 지금 내 팀 선수 이름(/state)에 있는 선수만 쓴다. 게임이 이름을 알려 주지 않았거나 겹치는 선수가 하나도 없으면 세이브의 순서 그대로다.
+ * 그래서 세이브의 1군 가운데 게임이 알려 준 지금 내 팀 선수(/state)만 쓴다. 맞춰 보는 차례는 고유 번호, 이름, 세이브의 순서 그대로다.
+ * 번호는 이름이 같은 선수가 둘이거나 표기가 달라도 틀리지 않아서 먼저 쓰고, 앞의 방법으로 한 명이라도 찾으면 다음 방법은 쓰지 않는다.
  */
-function playersToAsk(mine: RosterPlayer[], currentNames: readonly string[]): number[] {
-  const now = new Set(currentNames)
-  const present = mine.filter((player) => now.has(player.name))
-  return (present.length > 0 ? present : mine).map((player) => player.uid)
+function playersToAsk(mine: RosterPlayer[], current: { ids: readonly number[]; names: readonly string[] }): { uids: number[]; by: AskedBy } {
+  const ids = new Set(current.ids)
+  const byId = mine.filter((player) => ids.has(player.uid))
+  if (byId.length > 0) return { uids: byId.map((player) => player.uid), by: 'id' }
+  const names = new Set(current.names)
+  const byName = mine.filter((player) => names.has(player.name))
+  if (byName.length > 0) return { uids: byName.map((player) => player.uid), by: 'name' }
+  return { uids: mine.map((player) => player.uid), by: 'save' }
 }
 
 export async function importTactic(deps: Phase2Deps, options?: { readRoleLists?: boolean }): Promise<TacticImportResult> {
@@ -125,12 +140,15 @@ export async function importTactic(deps: Phase2Deps, options?: { readRoleLists?:
   if (club && link.game.team && !club.includes(link.game.team) && !link.game.team.includes(club)) {
     return tacticImportFailed(`게임은 지금 ${link.game.team}(으)로 들어가 있어 적용한 세이브의 팀(${club})과 다릅니다. 같은 세이브를 불러와 주세요.`)
   }
+  const asked = playersToAsk(firstTeam(world), { ids: deps.link.rosterIds(), names: deps.link.rosterNames() })
   return readGameTactic({
     game: link.game,
     teamId: world.teamId,
-    uids: playersToAsk(firstTeam(world), deps.link.rosterNames()),
+    uids: asked.uids,
     catalog: activeCatalog(deps.settings.get()),
     readRoleLists: options?.readRoleLists === true,
-    id: `game:${Date.now().toString(36)}`
+    id: `game:${Date.now().toString(36)}`,
+    // 맞는 선수를 찾지 못해 세이브 순서대로 물었으면 결과 글에 한 줄로 알린다(성공해도, 실패해도: 다른 팀의 전술이 왔을 수 있고, 실패의 까닭일 수도 있다)
+    ...(asked.by === 'save' && asked.uids.length > 0 ? { askNote: SAVE_ORDER_NOTE } : {})
   })
 }
