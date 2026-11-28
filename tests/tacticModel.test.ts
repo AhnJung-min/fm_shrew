@@ -325,6 +325,8 @@ describe('validateTactic: 저장하기 전 검사', () => {
       expect(problems[0].phase, phase).toBeUndefined()
       expect(problems[0].message, phase).toContain('8번째 자리')
       expect(problems[1].message, phase).toContain('11번째 자리')
+      // 화면에 그대로 나오는 글이라 국면 이름은 게임 낱말이다
+      for (const problem of problems) expect(problem.message, phase).toContain('공 소유 시와 공 미소유 시 모두 골키퍼 칸')
       // 저장해 둔 묶음에 이런 전술이 있으면 분석을 돌릴 수 없는 것으로 보아 쓰지 않는다
       const set = { catalog: 'fm26', tactics: [{ ...tactic, catalog: 'fm26' as const }], mainId: tactic.id } satisfies TacticSet
       expect(resolveMainTactic(settingsOf({ formation: '3-5-2', tacticsDefault: set }), null, FAKE_FM26).id).toBe('preset:3-5-2')
@@ -390,6 +392,8 @@ describe('validateTactic: 저장하기 전 검사', () => {
     for (const share of [101, -1, 1.5, Number.NaN, Number.POSITIVE_INFINITY, '60', undefined]) {
       expect(codesOf(validateTactic({ ...base, sharePct: share as number }, LEGACY_CATALOG)), `${String(share)}`).toEqual(['share'])
     }
+    // 화면에 그대로 나오는 글이라 국면 이름은 게임 낱말이다
+    expect(validateTactic({ ...base, sharePct: 101 }, LEGACY_CATALOG)[0].message).toContain('공 소유 시 비중은')
   })
 
   it('이름은 1~40글자여야 한다(너무 길거나 빈 이름 거절)', () => {

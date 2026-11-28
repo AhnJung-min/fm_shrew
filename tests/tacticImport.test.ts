@@ -311,6 +311,8 @@ describe('tacticFromGame: 견본 → 전술 초안', () => {
     expect(unmatchedResult.ok).toBe(false)
     expect(unmatchedResult.tactic).toBeUndefined()
     expect(unmatchedResult.problems.join('\n')).toContain('서로 맞지 않습니다')
+    // 화면에 그대로 나오는 글이라 국면 이름은 게임 낱말이다
+    expect(unmatchedResult.problems).toContain('공 소유 시와 공 미소유 시의 자리 번호가 서로 맞지 않습니다.')
 
     const duplicated = fresh()
     duplicated.ip.items[3].Index = '2'
