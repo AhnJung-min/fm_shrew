@@ -39,8 +39,8 @@
  * - 표시용: 점수에 영향이 없고 이유 문장에만 쓰이는 것(REASON_MIN_POINTS).
  *
  * 캐시
- * - withLedger는 상수에서 계산한 캐시를 비우지 않는다. 변형마다 역할 기준 분포와 구단 체급 캐시를 비워 새로 구하게 한다(WorldService의
- *   비공개 값을 시험에서 직접 비운다. baseline.test.ts가 기준 분포 시간을 잴 때 하던 것과 같다). 기준 분포는 0.5초 안이라 세이브를 다시 읽지 않는다.
+ * - withLedger는 상수에서 계산한 캐시를 비우지 않는다. 변형마다 기준 분포와 구단 체급 캐시를 비워 새로 구하게 한다(WorldService의
+ *   공개 함수 clearScoringCaches()를 부른다. baseline.test.ts가 기준 분포 시간을 잴 때 하던 것과 같다). 기준 분포는 0.5초 안이라 세이브를 다시 읽지 않는다.
  * - 주급 모델(영입 후보의 자유 계약 비용 어림)을 세우는 데 읽는 상수(WAGE_*)는 변형마다 모델을 다시 세운다.
  * - 변형이 끝나면 캐시를 다시 비우고(바뀐 값으로 만든 캐시가 남지 않게) 주급 모델도 기본값으로 되돌린다.
  */
@@ -199,13 +199,9 @@ describe.skipIf(!SAVE || !Number.isInteger(TEAM) || TEAM <= 0 || !RUN)('고정 �
       const started = performance.now()
       const world: BaselineWorld = await openBaselineWorld(SAVE!, TEAM)
       const { ws, dash } = world
-      const caches = ws as unknown as { normCache: unknown; statureCache: unknown }
       const wageModel = dash as unknown as { model: unknown }
 
-      const clearCaches = (): void => {
-        caches.normCache = null
-        caches.statureCache = null
-      }
+      const clearCaches = (): void => ws.clearScoringCaches()
       const refitWage = async (): Promise<void> => {
         wageModel.model = null
         await dash.prepareWageModel()

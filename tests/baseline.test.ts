@@ -15,16 +15,26 @@
  * score·effScore·z·숙련·임시 주전 여부, 필요도와 항목 점수, 묶음 id와 비교 기준, 줄의 z 평균, 기준 분포 전 항목, 탭별 상위 30명의 추천 점수와 풀이 값,
  * 대시보드 목록을 반올림 없이 적고, 포메이션마다 자리 하나씩 다른 옛 역할로 바꾼 전술의 분석도 적는다(후보 찾기 없이).
  * 옛 카탈로그(14역할)로 고정한 기준이라 2단계 뒤에도 영구히 돈다. 1자리 기준 결과의 모드와 파일은 이 모드가 바꾸지 않는다.
+ *
+ * FM26 시간(2단계 U5)은 기준 결과 없이 시간만 잰다(맨 아래 시험): FM26 카탈로그를 직접 끼운 세계에서 주 전술(4-2-3-1 프리셋)의 기준 분포(빈 캐시),
+ * 4-2-3-1 중앙 수비 묶음의 후보 찾기(일반·가장 넓은 조건, 탭마다)는 옛 카탈로그와 같은 예산 안이어야 한다. 참조 프로파일 40개의 기준 분포와
+ * 프로파일 많이 묻기(전술 추천의 바탕)의 시간은 찍기만 한다. FM26 기준 결과는 전환 때 U6이 쓴다.
  */
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
-import { dirname } from 'node:path'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { dirname, join } from 'node:path'
 import { describe, expect, it } from 'vitest'
+import { DashboardService } from '../src/main/dashboardService'
+import { SeasonService } from '../src/main/seasonService'
+import { WorldService } from '../src/main/worldService'
+import { FM26_CATALOG } from '../src/shared/catalogFm26'
 import { FIELDS } from '../src/shared/fields'
 import { FORMATIONS } from '../src/shared/depth'
 import { DEFAULT_ROLE, rolesFor } from '../src/shared/roles'
 import { analyseTactic, type SlotGroup } from '../src/shared/tactic'
+import { presetTactic } from '../src/shared/tacticModel'
 import type { CellValue, ColumnInfo, PlayerRow } from '../src/shared/types'
-import { type CandidateCategory } from '../src/shared/world'
+import { type CandidateCategory, type CandidateQuery } from '../src/shared/world'
 import { BUDGET_MS, diffJson, formatDiff, r1, timeIt, type Json } from './helpers/baselineDiff'
 import { groupQuery, openBaselineWorld } from './helpers/baselineWorld'
 import { alternativeRoleVariants, exact, exactAnalysis, exactCandidates, exactDashboard, exactNorms } from './helpers/exactSnapshot'
@@ -203,9 +213,8 @@ describe.skipIf(!SAVE || !Number.isInteger(TEAM) || TEAM <= 0)('고정 세이브
       report.push(`세이브 읽기 ${Math.round(readMs)}ms (찍기만 함)`)
 
       // ---- 기준 분포(역할 14개 전체) ----
-      const normCache = ws as unknown as { normCache: unknown }
       const norms = timeIt(() => {
-        normCache.normCache = null
+        ws.clearScoringCaches()
         ws.roleNorms()
       }, 3)
       report.push(`기준 분포 계산 중앙값 ${Math.round(norms.median)}ms (예산 ${BUDGET_MS.norms}ms)`)
@@ -345,6 +354,103 @@ describe.skipIf(!SAVE || !Number.isInteger(TEAM) || TEAM <= 0 || !BASELINE_EXACT
         const text = formatDiff(lines)
         console.log(`[정밀 기준 결과 대조]\n${text}`)
         expect(lines.length, text).toBe(0)
+      }
+    },
+    600_000
+  )
+})
+
+describe.skipIf(!SAVE || !Number.isInteger(TEAM) || TEAM <= 0)('고정 세이브: FM26 카탈로그의 시간(기준 결과 없음, 시간만)', () => {
+  it(
+    '주 전술 기준 분포(빈 캐시)와 4-2-3-1 중앙 수비 묶음의 후보 찾기가 예산 안이다. 참조 40개와 프로파일 많이 묻기는 찍기만 한다',
+    async () => {
+      const report: string[] = []
+      const tactic = presetTactic('4-2-3-1', FM26_CATALOG)
+      // FM26 카탈로그를 직접 끼운다(기본 카탈로그는 아직 옛 14역할이다). 역할 가중치는 기본값, 이름 저장소는 임시 폴더다
+      const namesDir = mkdtempSync(join(tmpdir(), 'fmb-baseline-fm26-names-'))
+      let dash: DashboardService | null = null
+      const ws = new WorldService({
+        knownTeam: () => TEAM,
+        rosterNames: () => [],
+        rememberTeam: () => undefined,
+        roleWeights: () => ({}),
+        catalog: () => FM26_CATALOG,
+        mainTactic: () => tactic,
+        wageModel: () => dash?.currentWageModel() ?? null,
+        namesDir
+      })
+      const readStart = performance.now()
+      ws.apply(SAVE!)
+      report.push(`세이브 읽기 ${Math.round(performance.now() - readStart)}ms (찍기만 함)`)
+      const world = ws.world!
+      const season = new SeasonService({ current: () => ({ path: SAVE!, world }), namesDir })
+      dash = new DashboardService({ world: ws, season, settings: () => ({ tactic, catalog: FM26_CATALOG, roleWeights: {} }), namesDir })
+      await dash.prepareWageModel()
+
+      // ---- 주 전술의 기준 분포(빈 캐시) ----
+      const norms = timeIt(() => {
+        ws.clearScoringCaches()
+        return ws.roleNorms()
+      }, 3)
+      report.push(`FM26 주 전술(4-2-3-1) 기준 분포 계산 중앙값 ${Math.round(norms.median)}ms (예산 ${BUDGET_MS.norms}ms)`)
+
+      // ---- 참조 프로파일(점유 시 40개, 비점유 시 39개) ----
+      const references = timeIt(() => {
+        ws.clearScoringCaches()
+        return ws.referenceNorms('ip')
+      }, 3)
+      report.push(`FM26 참조 프로파일 40개 기준 분포(빈 캐시) 중앙값 ${Math.round(references.median)}ms (찍기만 함)`)
+      // ---- 프로파일 많이 묻기: 전술 추천이 바탕으로 쓰는 일(점유 시·비점유 시 역할을 짝지은 서로 다른 프로파일 200개) ----
+      const profiles = []
+      for (const ip of FM26_CATALOG.references('ip')) {
+        for (const oop of FM26_CATALOG.references('oop')) {
+          const position = ip.positions.find((each) => oop.positions.includes(each))
+          if (position) profiles.push({ ip: { position, roleId: ip.roleId }, oop: { position, roleId: oop.roleId }, sharePct: 40 + 10 * (profiles.length % 5) })
+        }
+      }
+      const many = profiles.slice(0, 200)
+      const bulk = timeIt(() => {
+        ws.clearScoringCaches()
+        return ws.normsFor(many)
+      }, 2)
+      report.push(`FM26 프로파일 ${many.length}개 기준 분포(빈 캐시) 중앙값 ${Math.round(bulk.median)}ms (찍기만 함)`)
+
+      // ---- 후보 찾기: 4-2-3-1 중앙 수비 묶음 ----
+      ws.clearScoringCaches()
+      const squad = ws.squad()
+      expect(squad.ok, squad.message).toBe(true)
+      const analysis = analyseTactic({ rows: squad.rows, columns: squad.columns, today: squad.today, tactic, catalog: FM26_CATALOG, roleWeights: {}, norms: squad.roleNorms })!
+      const group = analysis.groups.find((each) => each.position === 'DC') ?? analysis.groups[0]
+      const searches: Array<{ key: string; ordinary: number; widest: number }> = []
+      for (const category of TABS) {
+        const ask = (widest: boolean): CandidateQuery => ({
+          roleId: group.roleId,
+          category,
+          maxAge: null,
+          onlyEligible: !widest,
+          includeUnknownClub: widest,
+          search: '',
+          expiringWithinMonths: null,
+          slot: { tactic, index: group.slots[0] }
+        })
+        expect(ws.candidates(ask(false)).ok).toBe(true)
+        searches.push({ key: category, ordinary: timeIt(() => ws.candidates(ask(false))).median, widest: timeIt(() => ws.candidates(ask(true))).median })
+      }
+      for (const each of searches) {
+        report.push(`FM26 후보 찾기 ${each.key.padEnd(8)} 일반 ${each.ordinary.toFixed(1)}ms (예산 ${BUDGET_MS.searchOrdinary}) / 가장 넓은 조건 ${each.widest.toFixed(1)}ms (예산 ${BUDGET_MS.searchWidest})`)
+      }
+      // ---- 대시보드(찍기만 한다) ----
+      const dashStart = performance.now()
+      const board = await dash.dashboard()
+      report.push(`FM26 대시보드 계산 ${Math.round(performance.now() - dashStart)}ms (찍기만 함, 참조 기준 분포 포함)`)
+      expect(board.ok, board.message).toBe(true)
+      console.log(`\n[FM26 시간]\n${report.join('\n')}\n`)
+
+      // ---- 예산 ----
+      expect(norms.median, 'FM26 주 전술 기준 분포 계산').toBeLessThanOrEqual(BUDGET_MS.norms)
+      for (const each of searches) {
+        expect(each.ordinary, `FM26 후보 찾기(일반) ${each.key}`).toBeLessThanOrEqual(BUDGET_MS.searchOrdinary)
+        expect(each.widest, `FM26 후보 찾기(가장 넓은 조건) ${each.key}`).toBeLessThanOrEqual(BUDGET_MS.searchWidest)
       }
     },
     600_000
