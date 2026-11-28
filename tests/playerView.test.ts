@@ -60,7 +60,7 @@ describe('formatPounds', () => {
     expect(formatPounds(3)).toBe('5,625원')
     expect(shortRange('1,560억 원 - 2,350억 원')).toBe('1,560~2,350억 원')
     expect(shortRange('970억 원')).toBe('970억 원')
-    expect(shortRange('900만 원 - 1.2억 원')).toBe('900만 원 - 1.2억 원')
+    expect(shortRange('900만 원 - 1.2억 원')).toBe('900만~1.2억 원')
     expect(formatPounds(0)).toBe('')
     expect(formatPounds(null)).toBe('')
   })

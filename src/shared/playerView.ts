@@ -1,6 +1,7 @@
 /** 선수 정보 화면이 쓰는 순수한 도우미들(값을 글자와 단계로 바꾸는 일) */
 
 import { FIELDS } from './fields'
+import { moneyRange } from './numberFormat'
 import { HIDDEN_ATTRIBUTE_LABEL, SAVE_ATTRIBUTE_ORDER, type ProfileAttribute, type SaveAttributeId } from './world'
 
 /** 포지션 숙련도(1~20)의 단계: 20 주 포지션, 15~19 능숙, 10~14 어느 정도, 그 아래 서툼 */
@@ -110,10 +111,12 @@ export function formatWon(won: number): string {
   return whole >= 10_000 ? `${sign}1만 원` : `${sign}${comma(whole)}원`
 }
 
-/** 게임의 몸값 범위 "1,560억 원 - 2,350억 원"을 표에 맞게 "1,560~2,350억 원"으로 줄인다(단위가 다르거나 범위가 아니면 그대로) */
+/**
+ * 게임의 몸값 범위를 표에 맞게 범위 한 꼴로 줄인다: "1,560억 원 - 2,350억 원" → "1,560~2,350억 원", 단위가 다르면 "900만 원 - 1.2억 원" → "900만~1.2억 원".
+ * 범위가 아니거나 알아보지 못하는 꼴이면 그대로 둔다. 몸은 numberFormat.ts의 moneyRange다(범위 규칙이 한 함수에 있다)
+ */
 export function shortRange(text: string): string {
-  const match = text.match(/^([\d.,]+)\s*(억|만)\s*원\s*-\s*([\d.,]+)\s*(억|만)\s*원$/)
-  return match && match[2] === match[4] ? `${match[1]}~${match[3]}${match[2]} 원` : text
+  return moneyRange(text)
 }
 
 /** 파운드 금액(세이브·계산에 쓰는 값)을 원화로 바꿔 짧게 적는다. 모르면 빈 글자. 이름은 옛것이다 */
