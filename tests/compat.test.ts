@@ -2,6 +2,7 @@
  * 지원 버전 표와 게임 판 확인(N-02): 게임 판 글자를 읽고, 표에 있는지 판정하고, 게임에서 읽는 기능을 열고 닫는 문을 본다.
  */
 import { describe, expect, it } from 'vitest'
+import { SIGNATURE } from '../src/main/save/container'
 import { checkGameVersion, gameReadGate, normalizeVersion, roleGameId, SUPPORTED_VERSIONS } from '../src/shared/compat'
 import { NEEDED_PLUGIN, TACTIC_PLUGIN } from '../src/shared/game'
 import { DEFAULT_ROLE } from '../src/shared/roles'
@@ -86,6 +87,12 @@ describe('지원 표의 모양', () => {
       expect(bit, text).toBeGreaterThan(0n)
     }
     expect(new Set(row.dutyBits).size).toBe(6)
+  })
+
+  it('세이브 형식 글자는 세이브를 읽는 코드(container.ts)의 꾸러미 머리 서명과 같다', () => {
+    // 서명: 02 01 "fmf." 08 00 00. 표에는 "fmf." 뒤의 판 바이트를 적는다
+    expect(SIGNATURE.subarray(2, 6).toString('latin1')).toBe('fmf.')
+    expect(row.saveFormat).toBe(`fmf.${SIGNATURE[6].toString(16).padStart(2, '0')}`)
   })
 
   it('기능마다 필요한 플러그인 버전은 0.14.0이다', () => {

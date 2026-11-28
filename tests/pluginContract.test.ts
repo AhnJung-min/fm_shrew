@@ -52,6 +52,8 @@ let oldPlugin = false
 let plugin: '0.11.0' | '0.13.0' | '0.14.0' = '0.11.0'
 /** /tactic이 "player not found"(404)로 답할 선수 번호들, 그리고 게임이 바빠 모두 503으로 답하는지 */
 let missing = new Set<number>()
+/** /tactic이 자리 없는 빈 답(전술을 읽을 수 없는 선수)으로 답할 선수 번호들 */
+let emptyFor = new Set<number>()
 let busy = false
 /** /tactic의 답을 견본 대신 이 글자로 돌려준다(null이면 견본) */
 let tacticOverride: string | null = null
@@ -69,6 +71,7 @@ beforeAll(async () => {
       const query = new URL(url, 'http://localhost').searchParams
       if (busy) response.writeHead(503).end('game busy')
       else if (missing.has(Number(query.get('uid')))) response.writeHead(404).end('player not found')
+      else if (emptyFor.has(Number(query.get('uid')))) json(JSON.stringify({ ip: { fields: {}, items: [] }, oop: { fields: {}, items: [] } }))
       else if (tacticOverride !== null) json(tacticOverride)
       else json(query.get('roles') === '1' ? tacticText : JSON.stringify({ ip: JSON.parse(tacticText).ip, oop: JSON.parse(tacticText).oop }))
     } else if (plugin === '0.14.0' && url.startsWith('/rolestars?')) json(roleStarsText)
@@ -521,6 +524,29 @@ describe('게임에서 전술 가져오기(서비스): 문과 읽기 순서', ()
     } finally {
       plugin = '0.11.0'
       missing = new Set()
+    }
+  })
+
+  it('자리가 하나도 오지 않은 빈 답이면 다음 선수로 해 본다(세 명까지). 끝내 비어 있으면 11개가 아니라고 알린다', async () => {
+    plugin = '0.14.0'
+    try {
+      emptyFor = new Set([uids[0]])
+      asked.length = 0
+      const recovered = await readGameTactic(await input())
+      expect(recovered.ok).toBe(true)
+      expect(tacticCalls()).toEqual([`/tactic?team=${TEAM}&uid=${uids[0]}`, `/tactic?team=${TEAM}&uid=${uids[1]}`])
+
+      emptyFor = new Set(uids)
+      asked.length = 0
+      const none = await readGameTactic(await input())
+      expect(none.ok).toBe(false)
+      expect(none.draft).toBeUndefined()
+      expect(none.problems.join('\n')).toContain('11개여야 하는데 0개가 왔습니다')
+      expect(none.message).toContain('직접 만들어 주세요')
+      expect(tacticCalls()).toHaveLength(3)
+    } finally {
+      plugin = '0.11.0'
+      emptyFor = new Set()
     }
   })
 

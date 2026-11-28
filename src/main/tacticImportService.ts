@@ -52,7 +52,13 @@ export async function readGameTactic(input: GameTacticInput): Promise<TacticImpo
   for (const uid of input.uids.slice(0, MAX_TRIES)) {
     const asked = Date.now()
     raw = await gameTactic(input.teamId, uid, input.readRoleLists)
-    if (raw !== null || Date.now() - asked > QUICK_FAIL_MS) break
+    if (raw === null) {
+      if (Date.now() - asked > QUICK_FAIL_MS) break
+      continue
+    }
+    // 이 선수로는 자리가 하나도 오지 않았으면 다음 선수로 해 본다(읽을 수 없는 답은 다른 선수로 해도 같다)
+    const read = parseTacticAnswer(raw)
+    if (!read || read.ip.rows.length + read.oop.rows.length > 0) break
   }
   if (raw === null) return tacticImportFailed(BUSY_MESSAGE)
   const answer = parseTacticAnswer(raw)
