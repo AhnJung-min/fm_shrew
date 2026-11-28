@@ -1,11 +1,11 @@
 /**
  * 민감도 회귀(F-11): 대장의 상수를 하나씩 ±20%로 바꿔(숙련 감점 계수는 절반과 두 배) 고정 세이브에서
- * 영입 후보의 탭별 상위 10명이 얼마나 그대로인지 잰다. 결과는 대장의 민감도 칸에 옮겨 적는다(src/shared/ledger.ts).
+ * 영입 후보의 탭별 상위 10명이 얼마나 그대로인지 잰다. 결과는 대장의 측정 표(src/shared/ledger.ts의 MEASURED)에 옮겨 적고, 항목의 민감도는 거기서 정해진다.
  *
  * 환경 변수가 모두 있어야 돌고, 없으면 건너뛴다(느리다: 상수 100개 남짓 × 2방향 × 후보 찾기 수십 번).
  *   FMB_TEST_SAVE       고정해 둔 세이브 사본의 경로(tests/baseline.test.ts와 같다)
  *   FMB_TEST_TEAM       그 세이브에서 내 팀 번호
- *   FMB_SENSITIVITY     1이어야 돈다
+ *   FMB_SENSITIVITY     1이어야 돈다(18분쯤 걸려서, 세이브 변수만 준 채 시험 전체를 돌릴 때 끼지 않게 했다)
  *   FMB_SENSITIVITY_OUT 보고서 JSON을 쓸 경로(없으면 쓰지 않는다). 상수 이름이 열쇠이고 선수 이름은 없다
  *   FMB_SENSITIVITY_ONLY 쉼표로 나눈 상수 이름만 잰다(고칠 때 빠르게 보는 용도)
  *
@@ -18,7 +18,9 @@
  * - 겹침@10 = |기준 상위 10 ∩ 변형 상위 10| / 10. 기준 목록이 10명보다 적으면 그 수로 나누고, 비어 있으면 그 묶음은 뺀다.
  * - 탭마다 자리 묶음의 평균을 내고, 상수의 점수는 (조건 × 변형 방향 × 탭) 가운데 가장 나쁜 값이다. 그 조건·탭·방향을 함께 적는다.
  * - 자유 계약 탭은 이 세이브에서 기준 목록이 거의 비어(자유 계약 선수 가운데 어느 유형에도 드는 선수가 없다) 견줄 수 없다. 출력에 '-'로 나온다.
- * - 점수가 0.8 미만이면 민감이다. 검사는 민감한 상수가 있어도 실패하지 않고, 목록만 출력한다.
+ * - 점수가 0.8 미만이면 민감이다. 검사는 민감한 상수가 있어도 실패하지 않고, 목록(이름, 점수, 탭, 방향)만 출력한다.
+ * - 새로 잰 결과가 대장의 측정 표와 다르면 어느 상수가 어떻게 다른지도 출력만 한다(실패하지 않는다).
+ *   끝까지 돌리면(FMB_SENSITIVITY_ONLY 없이) 표에 붙일 줄도 출력한다. 상수나 식을 바꾼 뒤에는 이 검사를 다시 돌려 표를 고치고, npm run docs:ledger로 문서를 다시 만든다.
  * - 값이 바뀌어도 어느 목록도 바뀌지 않은 상수는 "변화 없음"으로 표시한다. 보통(0.8 이상)이지만 이 세이브에서 영향을 주지 못했다는 뜻이다(목록에 들지 못한 영역의 상수이거나 경계에 닿지 않은 것).
  *
  * 어떻게 바꾸나(규칙은 tests/helpers/sensitivity.ts)
@@ -45,10 +47,22 @@
 import { mkdirSync, writeFileSync } from 'node:fs'
 import { dirname } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { K, LEDGER, withLedger, type LedgerEntry } from '../src/shared/ledger'
+import { K, LEDGER, SENSITIVE_BELOW, withLedger, type LedgerEntry, type LedgerMeasure } from '../src/shared/ledger'
 import { analyseTactic, type SlotGroup } from '../src/shared/tactic'
 import { groupQuery, openBaselineWorld, type BaselineWorld } from './helpers/baselineWorld'
-import { meanOverlap, overlapAt10, scaleNumber, TAB_LABEL, TABS, variantsOf, type Tab, type Variant } from './helpers/sensitivity'
+import {
+  ledgerDisagreements,
+  ledgerTableLine,
+  meanOverlap,
+  overlapAt10,
+  scaleNumber,
+  TAB_LABEL,
+  TABS,
+  toLedgerMeasure,
+  variantsOf,
+  type Tab,
+  type Variant
+} from './helpers/sensitivity'
 
 const SAVE = process.env.FMB_TEST_SAVE
 const TEAM = Number(process.env.FMB_TEST_TEAM)
@@ -56,7 +70,7 @@ const RUN = process.env.FMB_SENSITIVITY === '1'
 const OUT = process.env.FMB_SENSITIVITY_OUT
 const ONLY = (process.env.FMB_SENSITIVITY_ONLY ?? '').split(',').map((text) => text.trim()).filter(Boolean)
 const FORMATION = '4-2-3-1'
-const THRESHOLD = 0.8
+const THRESHOLD = SENSITIVE_BELOW
 /** 후보 화면의 "뛸 수 있는 선수만" 켬(기본)과 끔(넓힘) */
 const MODES = ['기본', '넓힘'] as const
 type Mode = (typeof MODES)[number]
@@ -66,7 +80,7 @@ const DISPLAY_ONLY: Record<string, string> = {
   REASON_MIN_POINTS: '표시용: 이유 문장에 올릴 항목을 고르는 기준이라 순위와 점수에 영향이 없다'
 }
 
-describe('민감도 검사의 바꾸기·세기 규칙', () => {
+describe('민감도 검사의 바꾸기·세기 규칙, 대장 표 모양과 견주기', () => {
   const find = (name: string): LedgerEntry => LEDGER.find((entry) => entry.name === name)!
 
   it('숫자는 ±20%, 정수 단위는 반올림하고 같으면 한 칸, 감점 계수는 절반과 두 배', () => {
@@ -111,6 +125,34 @@ describe('민감도 검사의 바꾸기·세기 규칙', () => {
     expect(meanOverlap([1, 0.5, null])).toBe(0.75)
     expect(meanOverlap([null])).toBeNull()
   })
+
+  it('대장 표의 모양: 값이 바뀐 상수는 탭과 방향을, 안 바뀐 상수는 겹침 1만 적는다', () => {
+    const found = { score: 0.5222, tab: 'rotation' as const, wide: false, direction: '×2', entry: null, changed: true }
+    expect(toLedgerMeasure(found)).toEqual({ overlap: 0.52, tab: '로테이션', direction: '×2' })
+    expect(toLedgerMeasure({ ...found, wide: true, entry: 'immediate', direction: '-20%' })).toEqual({ overlap: 0.52, tab: '로테이션', wide: true, direction: 'immediate -20%' })
+    expect(toLedgerMeasure({ ...found, score: 1, changed: false })).toEqual({ overlap: 1 })
+    expect(ledgerTableLine('A', { overlap: 0.52, tab: '로테이션', direction: '×2' })).toBe("  A: { overlap: 0.52, tab: '로테이션', direction: '×2' },")
+    expect(ledgerTableLine('A', { overlap: 0.31, tab: '유망주', wide: true, direction: '+20%' })).toBe("  A: { overlap: 0.31, tab: '유망주', wide: true, direction: '+20%' },")
+    expect(ledgerTableLine('A', { overlap: 1 })).toBe('  A: { overlap: 1 },')
+  })
+
+  it('대장과 견주기: 같으면 비고, 다르면 어디가 다른지 적고, 일부만 쟀으면 안 잰 상수는 따지지 않는다', () => {
+    const table = new Map(LEDGER.flatMap((entry): Array<[string, LedgerMeasure]> => (entry.measured ? [[entry.name, entry.measured]] : [])))
+    expect(table.size).toBeGreaterThan(0)
+    expect(ledgerDisagreements(table, LEDGER, true)).toEqual([])
+    const [first, second] = [...table.keys()]
+    const fresh = new Map(table)
+    fresh.set(first, { overlap: 0.01, tab: '전체', direction: '+20%' })
+    fresh.delete(second)
+    const unmeasured = LEDGER.find((entry) => !entry.measured)
+    if (unmeasured) fresh.set(unmeasured.name, { overlap: 0.9, tab: '전체', direction: '-20%' })
+    const all = ledgerDisagreements(fresh, LEDGER, true)
+    expect(all).toHaveLength(unmeasured ? 3 : 2)
+    expect(all.some((line) => line.startsWith(`${first}: 대장 `) && line.includes('새로 잰 값 민감 0.01 (전체 탭, +20%)'))).toBe(true)
+    expect(all.some((line) => line.startsWith(`${second}: 대장 `) && line.endsWith('새로 잰 값 미측정'))).toBe(true)
+    // 일부만 쟀을 때(FMB_SENSITIVITY_ONLY)는 새로 재지 않은 상수를 따지지 않는다
+    expect(ledgerDisagreements(fresh, LEDGER, false)).toHaveLength(unmeasured ? 2 : 1)
+  })
 })
 
 interface Measured {
@@ -150,7 +192,7 @@ async function watchReads(run: (used: ReadonlySet<string>) => Promise<void>): Pr
   return used
 }
 
-describe.skipIf(!SAVE || !Number.isInteger(TEAM) || TEAM <= 0 || !RUN)('고정 세이브: 상수 민감도', () => {
+describe.skipIf(!SAVE || !Number.isInteger(TEAM) || TEAM <= 0 || !RUN)('고정 세이브: 상수 민감도(FMB_TEST_SAVE, FMB_TEST_TEAM, FMB_SENSITIVITY=1이 모두 있을 때만 돈다)', () => {
   it(
     '상수마다 ±20%로 바꿔 탭별 상위 10명 겹침을 잰다',
     async () => {
@@ -279,6 +321,9 @@ describe.skipIf(!SAVE || !Number.isInteger(TEAM) || TEAM <= 0 || !RUN)('고정 �
       )
       const sensitive = sorted.filter((m) => m.score < THRESHOLD)
       const seconds = Math.round((performance.now() - started) / 1000)
+      // 대장의 측정 표와 견준다: 다르면 알리기만 하고 실패하지 않는다
+      const measureOf = (m: Measured): LedgerMeasure => toLedgerMeasure({ score: m.score, tab: m.tab, wide: m.mode === '넓힘', direction: m.direction, entry: m.entry, changed: m.changed })
+      const differences = ledgerDisagreements(new Map(measured.map((m) => [m.name, measureOf(m)])), LEDGER, ONLY.length === 0)
       console.log(
         [
           '',
@@ -289,9 +334,15 @@ describe.skipIf(!SAVE || !Number.isInteger(TEAM) || TEAM <= 0 || !RUN)('고정 �
           `[민감도] ${THRESHOLD} 미만(민감) ${sensitive.length}개:`,
           ...sensitive.map((m) => `  ${m.name} ${m.score.toFixed(2)} (${label(m)})`),
           '',
+          differences.length === 0
+            ? '[민감도] 대장의 측정 표와 같다.'
+            : `[민감도] 대장의 측정 표와 다른 상수 ${differences.length}개(검사는 실패하지 않는다. 표는 아래 붙일 줄로 고친다):`,
+          ...differences.map((line) => `  ${line}`),
+          '',
           '[민감도] 건너뛴 상수:',
           ...skipped.map((s) => `  ${s.name}: ${s.reason}`),
-          ''
+          '',
+          ...(ONLY.length === 0 ? ['[민감도] 대장 표(src/shared/ledger.ts의 MEASURED)에 붙일 줄:', ...measured.map((m) => ledgerTableLine(m.name, measureOf(m))), ''] : [])
         ].join('\n')
       )
 

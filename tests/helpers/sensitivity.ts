@@ -2,7 +2,8 @@
  * 민감도 검사(F-11)의 순수한 부분: 상수를 어떻게 바꾸는지, 겹침을 어떻게 세는지.
  * 세이브를 읽지 않으므로 늘 시험한다(tests/sensitivity.test.ts). 바꾸는 규칙은 그 파일의 머리 설명에 있다.
  */
-import type { LedgerEntry } from '../../src/shared/ledger'
+import type { LedgerEntry, LedgerMeasure } from '../../src/shared/ledger'
+import { formatSensitivity } from '../../src/shared/ledgerDoc'
 
 export const TAB_LABEL = { starter: '즉시 전력', rotation: '로테이션', prospect: '유망주', free: '자유 계약', all: '전체' } as const
 export type Tab = keyof typeof TAB_LABEL
@@ -116,4 +117,49 @@ export function overlapAt10(base: readonly number[], variant: readonly number[])
 export function meanOverlap(values: ReadonlyArray<number | null>): number | null {
   const known = values.filter((value): value is number => value !== null)
   return known.length === 0 ? null : known.reduce((a, b) => a + b, 0) / known.length
+}
+
+/** 검사가 잰 상수 하나에서 대장 표에 필요한 것 */
+export interface Found {
+  score: number
+  tab: Tab
+  /** 가장 낮은 값이 영입 후보 화면의 "이 자리를 뛸 수 있는 선수만"을 끈 조건(넓힘)에서 나왔는가 */
+  wide: boolean
+  direction: string
+  /** 표의 항목 하나만 바꾼 경우 그 이름 */
+  entry: string | null
+  /** 어느 변형에서든 상위 10명이 하나라도 바뀌었는가 */
+  changed: boolean
+}
+
+/** 잰 결과를 대장 표(ledger.ts의 MEASURED)의 모양으로. 값을 바꿔도 어느 목록도 안 바뀐 상수는 overlap 1만 둔다 */
+export function toLedgerMeasure(found: Found): LedgerMeasure {
+  if (!found.changed) return { overlap: 1 }
+  const direction = `${found.entry ? `${found.entry} ` : ''}${found.direction}`
+  const overlap = Number(found.score.toFixed(2))
+  return found.wide ? { overlap, tab: TAB_LABEL[found.tab], wide: true, direction } : { overlap, tab: TAB_LABEL[found.tab], direction }
+}
+
+/** 대장 표에 붙일 한 줄 */
+export function ledgerTableLine(name: string, measure: LedgerMeasure): string {
+  if (measure.tab === undefined) return `  ${name}: { overlap: ${measure.overlap} },`
+  return `  ${name}: { overlap: ${measure.overlap}, tab: '${measure.tab}',${measure.wide ? ' wide: true,' : ''} direction: '${measure.direction}' },`
+}
+
+const sameMeasure = (a: LedgerMeasure | undefined, b: LedgerMeasure | undefined): boolean =>
+  a === b || (a !== undefined && b !== undefined && a.overlap === b.overlap && a.tab === b.tab && !!a.wide === !!b.wide && a.direction === b.direction)
+
+/**
+ * 새로 잰 표와 대장의 표를 견줘 다른 곳을 글로 돌려준다. 비어 있으면 대장이 새로 잰 값과 같다.
+ * 민감한 상수가 있다는 것은 다름이 아니다. 대장이 적은 것과 새로 잰 값이 다를 때만 적는다.
+ * complete가 거짓이면(일부만 쟀을 때) 새로 재지 않은 상수는 따지지 않는다.
+ */
+export function ledgerDisagreements(fresh: ReadonlyMap<string, LedgerMeasure>, ledger: ReadonlyArray<LedgerEntry>, complete: boolean): string[] {
+  const lines: string[] = []
+  for (const entry of ledger) {
+    const now = fresh.get(entry.name)
+    if (now === undefined && !complete) continue
+    if (!sameMeasure(now, entry.measured)) lines.push(`${entry.name}: 대장 ${formatSensitivity(entry.measured)} / 새로 잰 값 ${formatSensitivity(now)}`)
+  }
+  return lines
 }
