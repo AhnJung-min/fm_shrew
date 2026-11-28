@@ -3,7 +3,8 @@
  * describe와 it을 직접 등록하므로 시험 파일의 맨 위에서 부른다.
  *
  * 계약(자료의 내용이 아니라 모양과 서로의 일관성만 본다)
- * - 역할: 번호가 겹치지 않고, 이름·포지션이 있고, 번호로 찾으면 그 역할이 나온다(상속된 이름 'constructor' 같은 것은 찾지 않는다).
+ * - 역할: 번호가 겹치지 않고, 번호로 찾으면 그 역할이 나온다(상속된 이름 'constructor' 같은 것은 찾지 않는다). 이름과 포지션은 고를 수 있는 역할(selectable)만 갖춰야 한다:
+ *   게임이 이름을 주지 않은 옛 방식의 역할은 어느 칸 목록에도 없어서 이름도 포지션도 비어 있을 수 있고, 그런 역할은 번호, 국면, 가중치와 출처 태그만 본다.
  * - 게임 역할 비트(gameId)는 10진 글자이고, (국면, gameId)로 찾으면 그 역할이 나온다.
  * - 가중치: 0 이상 ROLE_WEIGHT_MAX 이하이고, 능력치 id는 세이브의 54개 가운데 하나이고, 양수가 하나 이상 있으며, 양수 칸마다 출처 태그(게임 표시 또는 앱 추가)가 있다.
  * - 칸에서 고를 수 있는 역할: 모든 포지션·국면·칸 종류에 하나 이상 있고, 모두 그 국면에서 고를 수 있으며 그 포지션이 역할의 positions에 들어 있고,
@@ -30,7 +31,7 @@ export function kindsOf(position: PositionKey): string[] {
 
 export function catalogContract(catalog: RoleCatalog): void {
   describe(`역할 카탈로그 계약: ${catalog.id}`, () => {
-    it('기본 모양: 번호와 판이 있고, 역할마다 이름·국면·포지션이 있으며 번호가 겹치지 않는다', () => {
+    it('기본 모양: 번호와 판이 있고, 역할마다 국면이 있으며 번호가 겹치지 않고, 고를 수 있는 역할은 이름·포지션이 있다', () => {
       expect(['legacy14', 'fm26']).toContain(catalog.id)
       expect(catalog.dataVersion.length).toBeGreaterThan(0)
       expect(catalog.roles.length).toBeGreaterThan(0)
@@ -39,13 +40,19 @@ export function catalogContract(catalog: RoleCatalog): void {
         expect(role.id.length, '역할 번호').toBeGreaterThan(0)
         expect(ids.has(role.id), `번호 겹침 ${role.id}`).toBe(false)
         ids.add(role.id)
-        expect(role.label.length, role.id).toBeGreaterThan(0)
         expect(['ip', 'oop', 'both'], role.id).toContain(role.phase)
-        expect(role.positions.length, role.id).toBeGreaterThan(0)
+        // 이름과 포지션은 고를 수 있는 역할만 요구한다(고를 수 없는 역할은 어느 칸 목록에도 없어 둘 다 비어 있을 수 있다)
+        if (role.selectable) {
+          expect(role.label.length, role.id).toBeGreaterThan(0)
+          expect(role.positions.length, role.id).toBeGreaterThan(0)
+        }
         for (const position of role.positions) expect(POSITIONS, `${role.id} ${position}`).toContain(position)
-        // 골키퍼 역할은 골키퍼 칸에만, 그 밖의 역할은 골키퍼 칸에 없다
-        if (role.goalkeeper) expect([...role.positions], role.id).toEqual(['GK'])
-        else expect(role.positions, role.id).not.toContain('GK')
+        // 골키퍼 역할은 골키퍼 칸에만, 그 밖의 역할은 골키퍼 칸에 없다(포지션이 비어 있는 고를 수 없는 역할은 어긋날 것이 없다)
+        if (role.goalkeeper) {
+          if (role.selectable || role.positions.length > 0) expect([...role.positions], role.id).toEqual(['GK'])
+        } else {
+          expect(role.positions, role.id).not.toContain('GK')
+        }
       }
     })
 

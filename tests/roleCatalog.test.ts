@@ -10,7 +10,9 @@ import {
   referenceSpec,
   weightEntries,
   withCustomRoles,
+  type CatalogRole,
   type CustomRole,
+  type RoleCatalog,
   type RoleOverrides
 } from '../src/shared/roleCatalog'
 import { DEFAULT_ROLE, effectiveWeights, prepareRole, ROLE_BY_ID, ROLES, rolesFor, type PositionKey } from '../src/shared/roles'
@@ -266,4 +268,22 @@ describe('FM26 카탈로그(빈 틀): 자료를 채우기 전에도 죽지 않�
     expect(FM26_CATALOG.references()).toEqual([])
     expect(FM26_CATALOG.legacyMap()).toEqual({})
   })
+})
+
+describe('고를 수 없는 역할이 섞인 카탈로그', () => {
+  /**
+   * 게임이 이름을 주지 않은 옛 방식의 역할은 어느 칸 목록에도 없어서 이름과 포지션이 비어 있다(selectable false).
+   * FM26 카탈로그를 채우는 단위가 catalogContract를 그대로 통과해야 하므로, 계약이 그런 역할에서 막히지 않는지를 옛 카탈로그에 하나 얹어 본다.
+   */
+  const HIDDEN: CatalogRole = { id: 'ip.HiddenOld', phase: 'ip', label: '', gameId: '4096', positions: [], selectable: false, goalkeeper: false }
+  const WEIGHTS = { passing: 4, vision: 4, technique: 2 }
+  const catalog: RoleCatalog = {
+    ...LEGACY_CATALOG,
+    roles: [...LEGACY_CATALOG.roles, HIDDEN],
+    role: (id) => (id === HIDDEN.id ? HIDDEN : LEGACY_CATALOG.role(id)),
+    roleByGameId: (phase, gameId) => (phase === HIDDEN.phase && gameId === HIDDEN.gameId ? HIDDEN : undefined),
+    baseWeights: (id) => (id === HIDDEN.id ? WEIGHTS : LEGACY_CATALOG.baseWeights(id)),
+    baseTags: (id) => (id === HIDDEN.id ? { passing: 'game', vision: 'game', technique: 'app' } : LEGACY_CATALOG.baseTags(id))
+  }
+  catalogContract(catalog)
 })
