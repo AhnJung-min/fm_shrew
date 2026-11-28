@@ -21,7 +21,9 @@ import raw from './data/fm26-roles.json'
  * - game: 켜진 게임의 역할 목록에서 읽은 칸 종류(GK, DL, DR, DC.pair, DM.single, MC.pair, AML, AMR, ST.single).
  * - inferred: 읽지는 못했지만 1군 선수의 역할 별점 표와 공개 역할 목록에서 그 포지션에 있는 것을 확인하고 칸 종류에 놓은 것.
  * - unknown: 칸 종류까지 이름으로 짠 초안, 그리고 아래 물러서기로 나온 목록.
- * game이 아닌 것은 화면에서 "게임에서 확인 전"으로 보인다. 자료에 없는 칸 종류는 같은 포지션의 다른 칸 종류의 목록, 그것도 없으면 그 포지션의 역할 전부로 물러선다(근거는 unknown).
+ * game이 아닌 것은 화면에서 "게임에서 확인 전"으로 보인다. 자료에 목록이 없는 칸 종류(모르는 칸 종류, 다른 포지션의 칸 종류, 빈 목록)는
+ * 그 포지션의 칸 종류 전부에 든 역할의 합집합(게임 번호 순)으로 물러서고 근거는 unknown이다. 한 칸 종류의 목록만 주면 다른 칸 종류에서만 고르는 역할
+ * (와이드 센터백, 박스 투 박스 등)이 빠져 게임의 전술이 거절될 수 있어서다. 포지션에 든 역할이 하나도 없으면 빈 목록이다.
  * 역할이 고를 수 있는 포지션(positions)은 그 역할이 든 칸 종류의 포지션 합집합이다.
  */
 
@@ -144,7 +146,8 @@ export function createFm26Catalog(data: Fm26Data): RoleCatalog {
     tags.set(role.id, Object.freeze(Object.fromEntries(list)))
   }
 
-  // 참조 프로파일: 고를 수 있는 역할마다 하나(역할 하나, 비중 100, 풀 = 그 역할을 고를 수 있는 포지션 전부)
+  // 참조 프로파일: 고를 수 있는 역할마다 하나(역할 하나, 비중 100, 풀 = 그 역할을 고를 수 있는 포지션 전부).
+  // references()에 국면을 주지 않으면 두 국면 전부(79개)다. 점유 시 40개만 필요하면 'ip'를 준다(사용자 역할을 얹는 withCustomRoles도 같은 뜻이다).
   const references: readonly ReferenceProfile[] = roles
     .filter((role) => role.selectable)
     .map((role) => ({ key: `ref:${role.id}`, roleId: role.id, phase: role.phase, label: role.label, positions: role.positions, goalkeeper: role.goalkeeper }))
@@ -154,19 +157,18 @@ export function createFm26Catalog(data: Fm26Data): RoleCatalog {
     oop: references.filter((ref) => ref.phase === 'oop')
   }
 
-  /** 그 칸 종류·국면에서 고를 수 있는 역할. 정확한 칸 종류 → 같은 포지션의 다른 칸 종류 → 그 포지션의 역할 전부 순으로 물러서고, 물러선 목록은 근거를 unknown으로 낮춘다 */
+  /**
+   * 그 칸 종류·국면에서 고를 수 있는 역할. 자료에 그 칸 종류의 목록이 있으면 그것(근거도 자료 그대로)이다.
+   * 없으면(모르는 칸 종류, 다른 포지션의 칸 종류, 빈 목록) 그 포지션의 칸 종류 전부에 든 역할의 합집합을 게임 번호 순으로 주고 근거를 unknown으로 낮춘다.
+   * 역할의 positions가 칸 종류 목록에서만 만들어지므로 그 합집합이 곧 "그 포지션에서 고를 수 있는 역할 전부"이고, 든 역할이 하나도 없으면 빈 목록이다.
+   */
   const choicesAt = (position: PositionKey, phase: Phase, kind: string): RoleChoice[] => {
     const exact = kindPosition(kind) === position ? lists.get(kind)?.[phase] : undefined
     if (exact && exact.length > 0) return exact.map((choice) => ({ ...choice }))
-    const lowered = (roleId: string): RoleChoice => ({ roleId, evidence: 'unknown' })
-    for (const other of kindsAt(position)) {
-      const list = lists.get(other)?.[phase]
-      if (list && list.length > 0) return list.map((choice) => lowered(choice.roleId))
-    }
     return roles
       .filter((role) => role.selectable && role.phase === phase && role.positions.includes(position))
       .sort(byGameId)
-      .map((role) => lowered(role.id))
+      .map((role): RoleChoice => ({ roleId: role.id, evidence: 'unknown' }))
   }
 
   const defaultRole = (position: PositionKey, phase: Phase, kind: string): string => {

@@ -329,7 +329,21 @@ describe('고를 칸이 목록에 없을 때 물러서기', () => {
     return createFm26Catalog({ ...data, slotKinds, defaultRoles: Object.fromEntries(Object.entries(data.defaultRoles).filter(([kind]) => keep.includes(kind))) })
   }
 
-  it('정확한 칸 종류가 없으면 같은 포지션의 다른 칸 종류의 목록으로, 근거는 unknown으로 낮춘다', () => {
+  /** 자료만 보고 센 합집합: 그 포지션의 칸 종류(from이 있으면 그 칸 종류만)의 목록에 든, 고를 수 있는 그 국면의 역할을 게임 번호 오름차순으로. 카탈로그의 계산과 따로 센다 */
+  const unionOf = (position: PositionKey, phase: Phase, from?: string[]): string[] => {
+    const found = new Set<string>()
+    for (const [kind, entries] of Object.entries(data.slotKinds)) {
+      if (kindPositionOf(kind) !== position || (from && !from.includes(kind))) continue
+      for (const entry of entries) {
+        const role = data.roles.find((each) => each.id === entry.roleId)!
+        if (role.phase === phase && role.selectable) found.add(role.id)
+      }
+    }
+    const bit = (id: string): bigint => BigInt(data.roles.find((each) => each.id === id)!.gameId)
+    return [...found].sort((a, b) => (bit(a) < bit(b) ? -1 : bit(a) > bit(b) ? 1 : 0))
+  }
+
+  it('정확한 칸 종류가 없으면 같은 포지션의 다른 칸 종류들의 합집합으로, 근거는 unknown으로 낮춘다', () => {
     const only = small(['MC.pair', 'GK'])
     const exact = only.choicesAt('MC', 'ip', 'MC.pair')
     expect(exact.every((choice) => choice.evidence === 'game')).toBe(true)
@@ -339,23 +353,50 @@ describe('고를 칸이 목록에 없을 때 물러서기', () => {
     // 기본 역할도 목록 안에서 고른다
     expect(only.defaultRole('MC', 'ip', 'MC.single')).toBe('ip.CentralMidfielder')
     expect(only.defaultRole('MC', 'oop', 'MC.trio.side')).toBe('oop.OPCentralMidfielder')
+    // 칸 종류가 둘이면 둘의 합집합이다: 수비 하나 칸에는 없는 와이드 센터백이 수비 셋 바깥 칸에는 있다. 하나만 주면 다른 쪽에서만 고르는 역할이 빠진다
+    const two = small(['GK', 'DC.single', 'DC.trio.side'])
+    expect(ids('DC', 'ip', 'DC.single')).not.toContain('ip.WideCentreBack')
+    for (const phase of PHASES) {
+      const both = two.choicesAt('DC', phase, 'DC.pair')
+      expect(both.map((choice) => choice.roleId), phase).toEqual(unionOf('DC', phase, ['DC.single', 'DC.trio.side']))
+      expect(both.every((choice) => choice.evidence === 'unknown'), phase).toBe(true)
+    }
+    expect(two.choicesAt('DC', 'ip', 'DC.pair').map((choice) => choice.roleId)).toContain('ip.WideCentreBack')
   })
 
-  it('그 포지션의 칸 종류가 하나도 없으면 그 포지션의 역할 전부(게임 번호 순)로, 근거는 unknown이다', () => {
+  it('그 칸 종류의 목록이 비어 있으면 같은 포지션의 다른 칸 종류들의 합집합으로, 포지션에 든 역할이 하나도 없으면 빈 목록이다', () => {
     const none = small(['GK'])
     // 칸 종류의 목록이 없어도 역할의 포지션은 자료의 목록에서 나온다. 목록이 아예 없으면 역할의 포지션도 없다
     expect(none.choicesAt('MC', 'ip', 'MC.pair')).toEqual([])
     expect(none.defaultRole('MC', 'ip', 'MC.pair')).toBe('')
     const partial = createFm26Catalog({ ...data, slotKinds: { ...data.slotKinds, 'MC.pair': [] } })
-    expect(partial.choicesAt('MC', 'ip', 'MC.pair').map((choice) => choice.roleId)).toEqual(catalog.choicesAt('MC', 'ip', 'MC.single').map((choice) => choice.roleId))
-    expect(partial.choicesAt('MC', 'ip', 'MC.pair').every((choice) => choice.evidence !== 'game')).toBe(true)
+    for (const phase of PHASES) {
+      const fallback = partial.choicesAt('MC', phase, 'MC.pair')
+      expect(fallback.map((choice) => choice.roleId), phase).toEqual(unionOf('MC', phase, ['MC.single', 'MC.trio.side', 'MC.trio.centre']))
+      expect(fallback.length, phase).toBeGreaterThan(0)
+      expect(fallback.every((choice) => choice.evidence === 'unknown'), phase).toBe(true)
+    }
   })
 
-  it('포지션과 칸 종류가 맞지 않거나 모르는 칸 종류를 물어도 던지지 않고, 그 포지션의 목록을 준다', () => {
+  it('포지션과 칸 종류가 맞지 않거나 모르는 칸 종류를 물어도 던지지 않고, 그 포지션의 칸 종류 전부에 든 역할을 준다(어느 칸 종류의 역할도 빠뜨리지 않는다)', () => {
     expect(() => catalog.choicesAt('DL', 'ip', 'DC.pair')).not.toThrow()
     expect(ids('DL', 'ip', 'DC.pair')).toEqual(ids('DL', 'ip', 'DL'))
-    expect(ids('DC', 'ip', '')).toEqual(ids('DC', 'ip', 'DC.single'))
-    expect(catalog.choicesAt('DC', 'ip', 'constructor').every((choice) => choice.evidence === 'unknown')).toBe(true)
+    // 모르는 칸 종류의 답은 자료의 합집합과 같고(게임 번호 순), 그 포지션의 어느 칸 종류의 목록보다도 작지 않다
+    for (const position of POSITIONS) {
+      for (const phase of PHASES) {
+        const unknown = ids(position, phase, '')
+        expect(unknown, `${position} ${phase}`).toEqual(unionOf(position, phase))
+        for (const kind of kindsOf(position)) for (const id of ids(position, phase, kind)) expect(unknown, `${position} ${phase} ${kind}`).toContain(id)
+      }
+    }
+    // 한 칸 종류의 목록만 주면 빠졌을 역할: 수비 셋 바깥 칸의 와이드 센터백, 수비형 미드 둘의 박스 투 박스, 최전방 둘의 분리 지향 센터 포워드
+    expect(ids('DC', 'ip', 'DC.single')).not.toContain('ip.WideCentreBack')
+    expect(ids('DC', 'ip', '')).toContain('ip.WideCentreBack')
+    expect(ids('DM', 'ip', '모르는 칸')).toContain('ip.BoxToBoxMidfielder')
+    expect(ids('ST', 'oop', '')).toContain('oop.OPSplittingOutletCentreForward')
+    const unknown = catalog.choicesAt('DC', 'ip', 'constructor')
+    expect(unknown.length).toBeGreaterThan(0)
+    expect(unknown.every((choice) => choice.evidence === 'unknown')).toBe(true)
     expect(catalog.defaultRole('DC', 'ip', '')).toBe('ip.CentralDefender')
     expect(catalog.defaultRole('GK', 'oop', '__proto__')).toBe('oop.OPGoalkeeper')
   })
@@ -364,6 +405,9 @@ describe('고를 칸이 목록에 없을 때 물러서기', () => {
     const first = catalog.choicesAt('MC', 'ip', 'MC.pair')
     first.length = 0
     expect(catalog.choicesAt('MC', 'ip', 'MC.pair').length).toBeGreaterThan(0)
+    const folded = catalog.choicesAt('DC', 'ip', '')
+    folded.length = 0
+    expect(catalog.choicesAt('DC', 'ip', '').length).toBeGreaterThan(0)
   })
 })
 
