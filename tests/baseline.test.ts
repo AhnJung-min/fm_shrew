@@ -394,7 +394,7 @@ describe.skipIf(!SAVE || !Number.isInteger(TEAM) || TEAM <= 0)('고정 세이브
       }, 3)
       report.push(`FM26 주 전술(4-2-3-1) 기준 분포 계산 중앙값 ${Math.round(norms.median)}ms (예산 ${BUDGET_MS.norms}ms)`)
 
-      // ---- 참조 프로파일(점유 시 40개, 비점유 시 39개) ----
+      // ---- 참조 프로파일(점유 시 40개. 자리 없는 선수의 가장 맞는 역할과 역할만 고른 찾기가 쓴다) ----
       const references = timeIt(() => {
         ws.clearScoringCaches()
         return ws.referenceNorms('ip')
