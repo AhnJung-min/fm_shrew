@@ -64,7 +64,7 @@ export const SUPPORTED_VERSIONS: readonly SupportedVersion[] = [
  */
 export function normalizeVersion(text: string | null | undefined): string | null {
   if (typeof text !== 'string') return null
-  const match = /^\s*v?(\d{1,4})\.(\d{1,4})(?:\.(\d{1,4}))?(?:[+.][0-9A-Za-z.-]*)?\s*$/.exec(text)
+  const match = /^\s*v?(\d{1,4})\.(\d{1,4})(?:\.(\d{1,4}))?(?:\+[0-9A-Za-z.-]+|\.\d+)?\s*$/.exec(text)
   if (!match) return null
   return match[3] === undefined ? `${match[1]}.${match[2]}` : `${match[1]}.${match[2]}.${match[3]}`
 }
