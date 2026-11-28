@@ -212,7 +212,8 @@ function createMockApi(): Api & ExtraApi {
       mockRecords = mockRecords.filter((entry) => entry.id !== id)
       return { ok: true }
     },
-    onBackupChanged: () => () => undefined
+    onBackupChanged: () => () => undefined,
+    onSettingsChanged: () => () => undefined
   }
 }
 
