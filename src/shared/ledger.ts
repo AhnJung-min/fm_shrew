@@ -9,6 +9,8 @@
  *   제자리에 두는 숫자 상수는 tests/ledger.test.ts의 STRUCTURAL 목록에 이유와 함께 적는다.
  * - 항목마다 이름, 값, 단위, 상태(추정·실측·검증됨), 근거, 마지막으로 확인한 날짜와 세이브, 민감도를 적는다.
  *   상태가 추정이면 게임의 실제 결과로 맞춰 본 적이 없다는 뜻이다. 세이브는 파일 이름이 아니라 중립 이름("시험 세이브 A")으로 적는다.
+ * - 민감도는 손으로 적지 않는다. tests/sensitivity.test.ts가 잰 결과를 아래 MEASURED 표에 옮겨 적으면 항목의 민감도가 거기서 정해진다
+ *   (겹침이 SENSITIVE_BELOW 미만이면 민감, 이상이면 보통, 표에 없으면 미측정). 상수나 식을 바꾸면 검사를 다시 돌려 표를 고친다.
  * - 값은 `K.이름`으로 그때그때 읽는다. 모듈 바깥으로 복사해 두지 않는다(withLedger가 바꾸는 값을 따라가려면).
  * - 문서의 상수 목록(docs/scoring.md)은 이 대장에서 만든다(shared/ledgerDoc.ts, `npm run docs:ledger`).
  *
@@ -17,6 +19,25 @@
 
 export type LedgerStatus = '추정' | '실측' | '검증됨'
 export type LedgerSensitivity = '민감' | '보통' | '미측정'
+
+/** 상수를 바꿨을 때 탭별 상위 10명이 그대로인 비율(겹침)이 이 값 미만이면 민감 */
+export const SENSITIVE_BELOW = 0.8
+
+/** 민감도 검사(tests/sensitivity.test.ts)가 잰 결과 하나 */
+export interface LedgerMeasure {
+  /** 탭별 겹침 가운데 가장 낮은 값(소수 둘째 자리까지) */
+  overlap: number
+  /** 그 값이 나온 탭. 값을 바꿔도 어느 목록도 안 바뀐 상수(overlap 1)에는 없다 */
+  tab?: string
+  /** 그 값이 영입 후보 화면의 "이 자리를 뛸 수 있는 선수만"을 끈 조건(넓힘)에서 나왔다 */
+  wide?: true
+  /** 그 값을 만든 변화: "-20%", "+20%", "×0.5", "×2". 표의 항목 하나만 바꾼 경우 그 항목 이름이 앞에 붙는다 */
+  direction?: string
+}
+
+export function sensitivityOf(measured: LedgerMeasure | undefined): LedgerSensitivity {
+  return measured === undefined ? '미측정' : measured.overlap < SENSITIVE_BELOW ? '민감' : '보통'
+}
 
 export interface LedgerEntry<V = unknown> {
   name: string
@@ -27,8 +48,10 @@ export interface LedgerEntry<V = unknown> {
   /** 근거(짧게) */
   basis: string
   lastChecked: { date: string; save: string }
-  /** 민감: 상수를 ±20%(숙련 감점은 절반·두 배) 바꿨을 때 탭별 상위 10명 겹침이 0.8 미만이다 */
+  /** 민감: 상수를 ±20%(숙련 감점은 절반·두 배) 바꿨을 때 탭별 상위 10명 겹침이 0.8 미만이다. 미측정: 아래 MEASURED 표에 없다 */
   sensitivity: LedgerSensitivity
+  /** 민감도 검사의 결과. 잰 적이 없으면 없다 */
+  measured?: LedgerMeasure
 }
 
 const CHECKED = { date: '2026-11-28', save: '시험 세이브 A' }
@@ -77,7 +100,7 @@ const DEFS = {
   // ---------- 포지션 숙련(positions.ts) ----------
   PLAYABLE_RATING: def(15, '숙련', '이 값 이상이면 그 자리에서 뛸 수 있는 것으로 본다(게임의 "능숙" 이상)'),
   TEMPORARY_MIN_RATING: def(10, '숙련', '이 값 이상 15 미만이면 임시 주전으로 세울 수 있다(4회차). 10 미만은 빈 자리로 둔다'),
-  PENALTY_ACCOMPLISHED_PER_POINT: def(0.08, 'σ/숙련 1점', '숙련 15~19의 적합도 감점 계수(20에서 0, 15에서 0.40σ). 게임에서 숙련 차이를 대조한 적이 없다. 가장 민감한 상수(3회차 E4)'),
+  PENALTY_ACCOMPLISHED_PER_POINT: def(0.08, 'σ/숙련 1점', '숙련 15~19의 적합도 감점 계수(20에서 0, 15에서 0.40σ). 게임에서 숙련 차이를 대조한 적이 없다'),
   PENALTY_AWKWARD_BASE: def(0.4, 'σ', '숙련 15 미만 구간의 감점 시작값. 15에서 끊기지 않게 0.08×5로 정했다'),
   PENALTY_AWKWARD_PER_POINT: def(0.3, 'σ/숙련 1점', '숙련 10~14의 감점 계수(10에서 1.90σ)'),
   PENALTY_AWKWARD_FROM: def(10, '숙련', '감점 구간이 바뀌는 숙련(10 이상은 어색, 미만은 서투름)'),
@@ -241,8 +264,114 @@ type Defs = typeof DEFS
 export type LedgerName = keyof Defs
 export type LedgerValues = { [N in LedgerName]: Defs[N]['value'] }
 
-/** 대장 전체(기본값). 순서는 위의 정의 순서다 */
-export const LEDGER: ReadonlyArray<LedgerEntry & { name: LedgerName }> = (Object.keys(DEFS) as LedgerName[]).map((name) => ({ name, ...DEFS[name] }))
+/**
+ * 민감도 검사의 결과(F-11). 2026-11-28, 시험 세이브 A, 포메이션 4-2-3-1, 역할 가중치는 기본값.
+ * 영입 후보 화면의 "이 자리를 뛸 수 있는 선수만"을 켠 조건(기본)과 끈 조건(넓힘)을 모두 재서 가장 낮은 겹침을 적는다.
+ * 검사(`tests/sensitivity.test.ts`, 환경 변수는 그 파일의 머리 설명)를 끝까지 돌리면 출력 끝에 이 표에 붙일 줄이 나온다.
+ * overlap만 있는 줄은 값을 바꿔도 이 세이브의 어느 목록도 바뀌지 않았다는 뜻이다(그 상수가 걸리는 곳을 이 세이브가 지나지 않았을 수도 있다).
+ * 표에 없는 상수는 검사로 잴 수 없었던 것이다(미측정): 후보 찾기가 읽지 않거나(대시보드, 스쿼드 진단, 직접 답변 전용이거나 이 세이브가 지나지 않는 경로), 점수에 영향이 없는 표시용이다.
+ */
+const MEASURED: Partial<Record<LedgerName, LedgerMeasure>> = {
+  NORM_MIN_RATING: { overlap: 0.88, tab: '로테이션', direction: '+20%' },
+  NORM_CA_FLOOR: { overlap: 1 },
+  NORM_CA_MARGIN: { overlap: 0.85, tab: '로테이션', direction: '+20%' },
+  NORM_TOP_COUNT: { overlap: 0.89, tab: '로테이션', direction: '+20%' },
+  NORM_MIN_POPULATION: { overlap: 0.94, tab: '로테이션', direction: '-20%' },
+  NORM_CA_STEP: { overlap: 0.95, tab: '로테이션', direction: '-20%' },
+  NORM_CA_MIN: { overlap: 1 },
+  NORM_MIN_SIGMA: { overlap: 1 },
+  BETA_MIN_CA: { overlap: 1 },
+  BETA_MIN_POPULATION: { overlap: 1 },
+  BETA_GROW_MIN_CA: { overlap: 0.92, tab: '유망주', direction: '+20%' },
+  BETA_GROW_MAX_CA: { overlap: 0.96, tab: '유망주', direction: '-20%' },
+  GAIN_WIDTH_SIGMAS: { overlap: 0.93, tab: '로테이션', direction: '-20%' },
+  PLAYABLE_RATING: { overlap: 0.62, tab: '로테이션', direction: '+20%' },
+  TEMPORARY_MIN_RATING: { overlap: 1 },
+  PENALTY_ACCOMPLISHED_PER_POINT: { overlap: 0.52, tab: '로테이션', direction: '×2' },
+  PENALTY_AWKWARD_BASE: { overlap: 0.96, tab: '로테이션', wide: true, direction: '×0.5' },
+  PENALTY_AWKWARD_PER_POINT: { overlap: 0.92, tab: '로테이션', wide: true, direction: '×0.5' },
+  PENALTY_AWKWARD_FROM: { overlap: 1 },
+  PENALTY_POOR_BASE: { overlap: 1 },
+  PENALTY_POOR_PER_POINT: { overlap: 1 },
+  LOW_GATE_BELOW: { overlap: 1 },
+  ROLE_COVERAGE_MIN: { overlap: 1 },
+  WEAK_GAP_SIGMAS: { overlap: 1 },
+  TEMPORARY_BONUS: { overlap: 1 },
+  NEED_FACTOR_WEIGHTS: { overlap: 0.98, tab: '즉시 전력', direction: 'quality -20%' },
+  QUALITY_Z_GOOD: { overlap: 0.98, tab: '즉시 전력', direction: '-20%' },
+  QUALITY_Z_SPAN: { overlap: 0.98, tab: '즉시 전력', direction: '+20%' },
+  DEPTH_COUNT_RISK: { overlap: 0.99, tab: '즉시 전력', direction: '-20%' },
+  DEPTH_GAP_FREE_SIGMAS: { overlap: 1 },
+  DEPTH_GAP_SPAN_SIGMAS: { overlap: 1 },
+  DEPTH_GAP_MAX: { overlap: 1 },
+  AGE_RISK_BASE: { overlap: 1 },
+  AGE_RISK_STEP: { overlap: 1 },
+  CONTRACT_RISK_BASE: { overlap: 1 },
+  NEED_UNKNOWN_RISK: { overlap: 1 },
+  SUCCESSOR_MAX_AGE: { overlap: 0.99, tab: '즉시 전력', direction: '-20%' },
+  SUCCESSOR_MAX_GAP_SIGMAS: { overlap: 1 },
+  SUCCESSOR_RELIEF: { overlap: 0.99, tab: '즉시 전력', direction: '-20%' },
+  NEED_LEVEL_MIN: { overlap: 1 },
+  CONTRACT_SOON_DAYS: { overlap: 1 },
+  PROSPECT_MAX_AGE: { overlap: 0.39, tab: '유망주', direction: '-20%' },
+  PROSPECT_MIN_ROOM: { overlap: 1 },
+  PROSPECT_MIN_GAIN_SIGMA: { overlap: 0.9, tab: '유망주', direction: '+20%' },
+  GROWTH_SHARE_TABLE: { overlap: 0.54, tab: '유망주', direction: '-20%' },
+  GROWTH_SHARE_TABLE_GOALKEEPER: { overlap: 1 },
+  AGING_START_AGE: { overlap: 0.5, tab: '로테이션', direction: '-20%' },
+  AGING_START_AGE_GOALKEEPER: { overlap: 0.89, tab: '로테이션', direction: '-20%' },
+  AGING_DROP_PER_YEAR: { overlap: 0.99, tab: '즉시 전력', direction: '-20%' },
+  STARTER_TOLERANCE_SIGMAS: { overlap: 0.82, tab: '로테이션', wide: true, direction: '-20%' },
+  ROTATION_REACH_SIGMAS: { overlap: 0.95, tab: '로테이션', direction: '-20%' },
+  THIN_REACH_SIGMAS: { overlap: 1 },
+  CA_GATE: { overlap: 0.07, tab: '로테이션', direction: '+20%' },
+  RECOMMEND_WEIGHTS: { overlap: 0.93, tab: '즉시 전력', direction: 'immediate -20%' },
+  TIER_CUMULATIVE_SHARE: { overlap: 1 },
+  TIER_MIN_TOTAL: { overlap: 1 },
+  NEED_WEIGHT_LOW: { overlap: 0.93, tab: '즉시 전력', direction: '-20%' },
+  NEED_WEIGHT_HIGH: { overlap: 0.97, tab: '전체', direction: '-20%' },
+  STARTER_SHARE: { overlap: 0.97, tab: '전체', direction: '-20%' },
+  PEAK_OUTFIELD: { overlap: 0.77, tab: '로테이션', wide: true, direction: '-20%' },
+  PEAK_GOALKEEPER: { overlap: 1 },
+  AGE_YOUNG_FLOOR: { overlap: 0.94, tab: '로테이션', wide: true, direction: '-20%' },
+  AGE_YOUNG_FROM: { overlap: 0.92, tab: '로테이션', direction: '+20%' },
+  AGE_DECLINE_PER_YEAR: { overlap: 0.97, tab: '전체', direction: '+20%' },
+  AGE_PROSPECT_FROM: { overlap: 0.93, tab: '유망주', wide: true, direction: '+20%' },
+  AGE_PROSPECT_SPAN: { overlap: 0.96, tab: '유망주', wide: true, direction: '+20%' },
+  MIN_SQUAD_SAMPLE: { overlap: 1 },
+  WAGE_SHARE: { overlap: 0.92, tab: '전체', direction: '-20%' },
+  COST_LOW_RATIO: { overlap: 0.96, tab: '로테이션', direction: '-20%' },
+  COST_AT_MEDIAN: { overlap: 0.89, tab: '로테이션', wide: true, direction: '-20%' },
+  COST_AT_TOP: { overlap: 0.98, tab: '즉시 전력', direction: '-20%' },
+  COST_OVER_TOP_RATIO: { overlap: 0.99, tab: '유망주', direction: '-20%' },
+  COST_MIN_TOP_RATIO: { overlap: 1 },
+  FEE_FULL_DAYS: { overlap: 0.99, tab: '로테이션', direction: '-20%' },
+  FEE_FLOOR: { overlap: 1 },
+  UNKNOWN_FIT: { overlap: 0.99, tab: '즉시 전력', direction: '-20%' },
+  CONTRACT_EASE: { overlap: 0.98, tab: '로테이션', direction: '+20%' },
+  EASE_CONTRACT_SHARE: { overlap: 0.98, tab: '로테이션', direction: '+20%' },
+  EASE_STATUS_SHARE: { overlap: 0.96, tab: '로테이션', direction: '-20%' },
+  EASE_STATURE_SHARE: { overlap: 0.98, tab: '전체', direction: '-20%' },
+  STATURE_SPAN_CA: { overlap: 0.98, tab: '즉시 전력', direction: '-20%' },
+  STATUS_EASE: { overlap: 0.96, tab: '로테이션', direction: '-20%' },
+  TRAIT_WEIGHTS: { overlap: 0.98, tab: '즉시 전력', direction: 'injuryProneness -20%' },
+  STATURE_TOP_COUNT: { overlap: 1 },
+  STATURE_MIN_PLAYERS: { overlap: 1 },
+  STATURE_CLUB_MARGIN: { overlap: 1 },
+  WARN_CA_MARGIN: { overlap: 1 },
+  WARN_LONG_CONTRACT_DAYS: { overlap: 1 },
+  WAGE_MODEL_MIN_SAMPLE: { overlap: 1 },
+  WAGE_YOUNG_BELOW: { overlap: 1 },
+  WAGE_OLD_FROM: { overlap: 1 },
+  WAGE_SD_FLOOR: { overlap: 1 },
+  WAGE_OUTLIER_Z: { overlap: 1 },
+}
+
+/** 대장 전체(기본값). 순서는 위의 정의 순서다. 표(MEASURED)에 있는 상수는 그 결과와, 거기서 정해진 민감도를 갖는다 */
+export const LEDGER: ReadonlyArray<LedgerEntry & { name: LedgerName }> = (Object.keys(DEFS) as LedgerName[]).map((name) => {
+  const measured = MEASURED[name]
+  return measured ? { name, ...DEFS[name], measured, sensitivity: sensitivityOf(measured) } : { name, ...DEFS[name] }
+})
 
 /**
  * 지금 값. 모듈은 `K.이름`으로 읽는다(복사해 두지 않는다). withLedger가 잠깐 바꾸고 되돌린다.
