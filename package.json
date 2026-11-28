@@ -12,7 +12,8 @@
     "web": "vite --config vite.web.config.ts",
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "test": "vitest run",
-    "docs:ledger": "node -e \"process.env.UPDATE_LEDGER_DOC='1';require('child_process').spawnSync('npx vitest run tests/ledger.test.ts',{shell:true,stdio:'inherit'})\""
+    "docs:ledger": "node -e \"process.env.UPDATE_LEDGER_DOC='1';require('child_process').spawnSync('npx vitest run tests/ledger.test.ts',{shell:true,stdio:'inherit'})\"",
+    "catalog:build": "node -e \"process.env.FMB_CATALOG_WRITE='1';process.exit(require('child_process').spawnSync('vitest run tests/catalogBuild.test.ts',{shell:true,stdio:'inherit'}).status??1)\""
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^1.14.0",
