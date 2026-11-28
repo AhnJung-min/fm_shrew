@@ -78,6 +78,8 @@ const PACKED_SIZE = 8 + POSITION_COUNT + ATTRIBUTE_COUNT
 const COLUMNS_AFTER = 40
 /** 구해 둔 기준 분포를 이만큼까지만 쥐고 있는다(넘으면 비우고 다시 구한다) */
 const NORM_ENTRIES_MAX = 20_000
+/** C̄*(기준 목록의 상위권 평균 능력)를 기준 목록마다 이만큼까지만 쥐고 있는다(넘으면 비운다) */
+const NORM_MEANS_MAX = 20
 
 const ATTRIBUTE_INDEX = new Map<string, number>(SAVE_ATTRIBUTE_ORDER.map((id, i) => [id, i]))
 const POSITION_INDEX = new Map<string, number>(POSITION_KEYS.map((key, i) => [key, i]))
@@ -573,7 +575,7 @@ export class WorldService {
     const scope = this.normScopeOf(world)
     const refsKey = refs.map((ref) => `${poolKeyOf(ref.pool)}#${weightsKeyOf(ref.weights)}`).join(';')
     if (!scope.means.has(refsKey)) {
-      if (scope.means.size >= 20) scope.means.clear()
+      if (scope.means.size >= NORM_MEANS_MAX) scope.means.clear()
       scope.means.set(refsKey, meanCaStarOf(world, scope.columns, refs, scope.startCa))
     }
     const mean = scope.means.get(refsKey)

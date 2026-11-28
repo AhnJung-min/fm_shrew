@@ -48,7 +48,7 @@ export function linkViewOf(link: LinkStatus, seenConnected: boolean): LinkView {
     return view('pluginOld', '플러그인을 바꿔야 합니다', '게임에 올라간 플러그인이 옛 버전이라 세이브 값으로 봅니다', 'warn', 'alert')
   }
   if (game.connected) {
-    if (!game.loaded) return view('mainMenu', 'FM이 켜져 있음', '메인 메뉴 상태이고, 세이브를 불러오면 능력치가 게임의 지금 값으로 바뀝니다', 'neutral', 'dot')
+    if (!game.loaded) return view('mainMenu', 'FM이 켜져 있음', '게임에서 세이브를 불러오면 능력치가 지금 값으로 바뀝니다', 'neutral', 'dot')
     const title = game.team ? `${withJosa(game.team, '과/와')} 연결됨` : '연결됨'
     const detail =
       data.source === 'game' ? `능력치는 게임의 지금 값, 그 밖은 마지막 저장분(${formatTime(data.save.savedAt)} 저장)` : '세이브 값으로 보는 중'

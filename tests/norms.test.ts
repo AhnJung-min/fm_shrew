@@ -168,6 +168,13 @@ describe('한국어 조사', () => {
     expect(withJosa('한지후', '은/는')).toBe('한지후는')
     expect(withJosa('서도현', '은/는')).toBe('서도현은')
     expect(withJosa('서도현', '을/를')).toBe('서도현을')
+    // '으로/로': 받침 없음과 ㄹ 받침은 '로', 그 밖의 받침은 '으로', 한글이 아니면 '(으)로'
+    expect(withJosa('중앙 미드필더', '으로/로')).toBe('중앙 미드필더로')
+    expect(withJosa('미드필더 줄', '으로/로')).toBe('미드필더 줄로')
+    expect(withJosa('타겟맨', '으로/로')).toBe('타겟맨으로')
+    expect(withJosa('윙백', '으로/로')).toBe('윙백으로')
+    expect(withJosa('AML', '으로/로')).toBe('AML(으)로')
+    expect(withJosa('', '으로/로')).toBe('(으)로')
     expect(withJosa('윤이안', '과/와')).toBe('윤이안과')
     expect(hasBatchim('아')).toBe(false)
     expect(hasBatchim('악')).toBe(true)

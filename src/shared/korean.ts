@@ -4,28 +4,37 @@
  */
 
 /** 앞이 받침 있을 때 / 받침 없을 때 */
-export type JosaPair = '이/가' | '은/는' | '을/를' | '과/와'
+export type JosaPair = '이/가' | '은/는' | '을/를' | '과/와' | '으로/로'
 
 const HANGUL_FIRST = 0xac00
 const HANGUL_LAST = 0xd7a3
 /** 한글 글자 하나는 (초성 19 × 중성 21 × 종성 28)로 이어져 있고, 종성 0이 받침 없음이다 */
 const FINALS = 28
+/** ㄹ 받침의 종성 번호. '으로/로'는 받침이 ㄹ이면 받침이 없을 때처럼 '로'를 붙인다(서울로, 길로) */
+const RIEUL = 8
 
 /** 낱말의 마지막 글자에 받침이 있는지. 한글이 아니면 null */
 export function hasBatchim(word: string): boolean | null {
+  const final = finalOf(word)
+  return final === null ? null : final !== 0
+}
+
+/** 마지막 글자의 종성 번호(0은 받침 없음). 한글이 아니면 null */
+function finalOf(word: string): number | null {
   const trimmed = word.trimEnd()
   if (trimmed.length === 0) return null
   const code = trimmed.charCodeAt(trimmed.length - 1)
   if (code < HANGUL_FIRST || code > HANGUL_LAST) return null
-  return (code - HANGUL_FIRST) % FINALS !== 0
+  return (code - HANGUL_FIRST) % FINALS
 }
 
-/** 조사만. 한글이 아니면 "이(가)"처럼 둘 다 */
+/** 조사만. 한글이 아니면 "이(가)"처럼 둘 다("으로/로"는 "(으)로") */
 export function josa(word: string, pair: JosaPair): string {
   const [withBatchim, without] = pair.split('/')
-  const batchim = hasBatchim(word)
-  if (batchim === null) return `${withBatchim}(${without})`
-  return batchim ? withBatchim : without
+  const final = finalOf(word)
+  if (final === null) return pair === '으로/로' ? '(으)로' : `${withBatchim}(${without})`
+  if (pair === '으로/로' && final === RIEUL) return without
+  return final !== 0 ? withBatchim : without
 }
 
 /** 낱말 + 조사. 예: withJosa('라우리노', '이/가') → '라우리노가', withJosa('델 바르코', '은/는') → '델 바르코는' */

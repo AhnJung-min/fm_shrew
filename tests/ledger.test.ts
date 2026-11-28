@@ -123,10 +123,12 @@ const STRUCTURAL: Record<string, string> = {
   'korean.ts:HANGUL_FIRST': '한글 음절 유니코드 범위',
   'korean.ts:HANGUL_LAST': '한글 음절 유니코드 범위',
   'korean.ts:FINALS': '한글 받침 개수',
+  'korean.ts:RIEUL': 'ㄹ 받침의 종성 번호(유니코드 한글 짜임). 받침이 ㄹ이면 "으로"가 아니라 "로"를 붙이는 규칙이다',
   'playerView.ts:WON_PER_POUND': '화면에 원화로 바꿔 보여 주는 환율(표시용 환산, 점수에 쓰이지 않는다)',
   'recommend.ts:IMPORTANT_STATUS': '계약상 입지 코드의 분류(코드 번호의 뜻이라 조정 대상이 아니다)',
   'recommend.ts:REALISM_STATUS': '계약상 입지 코드의 분류(핵심 선수 1, 중요 선수 2)',
   // 2단계(FM26 역할 체계)의 구조 상수(limits.ts). 점수 식의 조정 값이 아니라 자료의 모양과 한도다
+  'limits.ts:SETTINGS_VERSION': '설정 파일 형식의 판 번호(저장 모양의 이름표). 조정 대상이 아니다',
   'limits.ts:TACTIC_SLOTS': '전술의 자리 수(선수 11명). 경기 규칙이라 조정 대상이 아니다',
   'limits.ts:TACTICS_PER_SAVE': '세이브마다 둘 수 있는 전술 수의 한도(저장 모양과 화면의 선택지. 점수에 영향 없음)',
   'limits.ts:SHARE_SCALE': '점유 시 비중의 눈금(0~100 정수). 눈금 자체라 조정 대상이 아니다. 비중의 기본값은 대장의 IP_SHARE_DEFAULT',

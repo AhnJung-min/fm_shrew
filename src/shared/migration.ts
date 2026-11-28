@@ -1,6 +1,6 @@
 import { FORMATION_BY_ID, FORMATIONS, type Formation } from './formations'
-import { hasBatchim, withJosa } from './korean'
-import { TACTICS_PER_SAVE } from './limits'
+import { withJosa } from './korean'
+import { SETTINGS_VERSION, TACTICS_PER_SAVE } from './limits'
 import { withCustomRoles, type CatalogId, type RoleCatalog } from './roleCatalog'
 import { DEFAULT_ROLE, type PositionKey } from './roles'
 import { defaultSharePct, shareLabel } from './slotProfile'
@@ -34,7 +34,7 @@ import { SAVE_ATTRIBUTE_ORDER } from './world'
 
 /** 이전이 만드는 설정의 판(settingsVersion). 판 1은 2단계 앞(옛 14역할)의 설정이다 */
 export function migrationVersion(): number {
-  return 2
+  return SETTINGS_VERSION
 }
 
 const versionOf = (settings: Partial<Settings>): number => (typeof settings.settingsVersion === 'number' && Number.isFinite(settings.settingsVersion) ? settings.settingsVersion : 1)
@@ -116,16 +116,6 @@ function migratedTactic(formation: Formation, slotRoles: Record<string, string>,
   return { tactic: { ...base, slots, source: isEdited(formation, slotRoles) ? 'user' : 'preset' }, replaced }
 }
 
-/** "~로/으로": 받침이 없거나 ㄹ이면 "로", 그 밖의 받침은 "으로", 한글이 아니면 "(으)로" */
-function euro(word: string): string {
-  const batchim = hasBatchim(word)
-  if (batchim === null) return '(으)로'
-  if (!batchim) return '로'
-  const last = word.trimEnd()
-  // 한글 음절의 받침 번호(종성)는 (글자 − 가) % 28이고, ㄹ은 8번이다
-  return (last.charCodeAt(last.length - 1) - '가'.charCodeAt(0)) % 28 === 8 ? '로' : '으로'
-}
-
 /** 낱말 둘이면 "A와 B", 셋 이상이면 "A, B, C" */
 function joinLabels(labels: readonly string[]): string {
   if (labels.length === 2) return `${withJosa(labels[0], '과/와')} ${labels[1]}`
@@ -153,7 +143,7 @@ function replacedNotes(replaced: readonly Replaced[], fm26: RoleCatalog, legacy:
   return [...groups.values()].map((group): MigrationNote => {
     const to = fm26.role(group.toRoleId)?.label ?? group.toRoleId
     const where = `${POSITION_LABEL[group.position] ?? group.position} 자리 ${group.count}곳`
-    const swapped = `${to}${euro(to)} 바꿨습니다`
+    const swapped = `${withJosa(to, '으로/로')} 바꿨습니다`
     if (group.defensiveLine) {
       const both = joinLabels([...DEFENSIVE_LINE_ROLES].map(nameOf))
       return { kind: 'slot', text: `${where}: ${withJosa(both, '은/는')} FM26에서 수비형 미드 줄의 역할이라 ${swapped}` }
