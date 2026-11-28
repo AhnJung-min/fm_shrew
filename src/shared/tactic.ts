@@ -1,18 +1,24 @@
-import { buildDepth, FORMATION_BY_ID, FORMATIONS, type DepthPlayer, type DepthSlot, type Formation } from './depth'
+import { buildDepthFor, shapeOfTactic, slotRatingsOf, type DepthPlayer, type DepthSlot, type Formation, type ScoringContext } from './depth'
 import { joinClauses, withJosa } from './korean'
 import { K } from './ledger'
+import { SHARE_SCALE } from './limits'
 import { FALLBACK_NORM, normOf, zOf, zWords, type RoleNorm, type RoleNorms } from './norms'
-import { parsePositions, posPenaltySigma, ratingAt, RATING_UNKNOWN_ASSUMED } from './positions'
-import { attributesOf, effectiveWeights, ROLE_BY_ID, scoreRole, type AttributeValue, type PositionKey } from './roles'
+import { parsePositions } from './positions'
+import { LEGACY_CATALOG, profileWeights, type CatalogId, type RoleCatalog } from './roleCatalog'
+import { attributesOf, scoreRole, type AttributeValue, type PositionKey } from './roles'
+import { groupIdOf, penaltySigmaOf, type SlotProfile } from './slotProfile'
+import { legacyTactic, sharePctOf, type Tactic } from './tacticModel'
 import type { ColumnInfo, PlayerRow } from './types'
 import { agingDrop, type CandidateBench } from './world'
 
 /**
- * 전술 분석: 고른 포메이션과 자리별 역할(settings.formation, settings.slotRoles)을 기준으로
+ * 전술 분석: 고른 전술(두 국면의 포지션·역할과 점유 시 비중이 있는 자리 11개. 옛 설정이면 settings.formation과 settings.slotRoles에서 만든 전술)을 기준으로
  * 자리마다 "보강 필요도"를 구하고, 내 선수 가운데 누가 그 자리에 맞는지 줄 세운다.
  *
- * 전술판, 스쿼드 진단, 영입 후보가 모두 이 결과 하나를 쓴다. 주전·후보는 buildDepth가 정하고,
- * 적합도는 roles.ts의 scoreRole 하나로 나온다. 이 모듈은 순수 계산만 한다.
+ * 전술판, 스쿼드 진단, 영입 후보가 모두 이 결과 하나를 쓴다. 주전·후보는 buildDepthFor가 정하고,
+ * 적합도는 roles.ts의 scoreRole 하나로 나온다(가중치는 두 국면 역할의 가중치를 비중으로 섞은 표). 이 모듈은 순수 계산만 한다.
+ *
+ * 자리마다 쓰는 숙련: 자격(뛸 수 있는가, 임시 주전, 후계자 자격)은 점유 시 포지션 숙련만 보고, 숙련 감점은 두 국면의 숙련을 비중으로 섞은 값이다.
  */
 
 export const POSITION_LABEL: Record<string, string> = {
@@ -150,15 +156,23 @@ export interface SquadOption {
 }
 
 /**
- * 같은 포지션·같은 역할의 자리들(예: 4-2-3-1의 중앙 수비 두 자리). 영입이 바꾸는 것은 그 가운데 가장 약한 주전이라,
+ * 같은 프로파일(점유 시 포지션·역할, 비점유 시 포지션·역할)의 자리들(예: 4-2-3-1의 중앙 수비 두 자리). 영입이 바꾸는 것은 그 가운데 가장 약한 주전이라,
  * 영입 후보는 자리 번호가 아니라 그룹 기준으로 판정한다(어느 자리를 골라도 같은 결과).
  */
 export interface SlotGroup {
+  /** 두 국면이 같으면 `${포지션}:${역할}`(옛 꼴 그대로), 다르면 `${점유 시 포지션}:${점유 시 역할}~${비점유 시 포지션}:${비점유 시 역할}` (slotProfile.ts의 groupIdOf) */
   id: string
+  /** 점유 시 포지션 */
   position: PositionKey
+  /** 점유 시 역할 */
   roleId: string
   roleLabel: string
-  /** "중앙 수비 (2자리)". 같은 포지션에 역할이 다른 그룹이 있으면 "최전방(타깃맨)"처럼 역할을 붙인다 */
+  /** 그룹의 프로파일(두 국면의 포지션·역할과 점유 시 비중) */
+  profile: SlotProfile
+  /**
+   * "중앙 수비 (2자리)". 같은 점유 시 포지션에 그룹이 여럿이면 "최전방(타깃맨)"처럼 점유 시 역할을 붙이고,
+   * 점유 시 역할까지 같으면 "오른쪽 공격(윙어, 비점유 시 오른쪽 미드 윙어)"처럼 비점유 시 포지션과 역할도 붙인다
+   */
   label: string
   /** 그룹에 든 자리의 순번들(포메이션 순서) */
   slots: number[]
@@ -177,17 +191,27 @@ export interface SlotGroup {
 
 export interface SlotAnalysis {
   slot: DepthSlot
-  /** "중앙 수비 1"처럼 같은 자리가 둘 이상이면 번호를 붙인 이름 */
+  /** 이 자리의 프로파일(두 국면의 포지션·역할과 점유 시 비중). slot.profile과 같다 */
+  profile: SlotProfile
+  /** "중앙 수비 1"처럼 같은 점유 시 포지션의 자리가 둘 이상이면 번호를 붙인 이름 */
   label: string
+  /** 점유 시 포지션 이름 */
   positionLabel: string
+  /** 점유 시 역할 이름 */
   roleLabel: string
-  /** 같은 포지션·같은 역할의 자리들 */
+  /** 비점유 시 역할 이름(옛 14역할은 점유 시 역할과 같다) */
+  oopRoleLabel: string
+  /** 비점유 시 포지션 이름(옛 14역할은 점유 시 포지션과 같다) */
+  oopPositionLabel: string
+  /** 같은 프로파일의 자리들 */
   group: SlotGroup
   starterScore: number | null
   /** 주전의 포지션 숙련 감점을 뺀 적합도(숙련 20이면 starterScore와 같다) */
   starterEff: number | null
-  /** 주전의 그 자리 포지션 숙련(1~20) */
+  /** 주전의 그 자리 점유 시 포지션 숙련(1~20) */
   starterRating: number | null
+  /** 주전의 비점유 시 포지션 숙련(1~20). 두 국면의 포지션이 같으면 starterRating과 같다 */
+  starterOopRating: number | null
   /** 주전 적합도(숙련 감점을 뺀 값, z_eff)가 이 역할 기준에서 평균보다 표준편차의 몇 배 위인가 */
   starterZ: number | null
   /** 주전의 현재 능력(1~200) */
@@ -229,12 +253,22 @@ export interface LineSummary {
 }
 
 export interface TacticAnalysis {
+  /**
+   * 화면 줄의 모양(포메이션 꼴). 옛 전술은 옛 포메이션 그대로이고, 그 밖의 전술은 점유 시 칸 배치에서 만든다(id는 시작 프리셋 또는 전술 번호, 이름은 전술 이름).
+   * 각 자리의 slot.row가 formation.rows의 줄 번호다
+   */
   formation: Formation
-  /** 포메이션 순서(왼쪽·위에서 오른쪽·아래로) */
+  /** 분석한 전술(옛 포메이션과 자리별 역할로 불렀으면 그것으로 만든 옛 전술) */
+  tactic: Tactic
+  /** 점유 시 비중(0~100). 옛 전술은 100(두 국면이 같아 섞이지 않는다) */
+  sharePct: number
+  /** 분석에 쓴 역할 카탈로그 */
+  catalogId: CatalogId
+  /** 자리 순서(전술의 자리 순서. 옛 전술은 옛 포메이션의 왼쪽·위에서 오른쪽·아래로) */
   slots: SlotAnalysis[]
   /** 보강 필요도가 높은 순 */
   byNeed: SlotAnalysis[]
-  /** 같은 포지션·같은 역할의 자리 묶음(포메이션 순서) */
+  /** 같은 프로파일의 자리 묶음(자리 순서) */
   groups: SlotGroup[]
   /** 그룹을 보강 필요도(그룹 최대)가 높은 순으로 */
   groupsByNeed: SlotGroup[]
@@ -260,17 +294,40 @@ export const MAX_OPTIONS = 6
 
 const clamp01 = (x: number): number => Math.min(1, Math.max(0, x))
 const round1 = (x: number): number => Math.round(x * 10) / 10
+/** 역할 이름. 카탈로그에 없는 역할이면 역할 id 그대로 */
+const roleLabelOf = (catalog: RoleCatalog, roleId: string): string => catalog.role(roleId)?.label ?? roleId
 
-export interface TacticInput {
+/** 두 꼴이 함께 쓰는 입력 */
+interface TacticInputCommon {
   rows: PlayerRow[]
   columns: ColumnInfo[]
   /** 세이브가 알려 주는 게임 속 오늘. 모르면 계약 위험은 빼고 계산한다 */
   today?: Ymd
+  /** 사용자가 고친 역할 가중치(역할 id → 능력치 id → 가중치) */
+  roleWeights: Record<string, Record<string, number>>
+  /** 기준 분포(WorldService가 세이브에서 구한 것, SquadResult.roleNorms. 열쇠는 카탈로그의 normKey: 옛 카탈로그는 역할 id). 없으면 고정 기준(FALLBACK_NORM, 영입 추천과 같다)으로 대신한다 */
+  norms?: RoleNorms
+}
+
+/** 옛 꼴: 포메이션 id와 자리별 역할(settings.slotRoles). 옛 14역할 카탈로그와 두 국면이 같은 전술(legacyTactic)로 같은 길을 간다 */
+interface LegacyTacticInput {
   formation: string
   slotRoles: Record<string, string>
-  roleWeights: Record<string, Record<string, number>>
-  /** 역할별 기준 분포(WorldService가 세이브에서 구한 것, SquadResult.roleNorms). 없으면 고정 기준(FALLBACK_NORM, 영입 추천과 같다)으로 대신한다 */
-  norms?: RoleNorms
+}
+
+/** 새 꼴: 전술과 그 전술의 역할 카탈로그 */
+interface ProfileTacticInput {
+  tactic: Tactic
+  catalog: RoleCatalog
+}
+
+export type TacticInput = TacticInputCommon & (LegacyTacticInput | ProfileTacticInput)
+
+/** 입력이 말하는 전술과 카탈로그: 새 꼴이면 그대로, 옛 꼴이면 옛 설정으로 만든 전술과 옛 14역할 카탈로그 */
+function resolveInput(input: TacticInput): { tactic: Tactic; catalog: RoleCatalog } {
+  if ('tactic' in input && input.tactic) return { tactic: input.tactic, catalog: input.catalog }
+  const legacy = input as TacticInputCommon & LegacyTacticInput
+  return { tactic: legacyTactic(legacy.formation, legacy.slotRoles), catalog: LEGACY_CATALOG }
 }
 
 interface Person {
@@ -293,8 +350,11 @@ export function analyseTactic(input: TacticInput): TacticAnalysis | null {
   const caHeader = header('ability')
   const endHeader = header('contractEnd')
 
-  const formation = FORMATION_BY_ID[input.formation] ?? FORMATIONS[0]
-  const slots = buildDepth(rows, columns, formation, input.slotRoles, roleWeights, 2, input.norms)
+  // 옛 꼴이면 옛 설정(포메이션, 자리별 역할)으로 만든 전술과 옛 14역할 카탈로그로 새 꼴과 같은 길을 간다. 모르는 포메이션은 맨 앞(FORMATIONS[0])으로 본다
+  const { tactic, catalog } = resolveInput(input)
+  const ctx: ScoringContext = { catalog, overrides: roleWeights, norms: input.norms }
+  const { formation } = shapeOfTactic(tactic)
+  const slots = buildDepthFor(rows, columns, tactic, ctx, 2)
 
   const people: Person[] = rows.map((row) => ({
     row,
@@ -323,12 +383,13 @@ export function analyseTactic(input: TacticInput): TacticAnalysis | null {
     seen.set(slot.position, nth)
     const positionLabel = POSITION_LABEL[slot.position]
     const label = (count.get(slot.position) ?? 1) > 1 ? `${positionLabel} ${nth}` : positionLabel
-    const weights = effectiveWeights(slot.roleId, roleWeights)
-    const known = input.norms?.[slot.roleId]
-    const norm = known ? normOf(input.norms, slot.roleId) : FALLBACK_NORM
+    // 이 자리 프로파일의 가중치(두 국면 역할의 가중치를 비중으로 섞은 표. 두 국면의 역할이 같으면 그 역할의 가중치 그대로)와 기준 분포(카탈로그의 normKey로 찾는다)
+    const weights = profileWeights(catalog, slot.profile, roleWeights)
+    const known = input.norms?.[slot.normKey]
+    const norm = known ? normOf(input.norms, slot.normKey) : FALLBACK_NORM
     const normSource = known ? 'world' : 'fallback'
 
-    // 내 선수 모두의 이 역할 적합도
+    // 내 선수 모두의 이 프로파일 적합도
     const scored: Array<{ person: Person; score: number; uncertain: boolean }> = []
     for (const person of people) {
       const result = scoreRole(person.attrs, weights)
@@ -362,12 +423,11 @@ export function analyseTactic(input: TacticInput): TacticAnalysis | null {
       }
     })
 
-    // 후계자: 23세 이하이고 이 자리를 뛸 수 있는 내 선수 가운데, 숙련 감점을 뺀 적합도가 주전(같은 방식으로 뺀 값)에 크게 뒤지지 않는 선수
+    // 후계자: 23세 이하이고 이 자리를 뛸 수 있는(점유 시 포지션) 내 선수 가운데, 숙련 감점(두 국면 숙련을 섞은 값)을 뺀 적합도가 주전(같은 방식으로 뺀 값)에 크게 뒤지지 않는 선수
     const successor = starter
       ? scored.find(({ person, score }) => {
           if (person.row.idx === starter.idx || person.age === null || person.age > K.SUCCESSOR_MAX_AGE || !person.positions.includes(slot.position)) return false
-          const rating = ratingAt(person.ratings, slot.position) ?? RATING_UNKNOWN_ASSUMED
-          return score - norm.sigma * posPenaltySigma(rating) >= starter.effScore - K.SUCCESSOR_MAX_GAP_SIGMAS * norm.sigma
+          return score - norm.sigma * penaltySigmaOf(slotRatingsOf(person.ratings, slot.profile)) >= starter.effScore - K.SUCCESSOR_MAX_GAP_SIGMAS * norm.sigma
         })
       : undefined
     const { need, factors, reason } = needOf({
@@ -381,14 +441,18 @@ export function analyseTactic(input: TacticInput): TacticAnalysis | null {
     const level = needLevel(need)
     return {
       slot,
+      profile: slot.profile,
       label,
       positionLabel,
-      roleLabel: ROLE_BY_ID[slot.roleId]?.label ?? slot.roleId,
+      roleLabel: roleLabelOf(catalog, slot.roleId),
+      oopRoleLabel: roleLabelOf(catalog, slot.oopRoleId),
+      oopPositionLabel: POSITION_LABEL[slot.oopPosition],
       // group은 아래에서 자리들을 묶은 뒤 채운다
       group: undefined as unknown as SlotGroup,
       starterScore: starter?.score ?? null,
       starterEff: starter?.effScore ?? null,
       starterRating: starter?.rating ?? null,
+      starterOopRating: starter?.oopRating ?? null,
       starterZ: starter ? zOf(norm, starter.effScore) : null,
       starterAge: starter ? (personOf.get(starter.idx)?.age ?? null) : null,
       norm,
@@ -432,6 +496,9 @@ export function analyseTactic(input: TacticInput): TacticAnalysis | null {
   const ranked = [...field].sort((a, b) => b.zAverage! - a.zAverage!)
   return {
     formation,
+    tactic,
+    sharePct: sharePctOf(tactic),
+    catalogId: catalog.id,
     slots: analysed,
     byNeed,
     groups,
@@ -445,23 +512,27 @@ export function analyseTactic(input: TacticInput): TacticAnalysis | null {
 }
 
 /**
- * 같은 포지션·같은 역할의 자리들을 한 그룹으로 묶는다(포메이션 순서). 영입이 바꾸는 것은 그룹의 가장 약한 주전이라,
+ * 같은 프로파일(점유 시 포지션·역할, 비점유 시 포지션·역할)의 자리들을 한 그룹으로 묶는다(자리 순서). 영입이 바꾸는 것은 그룹의 가장 약한 주전이라,
  *   a_i      = f_eff,i - 나이 하락(i)                  (i = 그룹의 주전. 하락은 31세부터, 골키퍼 34세부터 해마다 1점)
  *   anchor_G = min a_i → 그 주전이 비교 기준 주전(CA 문턱도 그 주전의 CA)
  *   backup_G = 그룹 자리들의 첫 후보 가운데 f_eff가 가장 높은 선수
  *   need_G   = 그룹 자리들의 보강 필요도 가운데 최대
  * 그룹의 자리 하나라도 주전이 없으면 비교 기준 주전은 없다(null: 그 자리는 누가 와도 채워진다).
+ * 같은 전술 안에서는 비중이 하나라 그룹 열쇠에 넣지 않는다. 두 국면이 같으면 열쇠가 옛 꼴(`${포지션}:${역할}`)이다(groupIdOf).
  */
 function buildGroups(analysed: SlotAnalysis[]): SlotGroup[] {
   const byKey = new Map<string, SlotAnalysis[]>()
   for (const each of analysed) {
-    const key = `${each.slot.position}:${each.slot.roleId}`
+    const key = groupIdOf(each.slot.profile)
     byKey.set(key, [...(byKey.get(key) ?? []), each])
   }
+  // 이름에 어디까지 붙일지: 같은 점유 시 포지션에 그룹이 여럿이면 점유 시 역할을, 점유 시 역할까지 같은 그룹이 여럿이면 비점유 시 포지션과 역할도 붙인다
   const groupsOfPosition = new Map<PositionKey, number>()
+  const groupsOfRole = new Map<string, number>()
   for (const members of byKey.values()) {
-    const position = members[0].slot.position
+    const { position, roleId } = members[0].slot
     groupsOfPosition.set(position, (groupsOfPosition.get(position) ?? 0) + 1)
+    groupsOfRole.set(`${position}:${roleId}`, (groupsOfRole.get(`${position}:${roleId}`) ?? 0) + 1)
   }
   return [...byKey.entries()]
     .map(([id, members]): SlotGroup => {
@@ -502,12 +573,14 @@ function buildGroups(analysed: SlotAnalysis[]): SlotGroup[] {
         thin: distinct.size < 2
       }
       const roleLabel = first.roleLabel
-      const base = (groupsOfPosition.get(position) ?? 1) > 1 ? `${first.positionLabel}(${roleLabel})` : first.positionLabel
+      const offPhase = (groupsOfRole.get(`${position}:${roleId}`) ?? 1) > 1 ? `, 비점유 시 ${first.oopPositionLabel} ${first.oopRoleLabel}` : ''
+      const base = (groupsOfPosition.get(position) ?? 1) > 1 ? `${first.positionLabel}(${roleLabel}${offPhase})` : first.positionLabel
       return {
         id,
         position,
         roleId,
         roleLabel,
+        profile: first.slot.profile,
         label: members.length > 1 ? `${base} (${members.length}자리)` : base,
         slots: members.map((each) => each.slot.index),
         need: mostNeeded.need,
@@ -579,7 +652,14 @@ function needOf(args: {
   const z = zOf(norm, eff)
   risks.quality.risk = clamp01((K.QUALITY_Z_GOOD - z) / K.QUALITY_Z_SPAN)
   const base = normSource === 'world' ? '같은 역할 상위권 선수들의 평균' : '기본 기준 평균'
-  const penalty = starter.score - eff > 0.05 ? ` 포지션 숙련이 ${starter.rating}이라 적합도 ${starter.score}점에서 ${round1(starter.score - eff)}점 빼고 견주었습니다.` : ''
+  // 두 국면의 숙련이 달라 감점이 두 숙련을 섞은 값일 때만 두 숙련을 함께 적는다(같으면 지금 글 그대로)
+  const mixedRatings = starter.oopRating !== starter.rating && slot.profile.sharePct < SHARE_SCALE
+  const penalty =
+    starter.score - eff > 0.05
+      ? mixedRatings
+        ? ` 포지션 숙련(점유 시 ${starter.rating}, 비점유 시 ${starter.oopRating})에 따라 적합도 ${starter.score}점에서 ${round1(starter.score - eff)}점 빼고 견주었습니다.`
+        : ` 포지션 숙련이 ${starter.rating}이라 적합도 ${starter.score}점에서 ${round1(starter.score - eff)}점 빼고 견주었습니다.`
+      : ''
   const temporary = starter.temporary ? ` 숙련 ${starter.rating}이라 임시로 세웠습니다.` : ''
   risks.quality.note = `주전 ${name}의 적합도 ${round1(eff)}점은 ${base}(${round1(norm.mu)}점)보다 ${Math.abs(round1(eff - norm.mu))}점 ${eff >= norm.mu ? '높고' : '낮고'}, 이 역할의 보통 점수 차이(${round1(norm.sigma)}점)로 보면 ${zWords(z)}.${penalty}${temporary}`
   const crowd = normSource === 'world' ? '이 역할 상위권' : '기본 기준'
