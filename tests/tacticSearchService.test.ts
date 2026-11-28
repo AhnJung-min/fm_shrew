@@ -7,9 +7,9 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { registerTacticIpc, type Phase2Deps } from '../src/main/tacticIpc'
 import { recommendTactics } from '../src/main/tacticSearchService'
 import { FM26_CATALOG } from '../src/shared/catalogFm26'
-import { SEARCH_MAX_ROUNDS } from '../src/shared/limits'
+import { SEARCH_MAX_ROUNDS, TACTIC_SLOTS, TACTICS_PER_SAVE } from '../src/shared/limits'
 import { LEGACY_CATALOG } from '../src/shared/roleCatalog'
-import { TACTIC_CHANNELS, type NormsResult } from '../src/shared/tacticApi'
+import { normsFailed, TACTIC_CHANNELS, type NormsResult } from '../src/shared/tacticApi'
 import { legacyTactic, PRESET_IDS, presetTactic, type Tactic } from '../src/shared/tacticModel'
 import { RECOMMEND_NOTE, searchTactics } from '../src/shared/tacticSearch'
 import type { Settings } from '../src/shared/types'
@@ -98,12 +98,71 @@ describe('전술 추천 서비스', () => {
     expect(spy.mock.calls.length - before).toBeGreaterThanOrEqual(PRESET_IDS.length)
   })
 
-  it('기준 분포를 시작점마다 따로 받는다(한 번에 모두 받으려고 큰 계산을 한 번에 하지 않는다)', async () => {
+  it('기준 분포는 시작점마다 전술 하나의 자리 수 이하씩 나눠 받고, 이미 받은 열쇠는 다시 묻지 않는다(큰 계산을 한 번에 하지 않는다)', async () => {
+    const calls: string[][] = []
+    const norm = fixedNorms(catalog, calls)
+    await recommendTactics(deps({ norms: (profiles) => ({ ok: true, norms: norm(profiles) }) }), current)
+    const keys = calls.flat()
+    // 시작점마다 묻는 것이 전술 하나의 자리 수보다 많아서 시작점의 수보다 여러 번에 나뉜다
+    expect(calls.length).toBeGreaterThan(PRESET_IDS.length)
+    for (const call of calls) expect(call.length).toBeLessThanOrEqual(TACTIC_SLOTS)
+    expect(new Set(keys).size).toBe(keys.length)
+  })
+})
+
+describe('본체의 기준 분포 함수에는 한 번에 받는 수의 한도가 있어서, 나눠 묻는다', () => {
+  const current = presetTactic('4-2-3-1', catalog)
+  /** 본체(src/main/index.ts)가 deps.norms에 거는 한도(전술 하나의 자리 수 × 저장하는 전술 수). 한 번에 이보다 많이 물으면 거절한다 */
+  const CAP = TACTIC_SLOTS * TACTICS_PER_SAVE
+
+  /** 순수 계산을 한도 없는 기준 분포로 돌린 것(비교 기준)과 시작점마다 물은 프로파일 수 */
+  function direct(): { out: ReturnType<typeof searchTactics>; asked: number[] } {
+    const asked: number[] = []
+    const norm = fixedNorms(catalog)
+    const out = searchTactics({
+      rows: squad,
+      columns: SEARCH_COLUMNS,
+      today: TODAY,
+      catalog,
+      overrides: {},
+      current,
+      presets: PRESET_IDS.map((id) => presetTactic(id, catalog)),
+      normsFor: (profiles) => (asked.push(profiles.length), norm(profiles)),
+      maxRounds: SEARCH_MAX_ROUNDS
+    })
+    return { out, asked }
+  }
+
+  it('시험 자료가 의미가 있다: 한 시작점의 후보 짝(서로 다른 프로파일)은 본체의 한도를 넘는다', () => {
+    expect(Math.max(...direct().asked)).toBeGreaterThan(CAP)
+  })
+
+  it('한도를 넘는 요청을 거절하는 본체에서도 추천이 나오고, 한도 없는 계산과 결과가 같다', async () => {
     const sizes: number[] = []
     const norm = fixedNorms(catalog)
-    await recommendTactics(deps({ norms: (profiles) => (sizes.push(profiles.length), { ok: true, norms: norm(profiles) }) }), current)
-    expect(sizes.length).toBeGreaterThan(1)
-    expect(sizes.length).toBeLessThanOrEqual(PRESET_IDS.length)
+    const capped: Phase2Deps['norms'] = (profiles) => {
+      sizes.push(profiles.length)
+      return profiles.length > CAP ? normsFailed('한 번에 구할 수 있는 자리 수를 넘었습니다.') : { ok: true, norms: norm(profiles) }
+    }
+    const result = await recommendTactics(deps({ norms: capped }), current)
+    expect(result.ok, result.message).toBe(true)
+    // 나눠 물었다: 한 번에 전술 하나의 자리 수 이하이고, 모두 합치면 한도를 넘는다(나누지 않았다면 거절당했을 양이다)
+    expect(Math.max(...sizes)).toBeLessThanOrEqual(TACTIC_SLOTS)
+    expect(sizes.length).toBeGreaterThan(CAP / TACTIC_SLOTS)
+    expect(sizes.reduce((sum, size) => sum + size, 0)).toBeGreaterThan(CAP)
+    // 프로파일마다 답이 따로라 나눠 물어도 결과는 같다
+    const same = direct().out
+    expect(result.ranked).toEqual(same.ranked)
+    expect(result.suggestions).toEqual(same.suggestions)
+  })
+
+  it('한 번 묻는 크기는 늘 전술 하나의 자리 수 이하다(옛 14역할 전술도 같다)', async () => {
+    const sizes: number[] = []
+    const norm = flatNorms(LEGACY_CATALOG)
+    const result = await recommendTactics(deps({ settings: { catalog: 'legacy14' }, norms: (profiles) => (sizes.push(profiles.length), { ok: true, norms: norm(profiles) }) }), legacyTactic('4-4-2', {}))
+    expect(result.ok, result.message).toBe(true)
+    expect(sizes.length).toBeGreaterThan(0)
+    expect(Math.max(...sizes)).toBeLessThanOrEqual(TACTIC_SLOTS)
   })
 })
 
@@ -128,11 +187,81 @@ describe('추천을 만들 수 없을 때는 까닭과 함께 실패하고, 결�
     expectFailed(await recommendTactics(deps({ squad: { ok: true, rows: [] } }), current))
   })
 
-  it('기준 분포를 받지 못하면(준비 중이거나 실패) 그 까닭을 덧붙여 실패한다', async () => {
+  it('기준 분포를 받지 못하면(준비 중이거나 실패) 그 까닭을 덧붙여 실패하고, 글에 내부 낱말(기준 분포)을 쓰지 않는다', async () => {
     const result = await recommendTactics(deps({ norms: () => ({ ok: false, message: '준비 중', norms: {} }) }), current)
     expectFailed(result)
-    expect(result.message).toContain('기준 분포')
+    expect(result.message).toContain('선수를 견줄 기준(같은 자리 상위권 평균)을 아직 구하지 못해 추천을 만들 수 없습니다.')
     expect(result.message).toContain('준비 중')
+    expect(result.message).not.toContain('기준 분포')
+  })
+
+  it('나눠 묻는 도중 한 번이라도 실패하면(앞 요청은 받았어도) 그 까닭과 함께 실패한다', async () => {
+    const norm = fixedNorms(catalog)
+    let calls = 0
+    const result = await recommendTactics(deps({ norms: (profiles) => (++calls >= 3 ? normsFailed('계산하다가 멈췄습니다.') : { ok: true, norms: norm(profiles) }) }), current)
+    expectFailed(result)
+    expect(calls).toBe(3)
+    expect(result.message).toContain('견줄 기준')
+    expect(result.message).toContain('계산하다가 멈췄습니다.')
+  })
+
+  describe('답에 없는 열쇠가 하나라도 있으면 대신 값으로 채우지 않고 실패한다(진짜 기준과 대신 값이 섞인 순위를 만들지 않는다)', () => {
+    const norm = fixedNorms(catalog)
+    const missingOne = (which: 'first' | 'last'): Phase2Deps['norms'] => {
+      let dropped = false
+      return (profiles) => {
+        const norms = norm(profiles)
+        if (!dropped && profiles.length > 0) {
+          dropped = true
+          delete norms[catalog.normKey(profiles[which === 'first' ? 0 : profiles.length - 1])]
+        }
+        return { ok: true, norms }
+      }
+    }
+    const expectPartial = (result: Awaited<ReturnType<typeof recommendTactics>>): void => {
+      expectFailed(result)
+      expect(result.message).toBe('선수를 견줄 기준(같은 자리 상위권 평균) 일부를 구하지 못해 추천을 만들 수 없습니다.')
+      expect(result.message).not.toContain('기준 분포')
+    }
+
+    it.each(['first', 'last'] as const)('요청 하나의 %s 열쇠가 빠져도 실패한다', async (which) => {
+      expectPartial(await recommendTactics(deps({ norms: missingOne(which) }), current))
+    })
+
+    it('답이 비어 있거나(ok인데 norms가 {}), norms 칸이 없어도 실패한다', async () => {
+      expectPartial(await recommendTactics(deps({ norms: () => ({ ok: true, norms: {} }) }), current))
+      expectPartial(await recommendTactics(deps({ norms: () => ({ ok: true }) as unknown as NormsResult }), current))
+    })
+
+    it('값이 비어(null) 온 열쇠도 빠진 것으로 본다', async () => {
+      const nulled: Phase2Deps['norms'] = (profiles) => {
+        const norms = norm(profiles)
+        norms[catalog.normKey(profiles[0])] = null as never
+        return { ok: true, norms }
+      }
+      expectPartial(await recommendTactics(deps({ norms: nulled }), current))
+    })
+
+    it('쓰는 카탈로그와 다른 목록으로 세계를 연 본체(물은 프로파일을 건너뛰고 답하는 본체)에서도 실패한다', async () => {
+      // 본체는 카탈로그에 없는 역할의 프로파일을 건너뛰고 답한다. 옛 14역할 목록으로 열린 세계에 FM26 프로파일을 물으면 빈 답이 온다
+      const legacyWorld: Phase2Deps['norms'] = (profiles) => ({ ok: true, norms: flatNorms(LEGACY_CATALOG)(profiles.filter((profile) => LEGACY_CATALOG.role(profile.ip.roleId))) })
+      expectPartial(await recommendTactics(deps({ norms: legacyWorld }), current))
+    })
+
+    it('순수 계산은 같은 빈 답을 고정 기준으로 채워 돌린다(그 길은 미리보기 목업과 시험용이고, 본체의 서비스는 쓰지 않는다)', () => {
+      const out = searchTactics({
+        rows: squad,
+        columns: SEARCH_COLUMNS,
+        today: TODAY,
+        catalog,
+        overrides: {},
+        current,
+        presets: PRESET_IDS.map((id) => presetTactic(id, catalog)),
+        normsFor: () => ({}),
+        maxRounds: SEARCH_MAX_ROUNDS
+      })
+      expect(out.ranked.length).toBeGreaterThan(1)
+    })
   })
 
   it('저장을 막는 문제가 있는 전술은 받지 않는다: 다른 역할 목록의 전술, 자리 수가 모자란 전술, 올바르지 않은 값', async () => {
