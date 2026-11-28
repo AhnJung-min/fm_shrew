@@ -22,13 +22,15 @@ import { afterAll, describe, expect, it } from 'vitest'
 import { computeRoleNorms } from '../src/main/roleNorms'
 import { SEX_FEMALE } from '../src/main/save/world'
 import { firstTeamPlayers, surplusReport, type WageScale } from '../src/shared/dashboard'
-import { bestRoleOf, buildDepth, FORMATION_BY_ID, FORMATIONS, type BestRole, type DepthSlot, type Formation } from '../src/shared/depth'
-import { groupKeyAttributes, keyAttributesOf, POSITION_GROUPS } from '../src/shared/keyAttributes'
+import { bestRoleOf, bestRolesOf, buildDepth, buildDepthFor, FORMATION_BY_ID, FORMATIONS, type BestRole, type DepthSlot, type Formation } from '../src/shared/depth'
+import { groupKeyAttributes, keyAttributesOf, POSITION_GROUPS, profileKeyAttributes, type KeyAttribute, type PositionGroup } from '../src/shared/keyAttributes'
 import type { RoleNorms } from '../src/shared/norms'
 import { categoriesOf, effectiveFit, effectiveScore, prospectCheck, type CandidateBench, type CandidateCategory, type FitAdjust } from '../src/shared/world'
 import { COMPONENT_ORDER, recommend, type RecommendContext, type RecommendInput } from '../src/shared/recommend'
-import { ROLES } from '../src/shared/roles'
+import { LEGACY_CATALOG } from '../src/shared/roleCatalog'
+import { ROLE_BY_ID, ROLES } from '../src/shared/roles'
 import { analyseTactic, type SlotGroup, type TacticAnalysis } from '../src/shared/tactic'
+import { legacyTactic } from '../src/shared/tacticModel'
 import type { ColumnInfo, PlayerRow } from '../src/shared/types'
 import { diffJson, formatDiff, type Json } from './helpers/baselineDiff'
 import { alternativeRoleVariants, exact, exactAnalysis, exactBench, exactCandidates, exactNorm, exactNorms, exactPlayer } from './helpers/exactSnapshot'
@@ -52,18 +54,52 @@ export interface AnalyseArgs {
   norms?: RoleNorms
 }
 
+type Overrides = Record<string, Record<string, number>>
+
 interface Engine {
   analyse(args: AnalyseArgs): TacticAnalysis
-  depth(rows: PlayerRow[], columns: ColumnInfo[], formation: Formation, slotRoles: Record<string, string>, overrides: Record<string, Record<string, number>>, backupCount: number, norms?: RoleNorms): DepthSlot[]
-  bestRole(row: PlayerRow, columns: ColumnInfo[], overrides: Record<string, Record<string, number>>): BestRole | null
+  depth(rows: PlayerRow[], columns: ColumnInfo[], formation: Formation, slotRoles: Record<string, string>, overrides: Overrides, backupCount: number, norms?: RoleNorms): DepthSlot[]
+  bestRole(row: PlayerRow, columns: ColumnInfo[], overrides: Overrides): BestRole | null
   surplus(args: Parameters<typeof surplusReport>[0]): ReturnType<typeof surplusReport>
+  keyAttributes(roleId: string, overrides: Overrides): KeyAttribute[]
+  groupKeyAttributes(group: PositionGroup, overrides: Overrides): KeyAttribute[]
 }
 
+/** 옛 꼴: 포메이션 id와 자리별 역할을 그대로 넘긴다(옛 buildDepth, bestRoleOf, analyseTactic의 formation 입력, keyAttributesOf) */
 const OLD_ENGINE: Engine = {
   analyse: (args) => analyseTactic({ ...args, today: SYNTHETIC_TODAY })!,
   depth: (rows, columns, formation, slotRoles, overrides, backupCount, norms) => buildDepth(rows, columns, formation, slotRoles, overrides, backupCount, norms),
   bestRole: (row, columns, overrides) => bestRoleOf(row, columns, overrides),
-  surplus: (args) => surplusReport(args)
+  surplus: (args) => surplusReport(args),
+  keyAttributes: (roleId, overrides) => keyAttributesOf(roleId, overrides),
+  groupKeyAttributes: (group, overrides) => groupKeyAttributes(group, overrides)
+}
+
+/** 새 꼴: 같은 입력을 옛 전술(legacyTactic)과 LEGACY_CATALOG로 새 함수(analyseTactic의 tactic 입력, buildDepthFor, bestRolesOf, profileKeyAttributes)에 넘긴다 */
+const NEW_ENGINE: Engine = {
+  analyse: (args) => {
+    const { formation, slotRoles, ...rest } = args
+    return analyseTactic({ ...rest, today: SYNTHETIC_TODAY, tactic: legacyTactic(formation, slotRoles), catalog: LEGACY_CATALOG })!
+  },
+  depth: (rows, columns, formation, slotRoles, overrides, backupCount, norms) => {
+    const registered = FORMATION_BY_ID[formation.id] === formation
+    // 포메이션 목록에 없는 모양은 옛 줄 번호(formation.rows)를 새 길로 낼 수 없어(전술은 id로 포메이션을 찾는다) 껍데기(buildDepth)로 부른다
+    if (!registered) return buildDepth(rows, columns, formation, slotRoles, overrides, backupCount, norms)
+    return buildDepthFor(rows, columns, legacyTactic(formation.id, slotRoles), { catalog: LEGACY_CATALOG, overrides, norms }, backupCount)
+  },
+  bestRole: (row, columns, overrides) => {
+    const both = bestRolesOf(row, columns, { catalog: LEGACY_CATALOG, overrides })
+    // 국면이 없는 옛 14역할은 두 국면의 최적 역할이 같다
+    expect(both.oop).toEqual(both.ip)
+    return both.ip
+  },
+  surplus: (args) => surplusReport({ ...args, catalog: LEGACY_CATALOG }),
+  keyAttributes: (roleId, overrides) => {
+    const role = ROLE_BY_ID[roleId]
+    const spot = { position: role.positions[0], roleId }
+    return profileKeyAttributes(LEGACY_CATALOG, { ip: spot, oop: { ...spot }, sharePct: 100 }, overrides)
+  },
+  groupKeyAttributes: (group, overrides) => groupKeyAttributes(group, overrides, LEGACY_CATALOG)
 }
 
 // ---------- 지문과 부분 적기 ----------
@@ -262,9 +298,9 @@ function squadPart(engine: Engine): Record<string, Json> {
   // 6) 주요 능력치
   const keys: Record<string, Json> = {}
   for (const [weightsName, roleWeights] of WEIGHT_CASES) {
-    keys[`역할마다/${weightsName}`] = part(Object.fromEntries(ROLES.map((role) => [role.id, keyAttributesOf(role.id, roleWeights).map((key) => [key.id, key.weight, key.core])])), weightsName === '기본 가중치')
+    keys[`역할마다/${weightsName}`] = part(Object.fromEntries(ROLES.map((role) => [role.id, engine.keyAttributes(role.id, roleWeights).map((key) => [key.id, key.weight, key.core])])), weightsName === '기본 가중치')
     keys[`포지션 묶음/${weightsName}`] = part(
-      Object.fromEntries(POSITION_GROUPS.map((group) => [group.id, groupKeyAttributes(group, roleWeights).map((key) => [key.id, key.weight, key.core])])),
+      Object.fromEntries(POSITION_GROUPS.map((group) => [group.id, engine.groupKeyAttributes(group, roleWeights).map((key) => [key.id, key.weight, key.core])])),
       weightsName === '기본 가중치'
     )
   }
@@ -499,6 +535,19 @@ describe('합성 골든(옛 14역할): 옛 꼴로 부른 결과가 얼려 둔 �
       const lines = diffJson(JSON.parse(readFileSync(GOLDEN, 'utf8')) as Json, snapshot)
       const text = formatDiff(lines)
       console.log(`[골든 대조]\n${text}`)
+      expect(lines.length, text).toBe(0)
+    },
+    120_000
+  )
+
+  it(
+    '새 꼴(전술과 카탈로그, buildDepthFor, bestRolesOf, profileKeyAttributes)로 부른 결과도 같은 골든과 차이가 0이다',
+    () => {
+      expect(existsSync(GOLDEN), `골든 파일이 없습니다. FMB_UPDATE_GOLDEN=1로 먼저 만드세요: ${GOLDEN}`).toBe(true)
+      const snapshot = JSON.parse(JSON.stringify(buildGolden(NEW_ENGINE, namesDirs))) as Json
+      const lines = diffJson(JSON.parse(readFileSync(GOLDEN, 'utf8')) as Json, snapshot)
+      const text = formatDiff(lines)
+      console.log(`[골든 대조(새 꼴)]\n${text}`)
       expect(lines.length, text).toBe(0)
     },
     120_000
