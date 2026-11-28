@@ -98,10 +98,13 @@ describe('포지션 비트와 칸 종류', () => {
     expect(decodePosition(64)).toEqual({ position: 'WBL', side: null })
     expect(decodePosition(256)).toEqual({ position: 'MR', side: null })
     expect(decodePosition(512)).toEqual({ position: 'ML', side: null })
+    // 최전방 둘 자리에서 오는 비트는 최전방의 오른쪽·왼쪽 칸이다(부록 D, 확인 전)
+    expect(decodePosition(32768)).toEqual({ position: 'ST', side: 'right' })
+    expect(decodePosition(65536)).toEqual({ position: 'ST', side: 'left' })
   })
 
   it('받지 않는 비트, 포지션이 둘인 비트, 양쪽 비트는 던진다(생성기를 고쳐야 한다는 뜻)', () => {
-    for (const bits of [0, 2, 1 + 4, 16 + 1048576 + 2097152, 32768, 65536, 1 << 25]) expect(() => decodePosition(bits), String(bits)).toThrow()
+    for (const bits of [0, 2, 1 + 4, 16 + 1048576 + 2097152, 16384 + 32768, 32768 + 65536, 1 << 25]) expect(() => decodePosition(bits), String(bits)).toThrow()
   })
 
   it('칸 종류는 tacticModel의 slotKindOf와 같은 규칙이다: 넓은 포지션은 그대로, 가운데 포지션은 칸 수와 자리로', () => {
@@ -302,6 +305,25 @@ describe('생성기와 자료 파일', () => {
     // 인덱스 6은 DM.single 칸이다
     const emptied: BuildSource = { ...base, slots: [{ slots: base.slots[0].slots.map((slot) => ({ ...slot, oop: { ...slot.oop, available: slot.index === 6 ? [] : slot.oop.available } })) }] }
     expect(() => buildFm26Data(emptied)).toThrow('DM.single oop')
+  })
+
+  it('옛 방식 역할이 게임의 역할 목록에 나오면 그 역할은 고를 수 있는 역할이 되고 그 칸 종류의 포지션이 붙는다(사용자 확인 7번이 어긋났을 때)', () => {
+    const base = sourceFromData(committed)
+    const regista = committed.roles.find((role) => role.id === 'ip.Regista')!
+    expect(regista.selectable).toBe(false)
+    // 인덱스 5와 8은 MC.pair 칸이다(같은 칸 종류는 목록이 같아야 한다)
+    const withRegista: BuildSource = {
+      ...base,
+      slots: [{ slots: base.slots[0].slots.map((slot) => ({ ...slot, ip: { ...slot.ip, available: slot.index === 5 || slot.index === 8 ? [...slot.ip.available, { id: regista.gameId }] : slot.ip.available } })) }]
+    }
+    const built = buildFm26Data(withRegista)
+    expect(built.roles.find((role) => role.id === 'ip.Regista')!.selectable).toBe(true)
+    expect(built.slotKinds['MC.pair'].map((entry) => entry.roleId)).toContain('ip.Regista')
+    expect(built.slotKinds['MC.pair'].find((entry) => entry.roleId === 'ip.Regista')!.evidence).toBe('game')
+    // 고를 수 있게 된 역할은 앱 추가 규칙도 따른다
+    expect(built.roles.find((role) => role.id === 'ip.Regista')!.app).toEqual(appAttributesOf(COMMITTED_APP_RULE, { id: 'ip.Regista', enumName: 'Regista', goalkeeper: false, key: regista.key }))
+    // 다른 역할은 그대로다
+    expect(built.roles.filter((role) => !role.selectable)).toHaveLength(9)
   })
 
   it('게임에서 읽은 칸 종류는 목록이 게임 번호 순이고 근거가 game, 초안 칸 종류는 초안의 근거와 출처 메모가 붙는다', () => {

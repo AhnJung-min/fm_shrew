@@ -182,7 +182,7 @@ export function createFm26Catalog(data: Fm26Data): RoleCatalog {
     return choices[0]?.roleId ?? ''
   }
 
-  const poolOf = (profile: SlotProfile): readonly PositionKey[] => SIDE_PAIR[profile.ip.position] ?? [profile.ip.position]
+  const poolOf = (profile: SlotProfile): readonly PositionKey[] => (Object.hasOwn(SIDE_PAIR, profile.ip.position) ? SIDE_PAIR[profile.ip.position]! : [profile.ip.position])
 
   return {
     id: 'fm26',

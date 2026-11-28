@@ -296,6 +296,9 @@ const POSITION_BITS: ReadonlyArray<readonly [number, PositionKey]> = [
 ]
 const LEFT_SIDED = 1048576
 const RIGHT_SIDED = 2097152
+/** 최전방 둘 자리에서 오는 비트(AttackerRight, AttackerLeft). 부록 D에서 최전방의 오른쪽·왼쪽 칸으로 본다(확인 전) */
+const STRIKER_RIGHT = 32768
+const STRIKER_LEFT = 65536
 
 /** 포지션 비트를 포지션과 좌우로 푼다. 모르는 비트가 있거나 포지션이 하나가 아니면 던진다(생성기를 고쳐야 한다는 뜻) */
 export function decodePosition(bits: number): { position: PositionKey; side: 'left' | 'right' | null } {
@@ -307,9 +310,16 @@ export function decodePosition(bits: number): { position: PositionKey; side: 'le
       rest &= ~bit
     }
   }
-  const left = (rest & LEFT_SIDED) !== 0
-  const right = (rest & RIGHT_SIDED) !== 0
+  let left = (rest & LEFT_SIDED) !== 0
+  let right = (rest & RIGHT_SIDED) !== 0
   rest &= ~(LEFT_SIDED | RIGHT_SIDED)
+  for (const [bit, isRight] of [[STRIKER_RIGHT, true], [STRIKER_LEFT, false]] as const) {
+    if ((rest & bit) === 0) continue
+    found.push('ST')
+    rest &= ~bit
+    if (isRight) right = true
+    else left = true
+  }
   if (found.length !== 1 || rest !== 0 || (left && right)) throw new Error(`포지션 비트 ${bits}를 풀 수 없습니다.`)
   return { position: found[0], side: left ? 'left' : right ? 'right' : null }
 }
@@ -419,6 +429,8 @@ export function buildFm26Data(source: BuildSource, options: BuildOptions = {}): 
 
   // 칸 종류별 목록: 게임에서 읽은 것이 먼저이고, 없는 국면은 초안
   const observed = observedKinds(source.slots, roleOf)
+  // 게임의 역할 목록에 나온 역할은 이름을 주지 않았어도 고를 수 있는 역할이다(옛 방식 역할이 어느 칸에 나오면 이렇게 알게 된다)
+  for (const lists of observed.values()) for (const id of [...(lists.ip ?? []), ...(lists.oop ?? [])]) roleById.get(id)!.selectable = true
   const slotKinds: Fm26Data['slotKinds'] = {}
   const slotNotes: Fm26Data['slotNotes'] = {}
   for (const kind of ALL_KINDS) {
