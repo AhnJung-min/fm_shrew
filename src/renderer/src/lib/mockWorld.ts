@@ -57,6 +57,19 @@ const GIVEN = ['지후', '태윤', '민재', '서준', '하람', '건우', '시�
 const CLUBS = ['한강 유나이티드', '남해 FC', '북악 시티', '동해 로버스', '서천 애슬레틱', '자유 계약']
 const SPOTS: number[][] = [[0], [3], [3, 2], [4, 14], [5, 7], [7], [7, 10], [9, 11], [10, 12], [12], [6, 9], [8, 11]]
 
+/**
+ * 내 팀이 아닌 선수 다섯의 이름은 길고 지어낸 이름이다: 악센트가 든 로마자 이름 둘, 낱말이 넷인 긴 한글 이름 하나, 긴 한글 이름 하나, 붙임표가 든 긴 로마자 이름 하나.
+ * 영입 후보의 앞쪽 줄과 대시보드의 영입 추천에 늘 나와서, 이름이 넘칠 때의 줄임과 악센트·초성 찾기를 기본 화면에서 눈으로 본다.
+ * 모두 지어낸 것이고 실제 선수의 이름과 겹치지 않는다. 내 팀 24명(mockSquad)과 선수 수, 다른 값은 그대로다(시험은 내 팀만 쓴다).
+ */
+const LONG_NAMES: Readonly<Record<number, string>> = {
+  1028: 'Émile Vaubrunel-Castagnère',
+  1052: '프레데릭 아이젠하우젠슈타인',
+  1100: 'Anselm Reichenwald-Stoltenborg',
+  1112: 'Jörgen Åkesvik-Brandtmøller',
+  1148: '오스발도 켈리마르 벤투리노 사우다드'
+}
+
 /** 같은 순번이면 늘 같은 값이 나오는 난수 */
 function rng(seed: number): () => number {
   let state = seed * 2654435761
@@ -81,7 +94,7 @@ const PLAYERS: MockPlayer[] = Array.from({ length: 150 }, (_, i) => {
   const club = mine ? '가온 시티' : CLUBS[Math.floor(random() * CLUBS.length)]
   return {
     uid: 1000 + i,
-    name: `${FAMILY[i % FAMILY.length]}${GIVEN[(i * 7) % GIVEN.length]}`,
+    name: LONG_NAMES[1000 + i] ?? `${FAMILY[i % FAMILY.length]}${GIVEN[(i * 7) % GIVEN.length]}`,
     age,
     position: positionsLabel(positions),
     club,

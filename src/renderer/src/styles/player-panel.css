@@ -1,0 +1,67 @@
+/*
+  선수 정보 패널(PlayerDrawer)과 에디터의 선수 카드가 함께 쓰는 모양.
+  색은 app.css의 토큰만 쓰고, 능력치 칩의 네 단계(.attr-chip.a1~a4)도 그대로 가져다 쓴다.
+*/
+
+.player-drawer,
+.ed-card {
+  container-type: inline-size;
+}
+
+/* ---------- 오른쪽 패널 ---------- */
+
+.drawer.player-drawer {
+  width: 460px;
+}
+.player-drawer .drawer-head h2 {
+  font-size: 22px;
+}
+.pl-body {
+  display: grid;
+  gap: 22px;
+  align-content: start;
+  padding-bottom: 28px;
+}
+.pl-wait {
+  font-size: 14px;
+}
+/* 게임이 꺼져 있어 세이브 값을 보여 주는 것은 평소 상태라 경고색을 쓰지 않는다 */
+.pl-source {
+  padding: 8px 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-s);
+  background: var(--info-soft);
+  color: var(--text-2);
+  font-size: 13.5px;
+}
+.pl-foot {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 12px 18px;
+  border-top: 1px solid var(--line);
+  background: var(--surface);
+}
+.pl-h {
+  margin: 0 0 10px;
+  color: var(--text);
+  font-size: 15px;
+  font-weight: 700;
+}
+.pl-note {
+  margin-top: 8px;
+  color: var(--text-3);
+  font-size: 12.5px;
+  line-height: 1.5;
+}
+.pl-note.first {
+  margin: -4px 0 10px;
+}
+.pl-orig {
+  display: block;
+  color: var(--gold);
+  font-size: var(--fs-micro);
+  font-weight: 700;
+  line-height: 1.2;
+}
+

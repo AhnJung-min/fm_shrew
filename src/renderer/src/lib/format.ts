@@ -1,3 +1,4 @@
+import { rangeText } from '@shared/numberFormat'
 import type { CellValue } from '@shared/types'
 
 const timeFormat = new Intl.DateTimeFormat('ko-KR', {
@@ -24,9 +25,9 @@ export function attrBand(value: number | null): string {
 export const BAND_LABEL: Record<string, string> = { a1: '약함', a2: '보통', a3: '좋음', a4: '뛰어남' }
 
 export function attrTitle(label: string, cell: CellValue | undefined): string {
-  if (!cell || cell.raw === '') return `${label}: 값 없음`
+  if (!cell || cell.raw === '') return `${label}: 정보 없음`
   if (cell.range) {
-    return `${label}: ${cell.range[0]}~${cell.range[1]} (스카우트 정보 부족, 중간값 ${cell.num}로 계산)`
+    return `${label}: ${rangeText(cell.range[0], cell.range[1])} (스카우트 정보 부족, 중간값 ${cell.num}로 계산)`
   }
   return `${label}: ${cell.raw}`
 }
@@ -40,7 +41,7 @@ export function plainText(cell: CellValue | undefined): string {
 
 export function attrText(cell: CellValue | undefined): string {
   if (!cell || cell.raw === '') return '–'
-  if (cell.range) return `${cell.range[0]}–${cell.range[1]}`
+  if (cell.range) return rangeText(cell.range[0], cell.range[1])
   return cell.raw
 }
 

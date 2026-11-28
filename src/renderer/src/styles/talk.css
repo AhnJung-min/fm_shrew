@@ -1,0 +1,107 @@
+/* ---------- 토크 도우미: 설정 ---------- */
+
+.talk {
+  display: grid;
+  grid-template-columns: minmax(280px, 400px) minmax(0, 1fr);
+  gap: 16px;
+  align-items: start;
+  max-width: 1180px;
+}
+
+.talk-error {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin-top: 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--bad);
+  border-radius: var(--radius-s);
+  color: var(--text);
+  font-size: 13px;
+}
+.talk-error svg {
+  flex: none;
+  margin-top: 2px;
+  color: var(--bad);
+}
+.link {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--accent);
+  text-decoration: underline;
+  cursor: pointer;
+}
+a {
+  color: var(--accent);
+}
+
+.talk-settings {
+  display: grid;
+  gap: 16px;
+}
+.setting-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 16px;
+  align-items: center;
+}
+.setting-row p {
+  font-size: 13px;
+}
+.setting-control {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.setting-control .field {
+  min-width: 220px;
+}
+
+@media (max-width: 1000px) {
+  .talk {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .setting-row {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+/* ---------- 역할 가중치 ---------- */
+
+.weights {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(170px, 1fr));
+  gap: 4px 18px;
+  margin-top: 6px;
+}
+.weights label {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  height: 30px;
+  font-size: 13px;
+  color: var(--text-2);
+}
+.weights label.on {
+  color: var(--text);
+}
+.weights label.changed span::after {
+  content: ' (바꿈)';
+  color: var(--gold);
+  font-size: 12.5px;
+}
+.weights input {
+  width: 52px;
+  height: 26px;
+  padding: 0 6px;
+  text-align: right;
+}
+.weights-group {
+  margin: 14px 0 0;
+  color: var(--text-3);
+  font-size: 12.5px;
+  font-weight: 600;
+}
+

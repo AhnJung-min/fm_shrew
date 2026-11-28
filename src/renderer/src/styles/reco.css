@@ -1,0 +1,211 @@
+/* ---------- 추천 점수 풀이 ---------- */
+
+/* 접어 둔 한 줄이 기본이라 표를 가리지 않는다. 펼쳐도 높이를 제한하고 안에서 스크롤한다 */
+.reco {
+  position: relative;
+  flex: none;
+  padding: 0 28px;
+  border-bottom: 1px solid var(--line);
+  background: var(--surface);
+}
+.reco-toggle {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  width: 100%;
+  padding: 7px 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  font-size: 13.5px;
+  text-align: left;
+  cursor: pointer;
+}
+.reco-toggle svg {
+  align-self: center;
+  flex: none;
+}
+.reco-toggle-name {
+  font-weight: 650;
+}
+.reco-toggle-hint {
+  margin-left: auto;
+  font-size: 12.5px;
+}
+/* 유망주 탭 위의 성장 예측 불확실성 한 줄 */
+.reco-note {
+  margin: 0;
+  padding: 0 0 7px 28px;
+  font-size: 12.5px;
+}
+/* 펼치면 표 위에 덮어 얹는다(표를 밀어내지 않는다) */
+.reco-body {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  z-index: 5;
+  max-height: 58vh;
+  overflow: auto;
+  padding: 8px 28px 14px;
+  border-bottom: 1px solid var(--line-strong);
+  background: var(--surface);
+  box-shadow: 0 10px 24px color-mix(in srgb, var(--bg) 70%, transparent);
+}
+.reco-sum {
+  margin: 0 0 4px;
+  font-size: 13.5px;
+}
+.reco-tier-line {
+  margin: 0 0 8px;
+  font-size: 12.5px;
+}
+.reco-warnings {
+  display: grid;
+  gap: 4px;
+  margin: 0 0 8px;
+  padding: 0;
+  list-style: none;
+  font-size: 13px;
+}
+.reco-warnings li {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--warn);
+}
+.reco-total {
+  font-size: 20px;
+}
+.reco-total.top {
+  color: var(--gold);
+}
+.reco-total.good {
+  color: var(--good);
+}
+.reco-total.maybe,
+.reco-total.low {
+  color: var(--text-3);
+}
+.reco-tier {
+  padding: 1px 8px;
+  border: 1px solid var(--line-strong);
+  border-radius: 12px;
+  font-size: 12.5px;
+  font-weight: 650;
+}
+.reco-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
+  gap: 8px 20px;
+  margin: 0 0 8px;
+  padding: 0;
+  list-style: none;
+}
+.reco-line {
+  display: grid;
+  grid-template-columns: 84px minmax(0, 1fr) 76px;
+  align-items: center;
+  gap: 8px;
+  font-size: 13.5px;
+}
+.reco-label {
+  font-weight: 650;
+}
+.reco-track {
+  height: 9px;
+  border-radius: 5px;
+  background: var(--raised);
+  overflow: hidden;
+}
+.reco-track span {
+  display: block;
+  height: 100%;
+  background: var(--accent);
+}
+.reco-points {
+  text-align: right;
+  color: var(--text-2);
+}
+.reco-list p {
+  margin: 2px 0 0;
+  color: var(--text-2);
+  font-size: 12.5px;
+  line-height: 1.45;
+}
+.reco-list .skipped .reco-label,
+.reco-list .skipped .reco-points {
+  color: var(--text-3);
+}
+.reco-hint {
+  margin: 0 0 6px;
+  font-size: 13.5px;
+}
+.reco-explain summary {
+  cursor: pointer;
+  color: var(--text-2);
+  font-size: 13.5px;
+}
+.reco-explain-body {
+  padding-top: 8px;
+  font-size: 13px;
+  line-height: 1.5;
+}
+.reco-explain-body p {
+  margin: 0 0 8px;
+}
+.reco-weights {
+  width: 100%;
+  margin-bottom: 8px;
+  border-collapse: collapse;
+  font-size: 12.5px;
+}
+.reco-weights th,
+.reco-weights td {
+  padding: 4px 8px;
+  border-bottom: 1px solid var(--line);
+  text-align: left;
+  vertical-align: top;
+}
+.reco-weights th[scope='row'] {
+  white-space: nowrap;
+}
+.reco-weights td.num {
+  text-align: right;
+  white-space: nowrap;
+}
+.reco-weights tr.off {
+  color: var(--text-3);
+}
+
+/* 좁은 창: 표에 줄을 더 보이려고 덜 급한 안내 한 줄씩을 접는다(세이브 이름은 사이드바에, 게임 꺼짐 안내는 "자세히"에 있다) */
+@media (max-width: 1180px) {
+  .page-head .head-sub,
+  .toolbar .note-idle {
+    display: none;
+  }
+  .slot-picker {
+    gap: 4px;
+  }
+  .slot-chip {
+    gap: 6px;
+    padding: 0 8px;
+  }
+}
+
+@media (max-width: 860px) {
+  .slot-bar,
+  .reco {
+    padding-left: 14px;
+    padding-right: 14px;
+  }
+  .reco-body {
+    padding-left: 14px;
+    padding-right: 14px;
+  }
+  .reco-list {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}

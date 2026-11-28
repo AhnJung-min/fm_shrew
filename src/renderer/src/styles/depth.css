@@ -1,0 +1,158 @@
+/* ---------- 뎁스 차트 ---------- */
+
+.depth {
+  flex: 1;
+  min-width: 0;
+  overflow: auto;
+  padding: 14px 24px 24px;
+}
+
+.depth-bar {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+  margin-bottom: 14px;
+}
+.depth-formation {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* 경기장: 위가 상대 골문, 아래가 우리 골문. 선은 장식이 아니라 방향을 알려 준다. */
+.pitch {
+  position: relative;
+  display: grid;
+  gap: 14px;
+  padding: 18px 16px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-m);
+  background: var(--turf);
+  min-width: 720px;
+}
+.pitch::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 50%;
+  border-top: 1px solid var(--line);
+  pointer-events: none;
+}
+.pitch::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 150px;
+  height: 150px;
+  margin: -75px 0 0 -75px;
+  border: 1px solid var(--line);
+  border-radius: 50%;
+  pointer-events: none;
+}
+
+.pitch-row {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  justify-content: center;
+  gap: 12px;
+}
+
+.depth-slot {
+  flex: 0 1 216px;
+  min-width: 168px;
+  padding: 8px 8px 6px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-m);
+  background: var(--bg);
+}
+.depth-slot.weak {
+  border-color: var(--bad);
+}
+.depth-slot header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 6px;
+}
+.depth-pos {
+  flex: 1;
+  color: var(--text-2);
+  font-size: 12.5px;
+}
+.depth-note {
+  font-size: 12.5px;
+  color: var(--text-2);
+}
+.depth-note.bad {
+  color: var(--bad);
+  font-weight: 600;
+}
+.depth-role {
+  width: 100%;
+  height: 28px;
+  font-size: 13px;
+}
+.depth-role-fixed {
+  height: 28px;
+  padding: 0 2px;
+  font-size: 13px;
+  line-height: 28px;
+}
+.depth-list {
+  margin: 6px 0 0;
+  padding: 0;
+  list-style: none;
+}
+.depth-player {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  height: 26px;
+  padding: 0 4px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--text-2);
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+}
+.depth-player:hover {
+  background: var(--hover);
+  color: var(--text);
+}
+.depth-player.starter {
+  color: var(--text);
+  font-weight: 600;
+}
+.depth-rank {
+  flex: none;
+  width: 12px;
+  color: var(--text-3);
+  font-size: 12.5px;
+  font-weight: 400;
+}
+.depth-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.depth-score {
+  flex: none;
+}
+.depth-player.starter .depth-score {
+  color: var(--accent);
+}
+.depth-empty {
+  padding: 4px;
+  color: var(--text-3);
+  font-size: 12.5px;
+}
+

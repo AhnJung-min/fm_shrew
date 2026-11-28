@@ -1,0 +1,71 @@
+/* 백업: 위아래 패널 사이에 간격을 둔다 */
+.backups-body {
+  display: grid;
+  gap: var(--sp-4);
+  align-content: start;
+}
+.backups-body > .backup-notice,
+.backups-body > .chat-caution {
+  margin: 0;
+}
+
+.backup-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 22px;
+}
+
+.backup-controls .btn {
+  margin-left: auto;
+}
+
+.backup-notice {
+  margin: 12px 0;
+  padding: 10px 14px;
+  border: 1px solid rgba(95, 220, 160, 0.4);
+  border-radius: var(--radius-s);
+  background: var(--good-soft);
+}
+
+.backup-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-variant-numeric: tabular-nums;
+}
+
+.backup-table th {
+  padding: 10px 20px;
+  text-align: left;
+  font-size: var(--fs-small);
+  font-weight: 600;
+  color: var(--text-2);
+  border-bottom: 1px solid var(--line-strong);
+}
+
+.backup-table td {
+  padding: 10px 20px;
+  border-bottom: 1px solid var(--line);
+  vertical-align: middle;
+}
+
+.backup-table tr:last-child td {
+  border-bottom: 0;
+}
+
+.backup-table .num {
+  text-align: right;
+}
+
+.backup-table .tag {
+  margin-left: 8px;
+}
+
+.backup-table .actions {
+  text-align: right;
+  white-space: nowrap;
+}
+.backup-table .actions .btn + .btn {
+  margin-left: 6px;
+}
+

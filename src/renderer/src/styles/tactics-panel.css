@@ -1,0 +1,287 @@
+/* ---------- 전술 분석: 보강 필요도 ---------- */
+
+/* 등급은 색과 글자(시급, 보강 권장, 보통, 충분)와 숫자를 함께 쓴다 */
+.tp-need {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 2px 6px;
+  width: 100%;
+  padding: 2px 0;
+  border: 0;
+  border-radius: var(--radius-xs);
+  background: transparent;
+  color: var(--text-2);
+  font-size: var(--fs-micro);
+  line-height: 1.3;
+  text-align: left;
+  cursor: pointer;
+}
+.tp-need b {
+  color: var(--text);
+  font-size: 14px;
+}
+.tp-need em {
+  font-style: normal;
+  font-weight: 600;
+}
+.tp-need:hover {
+  color: var(--text);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.tp-need[aria-pressed='true'] {
+  color: var(--text);
+  font-weight: 700;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.tp-need.urgent em,
+.need-badge.urgent em {
+  color: var(--bad);
+}
+.tp-need.recommended em,
+.need-badge.recommended em {
+  color: var(--warn);
+}
+.tp-need.normal em,
+.need-badge.normal em {
+  color: var(--text-2);
+}
+.tp-need.fine em,
+.need-badge.fine em {
+  color: var(--good);
+}
+.tp-slot.focused {
+  box-shadow: 0 0 0 2px var(--accent);
+}
+
+.need-badge {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 4px;
+  padding: 1px 8px;
+  border: 1px solid var(--line-strong);
+  border-radius: 12px;
+  color: var(--text-2);
+  font-size: var(--fs-micro);
+  white-space: nowrap;
+}
+.need-badge b {
+  color: var(--text);
+  font-size: 13px;
+}
+.need-badge em {
+  font-style: normal;
+  font-weight: 600;
+}
+
+.tactic-panel {
+  margin-bottom: 20px;
+}
+.tactic-summary {
+  margin-bottom: 14px;
+  padding: 12px 14px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-m);
+  background: var(--surface);
+  font-size: 14px;
+}
+.tactic-summary p {
+  margin: 0 0 6px;
+}
+.tactic-summary p:last-child {
+  margin-bottom: 0;
+}
+.line-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));
+  gap: 6px;
+  margin: 8px 0;
+  padding: 0;
+  list-style: none;
+}
+.line-list li {
+  display: flex;
+  flex-direction: column;
+  padding: 6px 8px;
+  border-radius: var(--radius-s);
+  background: var(--raised);
+  font-size: 13px;
+}
+.line-list b {
+  font-size: 18px;
+}
+.need-title {
+  margin: 0 0 4px;
+  font-size: 15px;
+  font-weight: 700;
+}
+.need-help {
+  margin: 0 0 8px;
+  font-size: 12.5px;
+}
+.need-list {
+  display: grid;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.need-row {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  width: 100%;
+  padding: 7px 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-s);
+  background: var(--surface);
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+}
+.need-row:hover {
+  background: var(--hover);
+}
+.need-row.focused {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+.need-row-top {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 8px;
+  width: 100%;
+}
+.need-row-name {
+  font-weight: 650;
+  font-size: 14px;
+}
+.need-row-role {
+  flex: 1;
+  min-width: 0;
+  font-size: var(--fs-micro);
+}
+.need-row-reason {
+  color: var(--text-2);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.slot-detail {
+  margin-bottom: 16px;
+  padding: 12px 14px;
+  border: 1px solid var(--accent);
+  border-radius: var(--radius-m);
+  background: var(--surface);
+}
+.slot-detail header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px 10px;
+}
+.slot-detail h3 {
+  margin: 0;
+  font-size: 16px;
+}
+.slot-detail h4 {
+  margin: 14px 0 6px;
+  font-size: 13px;
+  color: var(--text-2);
+}
+.slot-reason {
+  margin: 6px 0 2px;
+  font-size: 14px;
+}
+.slot-facts {
+  margin: 0;
+  font-size: 12.5px;
+}
+.factor-list,
+.option-list {
+  display: grid;
+  gap: 8px;
+  margin: 0 0 10px;
+  padding: 0;
+  list-style: none;
+}
+.factor-head {
+  display: grid;
+  grid-template-columns: 82px minmax(0, 1fr) 64px;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+}
+.factor-track {
+  height: 8px;
+  border-radius: 4px;
+  background: var(--raised);
+  overflow: hidden;
+}
+.factor-track span {
+  display: block;
+  height: 100%;
+  background: var(--accent);
+}
+.factor-points {
+  text-align: right;
+  color: var(--text-2);
+}
+.factor-list p {
+  margin: 2px 0 0;
+  color: var(--text-2);
+  font-size: 12.5px;
+  line-height: 1.45;
+}
+.factor-list .skipped {
+  opacity: 0.8;
+}
+.option {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  width: 100%;
+  padding: 6px 8px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-s);
+  background: transparent;
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+}
+.option:hover {
+  background: var(--hover);
+}
+.option-top {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+}
+.option-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-weight: 650;
+}
+.option-role {
+  flex: none;
+  color: var(--text-3);
+  font-size: var(--fs-micro);
+}
+.option-score {
+  flex: none;
+  font-size: 13px;
+}
+.option-note {
+  color: var(--text-2);
+  font-size: 12.5px;
+  line-height: 1.45;
+}

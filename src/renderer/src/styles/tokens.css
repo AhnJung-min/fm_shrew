@@ -1,0 +1,153 @@
+/*
+  FM 보좌관 디자인 토큰. 기준 문서: docs/design.md
+  방향: 조명이 켜진 밤 경기장과 전광판. 바탕은 어두운 남색(설정에서 블랙으로 바꿀 수 있다: 아래 [data-theme='black']),
+  화면의 뼈대(선택·주 단추·링크)는 조명 아래 흰색, 색은 뜻이 있을 때만 쓴다(초록 좋음, 노랑 주목, 주황 주의, 빨강 위험).
+  핵심 숫자는 전광판처럼 크고 굵게.
+  글자 대비(WCAG, 가장 밝은 면인 --hover 위에서 계산한 최솟값, 블루/블랙): 본문 12.1/14.0:1, 보조 8.8/9.7:1,
+  흐린 글자 5.4/5.9:1, 노랑·초록·주황·빨강 글자 5.7/6.5:1 이상, 능력치 칩 글자 5.7/6.2:1 이상.
+  입력·단추 테두리는 어느 면과도 3.1:1 이상.
+*/
+:root {
+  color-scheme: dark;
+
+  /* 면: 밤하늘 < 관중석 < 벤치 */
+  --bg: #0a1324;
+  --surface: #0f1b31;
+  --raised: #16243f;
+  --hover: #1e2e4d;
+  --zebra: rgba(255, 255, 255, 0.024);
+  --line: #263756;
+  --line-strong: #5b7099;
+
+  /* 글자: 조명 아래 흰색 */
+  --text: #eef3fb;
+  --text-2: #c6d1e4;
+  --text-3: #95a5c2;
+
+  /* 화면의 뼈대는 흰색(선택, 주 단추, 링크). 노랑은 --gold로 따로 둔다 */
+  --accent: #eef3fb;
+  --accent-ink: var(--bg);
+  --accent-soft: color-mix(in srgb, var(--accent) 12%, transparent);
+  --gold: #f7d65a;
+  --gold-ink: #241d02;
+  --gold-soft: rgba(247, 214, 90, 0.16);
+  --good: #5fdca0;
+  --warn: #f5a64c;
+  --bad: #f58a7c;
+  --good-soft: rgba(95, 220, 160, 0.14);
+  --warn-soft: rgba(245, 166, 76, 0.14);
+  --bad-soft: rgba(245, 138, 124, 0.14);
+  --info-soft: color-mix(in srgb, var(--text-2) 10%, transparent);
+  --focus: #7cc7ff;
+
+  /* 능력치 네 단계: 칩 바탕과 글자(게임과 같은 1~5, 6~10, 11~15, 16~20) */
+  --a1-bg: rgba(245, 138, 124, 0.18);
+  --a1-ink: #ffb3a8;
+  --a1-edge: rgba(245, 138, 124, 0.45);
+  --a2-bg: color-mix(in srgb, var(--text-2) 10%, transparent);
+  --a2-ink: #dce4f1;
+  --a2-edge: color-mix(in srgb, var(--text-2) 22%, transparent);
+  --a3-bg: rgba(95, 220, 160, 0.18);
+  --a3-ink: #9cf0c6;
+  --a3-edge: rgba(95, 220, 160, 0.5);
+  --a4-bg: rgba(247, 214, 90, 0.26);
+  --a4-ink: #ffe58a;
+  --a4-edge: rgba(247, 214, 90, 0.75);
+
+  /* 경기장 그림(전술판, 포지션 그림): 화면과 같은 계열의 작전판 */
+  --turf: #0e2140;
+  --turf-stripe: #11264a;
+  --turf-line: #3d5888;
+
+  /* 둥글기: 위계가 다르면 둥글기도 다르게 */
+  --radius-xs: 4px;
+  --radius-s: 6px;
+  --radius-m: 10px;
+  --radius-l: 14px;
+
+  /* 간격(4 단위) */
+  --sp-1: 4px;
+  --sp-2: 8px;
+  --sp-3: 12px;
+  --sp-4: 16px;
+  --sp-5: 24px;
+  --sp-6: 32px;
+
+  /* 글자 크기 */
+  --fs-micro: 12.5px;
+  --fs-small: 13.5px;
+  --fs-body: 15px;
+  --fs-h3: 16px;
+  --fs-h2: 19px;
+  --fs-h1: 26px;
+  --fs-score: 34px;
+  --fs-score-xl: 56px;
+
+  --row-h: 36px;
+  --font: 'Pretendard Variable', Pretendard, 'Malgun Gothic', system-ui, sans-serif;
+}
+
+/* 블랙: 면과 글자만 무채색으로 바꾼다. 뜻이 있는 색(초록·노랑·주황·빨강)과 크기·간격은 그대로 */
+:root[data-theme='black'] {
+  --bg: #08090b;
+  --surface: #101216;
+  --raised: #181b20;
+  --hover: #21252c;
+  --line: #2a2f37;
+  --line-strong: #656e7c;
+  --text: #f2f4f7;
+  --text-2: #c9cdd5;
+  --text-3: #9aa1ad;
+  --accent: #f2f4f7;
+  --a2-ink: #e0e3e8;
+  --turf: #12161c;
+  --turf-stripe: #151a21;
+  --turf-line: #465060;
+}
+
+:root[data-density='comfortable'] {
+  --row-h: 44px;
+}
+
+/* ---------- 디자인 적용 1차의 새 토큰: 값은 지금 쓰는 값에 이름만 붙인 것이다(쓰는 곳은 뒤 단위가 옮긴다) ---------- */
+:root {
+  /* 굵기 사다리(C-69). 이 넷과 inherit 말고는 쓰지 않는다(적용은 B) */
+  --fw-regular: 400; /* 본문, 1~10 칩 */
+  --fw-strong: 600; /* 고른 것, 핵심 능력치 이름, 11~15 칩, 태그, 표의 이름 칸 */
+  --fw-title: 700; /* 구역 제목, 고른 메뉴, 정렬된 표 머리 */
+  --fw-heavy: 800; /* 전광판 숫자, 표의 점수, 16~20 칩, 화면 제목(h1) */
+
+  /* 줄 높이(C-27): 값만 둔다. 파일은 손대는 화면부터 쓴다 */
+  --lh-num: 1.25;
+  --lh-short: 1.4;
+  --lh-para: 1.55;
+
+  /* 뜻 색 세 짝(C-27): 글자는 지금의 --good 등, 옅은 바탕은 --good-soft 등, 테두리를 새 이름으로 */
+  --gold-edge: rgba(247, 214, 90, 0.45);
+  --good-edge: rgba(95, 220, 160, 0.4); /* 지금 .backup-notice의 값 */
+  --warn-edge: rgba(245, 166, 76, 0.45);
+  --bad-edge: rgba(245, 138, 124, 0.45); /* --a1-edge와 같은 값 */
+  --neutral-ink: var(--text-2);
+  --neutral-soft: var(--info-soft);
+  --neutral-edge: var(--line-strong);
+
+  /* hover 위 단추 경계(지금 --line-strong은 --hover 위 2.72:1). 새 색이 아니라 있는 글자색의 별명 */
+  --line-hover: var(--text-3);
+
+  /* 떠 있는 것의 면(C-27). 가장 밝은 면을 새로 만들지 않는다 */
+  --float-bg: var(--raised); /* 풍선, 펼침 목록 */
+  --float-panel: var(--surface); /* 창, 선수 정보 창 */
+  --float-edge: var(--line-strong);
+  --shadow-float: 0 12px 32px color-mix(in srgb, var(--bg) 78%, transparent); /* 풍선, 펼침 목록, 창, 얹히는 선수 정보 창이 함께 쓴다. 지금 셋을 B가 이 하나로 모은다 */
+
+  /* 흐름 안의 겹침만. 풍선, 펼침 목록, 창은 맨 위 층이라 z-index가 없다 */
+  --z-sticky-col: 1;
+  --z-sticky-head: 2;
+  --z-sticky-corner: 3;
+  --z-raise: 5;
+  --z-overlay: 10; /* 얹히는 선수 정보 창 */
+  --z-overlay-top: 20; /* 지금 대시보드 서랍의 값. C가 .dash-drawer를 지우면 LF가 지운다 */
+
+  --dur-fast: 120ms;
+}
+
