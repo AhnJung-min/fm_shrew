@@ -87,6 +87,9 @@ export type Density = 'compact' | 'comfortable'
 /** 화면 색. blue는 어두운 남색, black은 무채색 검정 */
 export type ThemeId = 'blue' | 'black'
 
+/** 글자 크기(화면 배율). 1은 보통, 1.1은 크게, 1.25는 아주 크게. 100% 아래로는 내리지 않는다 */
+export type UiScale = 1 | 1.1 | 1.25
+
 export interface Settings {
   /** 세이브 파일(.fm)이 있는 폴더 */
   saveDir: string
@@ -136,6 +139,11 @@ export interface Settings {
   settingsVersion?: number
   /** 설정 파일이 깨져 있었을 때의 기록(깨진 파일은 따로 남기고 기본값으로 시작했다). 본체만 쓴다 */
   settingsProblem?: { at: string; file: string; message: string }
+  // ---------- 디자인 적용 1차 ----------
+  /** 글자 크기(화면 배율). 없으면 1(보통) */
+  uiScale?: UiScale
+  /** 창을 늘 다른 창 위에 둔다. 없으면 끔 */
+  alwaysOnTop?: boolean
 }
 
 /** 세이브 사본 하나 */
@@ -232,6 +240,8 @@ export interface Api {
   backupDelete(id: string): Promise<void>
   /** 사본이 생기거나 없어졌을 때 */
   onBackupChanged(cb: () => void): () => void
+  /** 본체가 설정을 바꿨을 때(예: 알림 영역 메뉴의 '항상 위에 두기'). 바뀐 뒤의 설정 전체를 준다 */
+  onSettingsChanged(cb: (settings: Settings) => void): () => void
   // 기록 보관(성장 스냅샷·경기 평점)
   recordsList(): Promise<SaveRecords[]>
   /** 세이브 하나의 기록 폴더를 휴지통으로 보낸다 */

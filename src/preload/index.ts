@@ -1,7 +1,7 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import type { LinkStatus } from '@shared/game'
 import type { ExtraApi } from '@shared/connect'
-import type { Api } from '@shared/types'
+import type { Api, Settings } from '@shared/types'
 
 const api: Api & ExtraApi = {
   getStatus: () => ipcRenderer.invoke('status:get'),
@@ -60,6 +60,11 @@ const api: Api & ExtraApi = {
     const listener = (): void => cb()
     ipcRenderer.on('backup:changed', listener)
     return () => ipcRenderer.removeListener('backup:changed', listener)
+  },
+  onSettingsChanged: (cb) => {
+    const listener = (_event: Electron.IpcRendererEvent, settings: Settings): void => cb(settings)
+    ipcRenderer.on('settings:changed', listener)
+    return () => ipcRenderer.removeListener('settings:changed', listener)
   }
 }
 
