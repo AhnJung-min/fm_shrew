@@ -14,7 +14,7 @@ namespace FmBojwagwan.Bridge;
 ///   경기에 "홈 팀인가"(isHomeTeam)를 조건으로 붙이면 그 팀의 목록이 온다. 줄마다
 ///   Player.UniqueId, TotalRating(안 뛴 교체 선수는 값이 없다), Position(선발만. 포지션 비트 + 왼쪽·오른쪽 표시),
 ///   IncidentType(0 없음, 1 교체로 들어옴, 2 교체로 나감), MatchTime(그 분), PlayerTeamSelectionIndex(맡은 자리 번호, 나갔으면 -1),
-///   Goals, Assists(0.14.0부터 줄에 적는다. 값이 오지 않은 선수는 그 칸을 적지 않는다. 0.13.0까지의 줄에는 없다).
+///   Goals, Assists(0.14.0부터 줄에 적는다. 값이 오지 않았거나 0보다 작은 선수는 그 칸을 적지 않는다. 0.13.0까지의 줄에는 없다).
 ///   선발은 목록의 0~10번 줄이고 줄 번호가 처음 자리 번호다. 교체로 들어온 선수는 대신한 선발의 자리 번호를 이어받는다.
 /// 경기 중에는 읽지 않는다. 게임 화면은 건드리지 않고, 우리 이름(fmb.r)의 마디만 잠깐 올렸다가 지운다.
 /// </summary>
@@ -188,7 +188,7 @@ internal static class RatingsRecorder
         public int Incident;
         public int Minute;
         public int Slot = -1;
-        /// <summary>그 경기의 득점과 도움. 값이 오지 않았으면 null(줄에 적지 않는다)</summary>
+        /// <summary>그 경기의 득점과 도움. 값이 오지 않았으면 null. 줄에는 0 이상일 때만 적는다</summary>
         public int? Goals;
         public int? Assists;
     }
@@ -268,9 +268,10 @@ internal static class RatingsRecorder
                 json.Append(",\"inc\":").Append(row.Incident);
                 json.Append(",\"t\":").Append(row.Minute);
                 json.Append(",\"slot\":").Append(row.Slot);
-                // 득점과 도움은 값이 온 선수만 적는다(0도 적는다. 옛 줄에는 이 칸이 없어 앱이 "적지 않음"과 "0"을 가린다)
-                if (row.Goals != null) json.Append(",\"goals\":").Append(Num(row.Goals));
-                if (row.Assists != null) json.Append(",\"assists\":").Append(Num(row.Assists));
+                // 득점과 도움은 값이 오지 않았거나 0보다 작으면 적지 않는다(0은 적는다. 옛 줄에는 이 칸이 없어 앱이 "적지 않음"과 "0"을 가린다).
+                // 앱은 이 칸이 0 이상의 정수가 아니면 그 경기 줄 전체를 읽지 않는다. 게임이 "없음"에 쓰는 음수(-1)가 와도 줄을 잃지 않게 그 칸만 뺀다
+                if (row.Goals is >= 0) json.Append(",\"goals\":").Append(Num(row.Goals));
+                if (row.Assists is >= 0) json.Append(",\"assists\":").Append(Num(row.Assists));
                 json.Append('}');
             }
         }

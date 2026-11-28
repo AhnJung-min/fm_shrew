@@ -237,15 +237,17 @@ describe('경기 평점 기록의 득점과 도움(RatingsRecorder.cs, 0.14.0)',
     expect(code).toContain('Assists = Int($"{item}.Assists")')
   })
 
-  it('줄 형식은 v:1 그대로이고, goals와 assists는 slot 뒤에 값이 온 선수에게만 선택 칸으로 붙는다(0도 적는다)', () => {
+  it('줄 형식은 v:1 그대로이고, goals와 assists는 slot 뒤에 0 이상의 값이 온 선수에게만 선택 칸으로 붙는다(0은 적고, 음수는 적지 않는다)', () => {
     expect(code).toContain(String.raw`new StringBuilder("{\"v\":1")`)
     const slot = code.indexOf(String.raw`json.Append(",\"slot\":").Append(row.Slot);`)
-    const goals = code.indexOf(String.raw`if (row.Goals != null) json.Append(",\"goals\":").Append(Num(row.Goals));`)
-    const assists = code.indexOf(String.raw`if (row.Assists != null) json.Append(",\"assists\":").Append(Num(row.Assists));`)
+    const goals = code.indexOf(String.raw`if (row.Goals is >= 0) json.Append(",\"goals\":").Append(Num(row.Goals));`)
+    const assists = code.indexOf(String.raw`if (row.Assists is >= 0) json.Append(",\"assists\":").Append(Num(row.Assists));`)
     expect(slot).toBeGreaterThan(0)
     expect(goals).toBeGreaterThan(slot)
     expect(assists).toBeGreaterThan(goals)
     // 값이 0이어도 적는다(0과 모름을 앱이 가른다): 0이면 건너뛰는 조건이 없다
-    expect(code).not.toMatch(/row\.(Goals|Assists) (>|!=) 0/)
+    expect(code).not.toMatch(/row\.(Goals|Assists) (is )?(>|!=) 0/)
+    // 0보다 작은 값(게임이 "없음"에 쓰는 -1 등)은 적지 않는다: 앱은 0 이상의 정수가 아닌 칸이 하나라도 있으면 그 경기 줄 전체를 읽지 않는다
+    expect(code).not.toMatch(/row\.(Goals|Assists) != null/)
   })
 })
