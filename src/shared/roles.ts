@@ -164,16 +164,24 @@ export interface PreparedRole {
 
 const ATTRIBUTE_AT = new Map<string, number>(SAVE_ATTRIBUTE_ORDER.map((id, i) => [id, i]))
 
-export function prepareRole(roleId: string, overrides: Record<string, Record<string, number>>): PreparedRole {
+/**
+ * 가중치 표(능력치 id → 가중치)를 세이브의 능력치 순서로 바꾼다. 0 이하와 모르는 능력치 id는 뺀다.
+ * 역할 하나(prepareRole)뿐 아니라 두 국면을 섞은 합성 가중치(slotProfile.ts의 compositeWeights)도 같은 길로 바꾼다.
+ */
+export function prepareWeights(weights: Readonly<Record<string, number>>): PreparedRole {
   const pairs: Array<[number, number]> = []
   let total = 0
-  for (const [id, weight] of Object.entries(effectiveWeights(roleId, overrides))) {
+  for (const [id, weight] of Object.entries(weights)) {
     const at = ATTRIBUTE_AT.get(id)
     if (at === undefined || weight <= 0) continue
     pairs.push([at, weight])
     total += weight
   }
   return { pairs, total }
+}
+
+export function prepareRole(roleId: string, overrides: Record<string, Record<string, number>>): PreparedRole {
+  return prepareWeights(effectiveWeights(roleId, overrides))
 }
 
 /**
