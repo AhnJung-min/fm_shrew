@@ -36,8 +36,8 @@ export class GameLink {
   private stopped = false
   private lastLive = 0
   private learning = false
-  /** 세이브 파일마다 엿본 게임 판 글자. 파일이 같으면(저장 시각과 크기가 같으면) 다시 읽지 않는다 */
-  private readonly versions = new Map<string, { stamp: string; text: string | null }>()
+  /** 세이브 파일마다 엿본 게임 판 글자. 파일이 같으면(저장 시각과 크기가 같으면) 다시 읽지 않는다. 읽지 못한 것은 담지 않는다 */
+  private readonly versions = new Map<string, { stamp: string; text: string }>()
   /** 게임 판을 확인하지 못해 적용하지 않은 세이브의 안내. 적용한 세이브가 없는 동안 상태의 note로 보인다(앱을 켤 때 자동 적용을 건너뛴 까닭) */
   private skipped: string | null = null
 
@@ -62,13 +62,18 @@ export class GameLink {
     this.notify(this.status())
   }
 
-  /** 세이브를 저장한 게임의 판 글자(세이브 요약에서 엿본다). 읽지 못했으면 null. 같은 파일은 다시 읽지 않는다 */
+  /**
+   * 세이브를 저장한 게임의 판 글자(세이브 요약에서 엿본다). 읽지 못했으면 null.
+   * 읽은 글자는 같은 파일이면 다시 읽지 않지만, 읽지 못한 결과는 기억하지 않는다. 다른 프로그램이 파일을 잠깐 잡고 있어서 한 번 실패한 것일 수 있고,
+   * 그것을 기억하면 파일이 바뀌거나 앱을 다시 켤 때까지 그 세이브를 계속 "확인 못 함"으로 두게 된다(엿보기는 1~2ms라 다시 읽어도 부담이 없다).
+   */
   private versionOf(path: string, mtimeMs: number, bytes: number): string | null {
     const stamp = `${mtimeMs}|${bytes}`
     const known = this.versions.get(path)
     if (known && known.stamp === stamp) return known.text
     const text = peekSaveVersion(path)
-    this.versions.set(path, { stamp, text })
+    if (text === null) this.versions.delete(path)
+    else this.versions.set(path, { stamp, text })
     return text
   }
 

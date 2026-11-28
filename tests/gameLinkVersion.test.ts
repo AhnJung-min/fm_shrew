@@ -1,6 +1,6 @@
 /**
  * 세이브 목록의 게임 판 표시와 적용 전 확인(N-02): 앱이 확인하지 않은 게임 판의 세이브는 적용하기 전에 묻는다.
- * 목록은 파일마다 판을 엿봐 싣고(같은 파일은 다시 읽지 않는다), 적용은 확인한 판이 아니면 needsConfirm으로 돌려준다.
+ * 목록은 파일마다 판을 엿봐 싣고(읽은 판은 같은 파일이면 다시 읽지 않고, 읽지 못한 것은 그때마다 다시 읽는다), 적용은 확인한 판이 아니면 needsConfirm으로 돌려준다.
  * 앱을 켤 때의 자동 적용은 선택값 없이 부르므로 그런 세이브를 저절로 건너뛰고, 까닭을 상태의 note에 싣는다.
  */
 import { mkdtempSync, rmSync, utimesSync, writeFileSync } from 'node:fs'
@@ -74,22 +74,25 @@ describe('세이브 목록의 게임 판 표시', () => {
     expect(typeof byName['가-확인한판.fm'].savedAt).toBe('string')
   })
 
-  it('같은 파일(경로, 저장 시각, 크기가 같음)은 다시 읽지 않고, 파일이 바뀌면 다시 읽는다', () => {
+  it('읽은 판은 같은 파일(경로, 저장 시각, 크기가 같음)이면 다시 읽지 않고, 파일이 바뀌면 다시 읽는다. 읽지 못한 것은 그때마다 다시 읽는다', () => {
     const link = newLink([])
     const peek = vi.mocked(peekSaveVersion)
+    peek.mockClear()
+    const reads = (name: string): number => peek.mock.calls.filter(([path]) => path === at(name)).length
     link.saves()
-    const afterFirst = peek.mock.calls.length
-    expect(afterFirst).toBeGreaterThanOrEqual(4)
     link.saves()
     link.saves()
-    expect(peek.mock.calls.length).toBe(afterFirst)
+    for (const name of ['가-확인한판.fm', '나-새판.fm']) expect(reads(name), name).toBe(1)
+    // 읽지 못한 세이브(판 글자가 없거나 깨짐)는 기억하지 않아 목록을 볼 때마다 다시 읽는다(한 번의 실패가 굳지 않는다)
+    for (const name of ['다-판없음.fm', '라-깨짐.fm']) expect(reads(name), name).toBe(3)
     // 게임이 다시 저장해 파일이 바뀐 것처럼 고친다
     const path = at('가-확인한판.fm')
     writeFileSync(path, saveWithVersion('26.9.9+7'))
     const later = Date.now() / 1000 + 100
     utimesSync(path, later, later)
     const changed = link.saves().find((save) => save.name === '가-확인한판.fm')
-    expect(peek.mock.calls.length).toBe(afterFirst + 1)
+    expect(reads('가-확인한판.fm')).toBe(2)
+    expect(reads('나-새판.fm')).toBe(1)
     expect(changed).toMatchObject({ gameVersion: '26.9.9', versionStatus: 'unsupported' })
     // 다른 시험을 위해 되돌린다
     writeFileSync(path, saveWithVersion('26.3.2+2329565'))
@@ -166,5 +169,41 @@ describe('적용 전 확인', () => {
     const refused = await link.apply(at('나-새판.fm'))
     expect(refused.needsConfirm).toBe(true)
     expect(link.status().data.note).toBe('게임의 값을 쓰지 못했습니다')
+  })
+})
+
+describe('엿보기가 한 번 실패한 뒤(다른 프로그램이 파일을 잠깐 잡고 있는 경우 등)', () => {
+  it('적용: 다시 부르면 다시 읽어 확인한 판으로 적용한다(그 세이브가 "확인 못 함"으로 굳지 않는다)', async () => {
+    const applied: string[] = []
+    const link = newLink(applied)
+    // 첫 엿보기만 읽지 못한 것으로 한다
+    vi.mocked(peekSaveVersion).mockImplementationOnce(() => null)
+    const first = await link.apply(at('가-확인한판.fm'))
+    expect(first).toMatchObject({ ok: false, needsConfirm: true })
+    expect(first.message).toContain('확인 못 함')
+    expect(applied).toEqual([])
+    const second = await link.apply(at('가-확인한판.fm'))
+    expect(second.ok).toBe(true)
+    expect(second.needsConfirm).toBeUndefined()
+    expect(applied).toEqual([at('가-확인한판.fm')])
+    // 적용했으니 건너뛴 까닭은 상태에서 사라진다
+    expect(link.status().data.note).toBe('')
+  })
+
+  it('목록: 다음 목록에서는 확인한 판으로 나오고, 읽은 뒤에는 다시 읽지 않는다', () => {
+    const solo = mkdtempSync(join(tmpdir(), 'fmb-link-solo-'))
+    try {
+      writeFileSync(join(solo, '가.fm'), saveWithVersion('26.3.2+2329565'))
+      const link = new GameLink(fakeWorld([]), () => solo, () => undefined)
+      const peek = vi.mocked(peekSaveVersion)
+      peek.mockImplementationOnce(() => null)
+      expect(link.saves()[0]).toMatchObject({ versionStatus: 'unknown' })
+      expect(link.saves()[0]).toMatchObject({ gameVersion: '26.3.2', versionStatus: 'ok' })
+      const reads = peek.mock.calls.length
+      link.saves()
+      expect(peek.mock.calls.length).toBe(reads)
+    } finally {
+      rmSync(solo, { recursive: true, force: true })
+    }
   })
 })
