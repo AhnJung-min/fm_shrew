@@ -513,7 +513,7 @@ describe('roleListReport: 자리별 역할 목록을 앱의 목록과 견준다'
 
   it('견본의 목록은 견본으로 만든 카탈로그와 모두 같다(22곳)', () => {
     const report = roleListReport(answer, catalog, row, tactic)
-    expect(report).toEqual({ compared: 22, different: 0, lines: [] })
+    expect(report).toEqual({ compared: 22, different: 0, unreadable: 0, lines: [] })
   })
 
   it('게임에만 있는 역할과 앱에만 있는 역할을 자리와 칸 종류와 함께 적는다', () => {
@@ -542,7 +542,43 @@ describe('roleListReport: 자리별 역할 목록을 앱의 목록과 견준다'
     partial.roles = partial.roles.slice(0, 5)
     partial.roles[1].probe.fields['Team.Tactic.PositionValue'] = '3'
     const report = roleListReport(parseTacticAnswer(partial)!, catalog, row, tactic)
-    expect(report).toEqual({ compared: 4, different: 0, lines: [] })
+    expect(report).toEqual({ compared: 4, different: 0, unreadable: 0, lines: [] })
+  })
+
+  it('읽을 수 있는 역할 번호가 하나도 없는 목록(목록이 비어 옴, 번호가 모두 오지 않음, 번호가 글자가 아님)은 견준 것으로도 다른 것으로도 세지 않고 읽지 못한 것으로 센다', () => {
+    const listOf = (json: Json, index: number, phase: 'ip' | 'oop'): Json => json.roles.find((list: Json) => list.index === index && list.phase === phase)
+    const edited = fresh()
+    // 점유 시 DM 자리(자리 6)는 목록이 비어 오고, 비점유 시 DM 자리는 줄은 오는데 역할 번호가 오지 않고, 골키퍼 자리(자리 0)의 점유 시 목록은 번호가 숫자가 아니다
+    listOf(edited, 6, 'ip').probe.items = []
+    listOf(edited, 6, 'oop').probe.items = listOf(edited, 6, 'oop').probe.items.map((item: Json) => ({ 'RowData.DisplayValue.TacticsRoleName': item['RowData.DisplayValue.TacticsRoleName'] }))
+    listOf(edited, 0, 'ip').probe.items = listOf(edited, 0, 'ip').probe.items.map((item: Json) => ({ ...item, 'RowData.DisplayValue.Role': '없음' }))
+    const report = roleListReport(parseTacticAnswer(edited)!, catalog, row, tactic)
+    expect(report).toEqual({ compared: 19, different: 0, unreadable: 3, lines: [] })
+    // 받은 22곳이 견준 곳과 읽지 못한 곳으로 나뉜다
+    expect(report.compared + report.unreadable).toBe(22)
+  })
+
+  it('목록이 비어 와도 앱의 목록 전체가 "앱에만 있음"으로 적히지 않고, 다른 곳의 줄도 만들지 않는다', () => {
+    const empty = fresh()
+    for (const list of empty.roles) list.probe.items = []
+    const report = roleListReport(parseTacticAnswer(empty)!, catalog, row, tactic)
+    expect(report).toEqual({ compared: 0, different: 0, unreadable: 22, lines: [] })
+    // 값이 하나도 오지 않은 줄({})만 있는 목록도 같다
+    const blank = fresh()
+    for (const list of blank.roles) list.probe.items = [{}, {}]
+    expect(roleListReport(parseTacticAnswer(blank)!, catalog, row, tactic)).toEqual({ compared: 0, different: 0, unreadable: 22, lines: [] })
+  })
+
+  it('번호를 읽을 수 있는 역할이 하나라도 있으면 지금처럼 견주고, 읽지 못한 줄은 이름 없음(값 ?)으로 적는다', () => {
+    const edited = fresh()
+    const dm = edited.roles.find((list: Json) => list.index === 6 && list.phase === 'ip')
+    // 목록의 첫 줄은 번호가 오지 않았고 나머지는 그대로다: 목록은 견주고, 읽지 못한 줄은 게임에만 있는 것으로 적힌다
+    dm.probe.items = [{ 'RowData.DisplayValue.TacticsRoleName': '' }, ...dm.probe.items]
+    const report = roleListReport(parseTacticAnswer(edited)!, catalog, row, tactic)
+    expect(report.unreadable).toBe(0)
+    expect(report.compared).toBe(22)
+    expect(report.different).toBe(1)
+    expect(report.lines[0]).toContain('게임에만 있음 [이름 없음(값 ?)]')
   })
 })
 

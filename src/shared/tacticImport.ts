@@ -317,10 +317,15 @@ const sameCell = (a: Cell, b: Cell): boolean => a.line === b.line && a.lane === 
 const shortText = (text: string): string => Array.from(text.trim()).slice(0, TACTIC_NAME_MAX).join('')
 
 export interface RoleListReport {
-  /** 견준 목록 수(자리 × 국면) */
+  /** 견준 목록 수(자리 × 국면). 읽을 수 있는 역할 번호가 하나도 없는 목록(unreadable)은 들지 않는다 */
   compared: number
   /** 앱의 목록과 다른 곳의 수 */
   different: number
+  /**
+   * 읽을 수 있는 역할 번호가 하나도 없어(목록이 비어 왔거나 번호가 모두 오지 않았다) 견주지 못한 목록 수. 자리는 찾았지만 읽지 못한 것이라
+   * 견준 수와 다른 수에 들지 않고 줄도 만들지 않는다(게임이 "고를 수 있는 역할이 없다"고 한 것으로 읽히면 앱 자료를 잘못 고치게 된다)
+   */
+  unreadable: number
   /** 다른 곳마다 한 줄: 게임에만 있는 역할, 앱에만 있는 역할 */
   lines: string[]
 }
@@ -329,15 +334,20 @@ export interface RoleListReport {
  * 게임이 자리마다 주는 "고를 수 있는 역할" 목록을 앱의 목록(그 칸 종류·국면)과 견준다. 점수와 저장에는 쓰지 않는 관측용이다:
  * 앱 자료의 "확인 전" 칸을 게임에서 확인하는 데 쓴다. 사용자 역할은 앱에만 있는 것으로 세지 않는다.
  * 자리는 목록이 알려 준 포지션 비트로 전술의 칸에서 찾는다(찾지 못한 목록은 건너뛴다).
+ * 읽을 수 있는 역할 번호가 하나도 없는 목록(목록이 비어 왔거나 번호가 모두 오지 않음)은 읽지 못한 것이라 견준 것으로 세지 않고 unreadable로만 센다.
  */
 export function roleListReport(answer: GameTacticAnswer, catalog: RoleCatalog, row: SupportedVersion, tactic: Tactic): RoleListReport {
-  const report: RoleListReport = { compared: 0, different: 0, lines: [] }
+  const report: RoleListReport = { compared: 0, different: 0, unreadable: 0, lines: [] }
   for (const list of answer.roleLists) {
     const read = cellOfPosition(list.position, row)
     if (!('cell' in read)) continue
     const at = tactic.slots.findIndex((slot) => sameCell(slot[list.phase].cell, read.cell))
     const position = cellPosition(read.cell)
     if (at < 0 || !position) continue
+    if (!list.options.some((option) => option.id !== null && roleGameId(option.id, row) !== null)) {
+      report.unreadable++
+      continue
+    }
     report.compared++
     const kind = slotKindOf(tactic, at, list.phase)
     const appIds = new Set(catalog.choicesAt(position, list.phase, kind).filter((choice) => choice.evidence !== 'user').map((choice) => choice.roleId))
