@@ -9,6 +9,8 @@
  *   FMB_CATALOG_SOURCE  켜진 게임에서 읽은 파일이 있는 폴더(메인 체크아웃의 review-notes/ingame). role-key-attributes.json, role-slots*.json이 필요하고
  *                       role-stars.json이 있으면 1군 별점 표와의 어긋남도 본다.
  *   FMB_CATALOG_WRITE   1이면 원본에서 만든 글을 자료 파일에 쓴다(`npm run catalog:build`). 아니면 자료 파일과 같은지만 본다.
+ *                       쓰는 실행에서는 "자료 파일과 생성기가 어긋나지 않았다"를 보는 시험 넷(아래 CHECK_FILE)을 건너뛴다. 규칙이나 표를 바꾼 뒤의 첫 실행은
+ *                       옛 자료 파일을 새 생성기와 견주게 되어 빨갛게 나오기 때문이다. 쓴 뒤에 `npm test -- tests/catalogBuild.test.ts`로 다시 확인한다.
  * 다시 돌려도 자료 파일이 바뀌지 않아야 한다(열쇠 차례와 줄 모양이 고정이다).
  */
 import { existsSync, readdirSync, readFileSync, writeFileSync } from 'node:fs'
@@ -44,6 +46,8 @@ const SOURCE = process.env.FMB_CATALOG_SOURCE
 const WRITE = process.env.FMB_CATALOG_WRITE === '1'
 const DATA_FILE = join(__dirname, '..', 'src', 'shared', 'data', 'fm26-roles.json')
 const committed = raw as unknown as Fm26Data
+/** 자료 파일을 생성기의 표와 견주는 시험. 자료 파일을 새로 쓰는 실행(WRITE)에서는 건너뛴다 */
+const CHECK_FILE = it.skipIf(WRITE)
 
 describe('원본 읽기: 필요한 칸만 읽는다', () => {
   it('역할 목록 파일의 설명 글(help)과 모르는 칸은 읽히지 않는다', () => {
@@ -263,13 +267,13 @@ function sourceFromData(data: Fm26Data): BuildSource {
 }
 
 describe('생성기와 자료 파일', () => {
-  it('자료 파일을 원본 꼴로 되돌린 것에서 생성기가 같은 자료를 만든다(생성기와 자료 파일이 어긋나지 않았다)', () => {
+  CHECK_FILE('자료 파일을 원본 꼴로 되돌린 것에서 생성기가 같은 자료를 만든다(생성기와 자료 파일이 어긋나지 않았다)', () => {
     const source = sourceFromData(committed)
     expect(source.slots[0].slots).toHaveLength(11)
     expect(buildFm26Data(source, { appRule: COMMITTED_APP_RULE })).toEqual(committed)
   })
 
-  it('자료 파일의 글은 생성기가 쓰는 글과 같다(열쇠 차례와 줄 모양이 고정이라 다시 돌려도 바뀌지 않는다)', () => {
+  CHECK_FILE('자료 파일의 글은 생성기가 쓰는 글과 같다(열쇠 차례와 줄 모양이 고정이라 다시 돌려도 바뀌지 않는다)', () => {
     const text = readFileSync(DATA_FILE, 'utf8')
     expect(formatFm26Data(committed)).toBe(text)
     expect(text.endsWith('}\n')).toBe(true)
@@ -326,7 +330,7 @@ describe('생성기와 자료 파일', () => {
     expect(built.roles.filter((role) => !role.selectable)).toHaveLength(9)
   })
 
-  it('게임에서 읽은 칸 종류는 목록이 게임 번호 순이고 근거가 game, 초안 칸 종류는 초안의 근거와 출처 메모가 붙는다', () => {
+  CHECK_FILE('게임에서 읽은 칸 종류는 목록이 게임 번호 순이고 근거가 game, 초안 칸 종류는 초안의 근거와 출처 메모가 붙는다', () => {
     for (const kind of ALL_KINDS) {
       const draft = DRAFT_KINDS[kind]
       for (const entry of committed.slotKinds[kind]) expect(entry.evidence, `${kind} ${entry.roleId}`).toBe(draft ? draft.evidence : 'game')
@@ -334,7 +338,7 @@ describe('생성기와 자료 파일', () => {
     }
   })
 
-  it('옛 14역할 대응 표는 생성기의 표 그대로다', () => {
+  CHECK_FILE('옛 14역할 대응 표는 생성기의 표 그대로다', () => {
     for (const [oldId, target] of Object.entries(LEGACY_TARGETS)) expect(committed.legacyMap[oldId]).toEqual({ to: `ip.${target}`, oneToOne: true })
   })
 })
