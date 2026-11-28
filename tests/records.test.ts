@@ -384,6 +384,8 @@ describe('경기 평점 가져오기', () => {
       expect(parseRatingLine(one({ goals: 0, assists: 0 }))).not.toBeNull()
       expect(parseRatingLine(one({ goals: 2 }))).not.toBeNull()
       expect(parseRatingLine(one({ assists: 1 }))).not.toBeNull()
+      // 플러그인이 적는 값은 0 이상의 정수(C# int의 최댓값까지)다. 쓰는 쪽이 적는 범위가 읽는 쪽이 받는 범위 안에 있어야 줄을 잃지 않는다
+      expect(parseRatingLine(one({ goals: 2_147_483_647, assists: 2_147_483_647 }))).not.toBeNull()
       for (const bad of [{ goals: '1' }, { goals: -1 }, { goals: 1.5 }, { goals: null }, { assists: 'x' }, { assists: -2 }, { assists: null }, { goals: 1, assists: [] }]) {
         expect(parseRatingLine(one(bad)), JSON.stringify(bad)).toBeNull()
       }
