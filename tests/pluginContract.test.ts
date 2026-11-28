@@ -1028,7 +1028,8 @@ describe('게임에서 전술 가져오기(창구): 읽기 전에 보는 조건'
         expect(asks(), JSON.stringify([names, ids])).toEqual(ask(uidsOf(0, 3)))
         expect(result.ok).toBe(false)
         expect(result.message).toContain('게임이 바쁩니다')
-        expect(result.message.endsWith('전술일 수 있습니다).'), result.message).toBe(true)
+        // 알림은 전술이 온 경우와 오지 않은 경우 둘 다에 맞는 말이다(실패 글에 붙어도 "다른 팀의 전술"만 말하지 않는다)
+        expect(result.message.endsWith('다른 팀의 전술이 왔거나 선수를 찾지 못했을 수 있습니다.'), result.message).toBe(true)
         expect(result.message.split(NOTE), result.message).toHaveLength(2)
       }
     })
