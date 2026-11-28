@@ -247,9 +247,9 @@ const UNUSABLE_CODES: ReadonlySet<string> = new Set(['shape', 'slotCount', 'cell
 
 /**
  * 전술 하나를 검사한다. 문제가 없으면 빈 목록. 화면이 보낸 자료를 본체가 다시 검사할 때도 쓰므로 모양이 틀린 입력에도 죽지 않는다.
- * 거절하는 것: 자리 수가 11이 아님, 올바르지 않은 칸, 국면마다 골키퍼 칸이 정확히 하나가 아님, 같은 칸에 자리 둘, 카탈로그에 없는 역할,
- * 그 국면에 쓸 수 없는 역할, 골키퍼 역할과 골키퍼 칸이 어긋남, 그 칸 종류·국면에서 고를 수 없는 역할, 비중이 0~100 정수가 아님,
- * 이름이 비었거나 너무 김, 카탈로그가 다름.
+ * 거절하는 것: 자리 수가 11이 아님, 올바르지 않은 칸, 국면마다 골키퍼 칸이 정확히 하나가 아님, 골키퍼 칸에 놓인 자리가 두 국면에서 다름(한 자리는 한 선수라서),
+ * 같은 칸에 자리 둘, 카탈로그에 없는 역할, 그 국면에 쓸 수 없는 역할, 골키퍼 역할과 골키퍼 칸이 어긋남, 그 칸 종류·국면에서 고를 수 없는 역할,
+ * 비중이 0~100 정수가 아님, 이름이 비었거나 너무 김, 카탈로그가 다름.
  */
 export function validateTactic(tactic: Tactic, catalog: RoleCatalog): TacticProblem[] {
   if (!tactic || typeof tactic !== 'object' || !Array.isArray(tactic.slots)) return [{ code: 'shape', message: '전술 자료가 올바르지 않습니다.' }]
@@ -303,6 +303,16 @@ export function validateTactic(tactic: Tactic, catalog: RoleCatalog): TacticProb
     })
     if (keepers !== 1) add('goalkeeper', `${label}에는 골키퍼 칸이 정확히 하나 있어야 합니다. 지금은 ${keepers}개입니다.`, { phase })
   }
+
+  // 한 자리는 한 선수라서 골키퍼 자리는 두 국면 모두 골키퍼 칸이어야 한다. 국면마다 따로 보면 골키퍼 칸이 하나씩이어도 자리가 다를 수 있는데,
+  // 그러면 한 자리의 프로파일이 골키퍼와 필드 플레이어의 가중치를 섞고 뛸 자격은 골키퍼 숙련으로 보게 된다
+  tactic.slots.forEach((slot, index) => {
+    const ip = slot?.ip?.cell ? cellPosition(slot.ip.cell) : null
+    const oop = slot?.oop?.cell ? cellPosition(slot.oop.cell) : null
+    if (ip !== null && oop !== null && (ip === 'GK') !== (oop === 'GK')) {
+      add('goalkeeper', `${index + 1}번째 자리는 한쪽 국면에서만 골키퍼 칸입니다. 골키퍼 자리는 점유 시와 비점유 시 모두 골키퍼 칸이어야 합니다.`, { index })
+    }
+  })
   return problems
 }
 

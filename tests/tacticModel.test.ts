@@ -283,6 +283,37 @@ describe('validateTactic: 저장하기 전 검사', () => {
     expect(codes).toContainEqual(expect.objectContaining({ code: 'overlap', phase: 'oop', index: 10 }))
   })
 
+  it('골키퍼 자리는 두 국면 모두 골키퍼 칸이어야 한다(국면마다 골키퍼 칸이 하나씩이어도 자리가 다르면 거절)', () => {
+    // 4-2-3-1의 10번 자리(골키퍼)와 7번 자리(중앙 수비)가 한 국면에서 칸과 역할을 맞바꾼다. 국면마다 따로 보면 골키퍼 칸 수, 역할과 칸, 겹침이 모두 맞다
+    const swap = (phase: 'ip' | 'oop'): Tactic =>
+      mutated(preset('4-2-3-1'), (copy) => {
+        const keeper = copy.slots[10][phase]
+        copy.slots[10][phase] = copy.slots[7][phase]
+        copy.slots[7][phase] = keeper
+      })
+    for (const phase of ['ip', 'oop'] as const) {
+      const other = phase === 'ip' ? 'oop' : 'ip'
+      const tactic = swap(phase)
+      expect(positionsOf(tactic, phase)[7], phase).toBe('GK')
+      expect(positionsOf(tactic, other)[10], phase).toBe('GK')
+      expect(tactic.slots[7][phase].roleId, phase).toBe('gk')
+      expect(tactic.slots[10][phase].roleId, phase).toBe('cb')
+      const problems = validateTactic(tactic, LEGACY_CATALOG)
+      expect(problems.map((problem) => [problem.code, problem.index]), phase).toEqual([['goalkeeper', 7], ['goalkeeper', 10]])
+      expect(problems[0].phase, phase).toBeUndefined()
+      expect(problems[0].message, phase).toContain('8번째 자리')
+      expect(problems[1].message, phase).toContain('11번째 자리')
+      // 저장해 둔 묶음에 이런 전술이 있으면 분석을 돌릴 수 없는 것으로 보아 쓰지 않는다
+      const set = { catalog: 'fm26', tactics: [{ ...tactic, catalog: 'fm26' as const }], mainId: tactic.id } satisfies TacticSet
+      expect(resolveMainTactic(settingsOf({ formation: '3-5-2', tacticsDefault: set }), null, FAKE_FM26).id).toBe('preset:3-5-2')
+    }
+    // 두 국면 모두 같은 자리가 골키퍼이면 통과한다
+    expect(validateTactic(preset('4-2-3-1'), LEGACY_CATALOG)).toEqual([])
+    // 칸이 올바르지 않은 자리는 칸 문제(와 그 국면의 골키퍼 칸 수)로만 알리고, 골키퍼 자리 검사는 겹쳐 알리지 않는다
+    const brokenCell = mutated(preset('4-2-3-1'), (copy) => (copy.slots[10].oop.cell = { line: 'ST', lane: 'L' }))
+    expect(validateTactic(brokenCell, LEGACY_CATALOG).filter((problem) => problem.code === 'goalkeeper')).toEqual([expect.objectContaining({ phase: 'oop' })])
+  })
+
   it('자리는 11개여야 한다(10개, 12개 거절)', () => {
     const base = preset('4-3-3')
     expect(codesOf(validateTactic({ ...base, slots: base.slots.slice(0, 10) }, LEGACY_CATALOG))).toContain('slotCount')
