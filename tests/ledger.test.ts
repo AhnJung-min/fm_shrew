@@ -1,8 +1,8 @@
 import { readdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { K, LEDGER, withLedger, type LedgerName } from '../src/shared/ledger'
-import { LEDGER_DOC_BEGIN, LEDGER_DOC_END, renderLedgerDoc, replaceLedgerDoc } from '../src/shared/ledgerDoc'
+import { K, LEDGER, SENSITIVE_BELOW, withLedger, type LedgerName } from '../src/shared/ledger'
+import { formatSensitivity, LEDGER_DOC_BEGIN, LEDGER_DOC_END, renderLedgerDoc, replaceLedgerDoc } from '../src/shared/ledgerDoc'
 import { posPenaltySigma } from '../src/shared/positions'
 
 const SHARED = join(__dirname, '..', 'src', 'shared')
@@ -27,21 +27,33 @@ describe('상수 대장(F-07)', () => {
     expect(LEDGER.length).toBeGreaterThan(100)
   })
 
-  it('민감 표시는 문서가 알려 준 상수에만 있다: 숙련 감점 계수, 로테이션 경계, 성장 몫', () => {
-    const sensitive = LEDGER.filter((entry) => entry.sensitivity === '민감').map((entry) => entry.name).sort()
-    expect(sensitive).toEqual(
-      [
-        'PENALTY_ACCOMPLISHED_PER_POINT',
-        'PENALTY_AWKWARD_BASE',
-        'PENALTY_AWKWARD_PER_POINT',
-        'PENALTY_POOR_BASE',
-        'PENALTY_POOR_PER_POINT',
-        'STARTER_TOLERANCE_SIGMAS',
-        'CA_GATE',
-        'GROWTH_SHARE_TABLE',
-        'GROWTH_SHARE_TABLE_GOALKEEPER'
-      ].sort()
-    )
+  it('민감도는 측정 표에서 정해진다: 겹침이 0.8 미만이면 민감, 이상이면 보통, 표에 없으면 미측정', () => {
+    for (const entry of LEDGER) {
+      const measured = entry.measured
+      expect(entry.sensitivity, entry.name).toBe(measured === undefined ? '미측정' : measured.overlap < SENSITIVE_BELOW ? '민감' : '보통')
+      if (!measured) continue
+      expect(measured.overlap, entry.name).toBeGreaterThanOrEqual(0)
+      expect(measured.overlap, entry.name).toBeLessThanOrEqual(1)
+      expect(Number(measured.overlap.toFixed(2)), `${entry.name}: 겹침은 소수 둘째 자리까지`).toBe(measured.overlap)
+      // 겹침이 1보다 작으면 어느 탭에서 무엇을 바꿔 그랬는지 적혀 있다
+      if (measured.overlap < 1) {
+        expect(measured.tab, entry.name).toBeTruthy()
+        expect(measured.direction, entry.name).toBeTruthy()
+      }
+    }
+  })
+
+  it('민감한 상수는 시험 세이브 A의 측정에서 겹침이 0.8 미만이었던 것이다(검사를 다시 돌려 바뀌면 이 목록과 문서를 함께 고친다)', () => {
+    const sensitive = LEDGER.filter((entry) => entry.sensitivity === '민감').sort((a, b) => a.measured!.overlap - b.measured!.overlap || a.name.localeCompare(b.name))
+    expect(sensitive.map((entry) => entry.name)).toEqual([
+      'CA_GATE',
+      'PROSPECT_MAX_AGE',
+      'AGING_START_AGE',
+      'PENALTY_ACCOMPLISHED_PER_POINT',
+      'GROWTH_SHARE_TABLE',
+      'PLAYABLE_RATING',
+      'PEAK_OUTFIELD'
+    ])
   })
 
   it('지금 값(K)은 기본값과 같고, 기본값 자체와는 따로 복사되어 있다', () => {
@@ -230,5 +242,17 @@ describe('문서의 상수 목록이 대장과 맞다(N-06)', () => {
     for (const entry of LEDGER) expect(rendered, entry.name).toContain(`| \`${entry.name}\` |`)
     expect(renderLedgerDoc().split('\n').filter((line) => line.startsWith('| `')).length).toBe(LEDGER.length)
     expect(rendered).toContain('| `PENALTY_ACCOMPLISHED_PER_POINT` | 0.08 |')
+  })
+
+  it('민감도 칸에 측정값이 보이고, 민감한 상수는 목록에 겹침과 함께 나온다', () => {
+    const rendered = renderLedgerDoc()
+    for (const entry of LEDGER) {
+      expect(rendered, entry.name).toContain(`| ${formatSensitivity(entry.measured)} |`)
+      if (entry.sensitivity === '민감') expect(rendered, entry.name).toContain(`\`${entry.name}\`(${entry.measured!.overlap.toFixed(2)})`)
+    }
+    expect(formatSensitivity({ overlap: 0.07, tab: '로테이션', direction: '+20%' })).toBe('민감 0.07 (로테이션 탭, +20%)')
+    expect(formatSensitivity({ overlap: 0.31, tab: '로테이션', wide: true, direction: '×2' })).toBe('민감 0.31 (로테이션 탭(넓힘), ×2)')
+    expect(formatSensitivity({ overlap: 1 })).toBe('보통 1.00 (변화 없음)')
+    expect(formatSensitivity(undefined)).toBe('미측정')
   })
 })

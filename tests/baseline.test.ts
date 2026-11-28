@@ -10,17 +10,14 @@
  * 기준 결과는 선수 고유 번호로만 적는다(이름 없음). 역할 가중치는 언제나 기본값이고 사용자 설정은 읽지 않는다.
  * 시간은 항상 찍고, 예산(후보 찾기 일반 50ms·가장 넓은 100ms, 기준 분포 0.5초)을 넘을 때만 실패한다. 세이브 읽기 시간은 찍기만 한다.
  */
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
-import { tmpdir } from 'node:os'
-import { dirname, join } from 'node:path'
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { dirname } from 'node:path'
 import { describe, expect, it } from 'vitest'
-import { DashboardService } from '../src/main/dashboardService'
-import { SeasonService } from '../src/main/seasonService'
-import { WorldService } from '../src/main/worldService'
 import { FORMATIONS } from '../src/shared/depth'
 import { analyseTactic, type SlotGroup } from '../src/shared/tactic'
-import { type CandidateCategory, type CandidateQuery } from '../src/shared/world'
+import { type CandidateCategory } from '../src/shared/world'
 import { BUDGET_MS, diffJson, formatDiff, r1, timeIt, type Json } from './helpers/baselineDiff'
+import { groupQuery, openBaselineWorld } from './helpers/baselineWorld'
 
 const SAVE = process.env.FMB_TEST_SAVE
 const TEAM = Number(process.env.FMB_TEST_TEAM)
@@ -56,28 +53,11 @@ describe.skipIf(!SAVE || !Number.isInteger(TEAM) || TEAM <= 0)('고정 세이브
   it(
     '기준 결과와 같고, 시간이 예산 안이다',
     async () => {
-      const namesDir = mkdtempSync(join(tmpdir(), 'fmb-baseline-names-'))
-      let dash: DashboardService | null = null
-      const state = { formation: '4-2-3-1' }
-      const ws = new WorldService({
-        knownTeam: () => TEAM,
-        rosterNames: () => [],
-        rememberTeam: () => undefined,
-        roleWeights: () => ({}),
-        wageModel: () => dash?.currentWageModel() ?? null,
-        namesDir
-      })
       const report: string[] = []
 
       // ---- 세이브 읽기(찍기만 한다) ----
-      const readStart = performance.now()
-      ws.apply(SAVE!)
-      const readMs = performance.now() - readStart
+      const { ws, dash, state, readMs } = await openBaselineWorld(SAVE!, TEAM)
       report.push(`세이브 읽기 ${Math.round(readMs)}ms (찍기만 함)`)
-      const world = ws.world!
-      const season = new SeasonService({ current: () => ({ path: SAVE!, world }), namesDir })
-      dash = new DashboardService({ world: ws, season, settings: () => ({ formation: state.formation, slotRoles: {}, roleWeights: {} }), namesDir })
-      await dash.prepareWageModel()
 
       // ---- 기준 분포(역할 14개 전체) ----
       const normCache = ws as unknown as { normCache: unknown }
@@ -110,18 +90,8 @@ describe.skipIf(!SAVE || !Number.isInteger(TEAM) || TEAM <= 0)('고정 세이브
 
         const groups: SlotGroup[] = analysis.groups
         for (const group of groups) {
-          const query = (category: CandidateCategory, widest: boolean): CandidateQuery => ({
-            roleId: group.roleId,
-            category,
-            maxAge: null,
-            onlyEligible: !widest,
-            includeUnknownClub: widest,
-            search: '',
-            expiringWithinMonths: null,
-            slot: { formation: formation.id, slotRoles: {}, index: group.slots[0] }
-          })
           for (const category of TABS) {
-            const result = ws.candidates(query(category, false))
+            const result = ws.candidates(groupQuery(group, formation.id, category))
             const top: Record<string, Json> = {}
             result.rows.slice(0, TOP).forEach((row, rank) => {
               top[String(row.uid)] = { rank: rank + 1, score: r1(row.recommend.total), tier: row.tier, low: row.recommend.realism.low }
@@ -133,16 +103,7 @@ describe.skipIf(!SAVE || !Number.isInteger(TEAM) || TEAM <= 0)('고정 세이브
         if (formation.id === '4-2-3-1') {
           const probe = groups.find((group) => group.position === 'DC') ?? groups[0]
           for (const category of TABS) {
-            const ask = (widest: boolean): CandidateQuery => ({
-              roleId: probe.roleId,
-              category,
-              maxAge: null,
-              onlyEligible: !widest,
-              includeUnknownClub: widest,
-              search: '',
-              expiringWithinMonths: null,
-              slot: { formation: formation.id, slotRoles: {}, index: probe.slots[0] }
-            })
+            const ask = (widest: boolean) => groupQuery(probe, formation.id, category, widest)
             searches.push({
               key: category,
               ordinary: timeIt(() => ws.candidates(ask(false))).median,
