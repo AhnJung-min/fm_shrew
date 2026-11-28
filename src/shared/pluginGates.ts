@@ -1,4 +1,4 @@
-import { CLUB_PLUGIN, MARKET_PLUGIN, NEEDED_PLUGIN, versionOlder } from './game'
+import { CLUB_PLUGIN, MARKET_PLUGIN, NEEDED_PLUGIN, TACTIC_PLUGIN, versionOlder } from './game'
 
 /** 에디터가 쓰다가 실패하면 앞에서 쓴 값을 되돌리고, 온라인(네트워크) 게임에서는 쓰기를 막는 플러그인 버전. 이보다 낮으면 온라인 게임인지 알 수 없다 */
 export const EDITOR_SAFE_PLUGIN = '0.13.0'
@@ -19,7 +19,8 @@ export const PLUGIN_GATES: PluginGate[] = [
   { version: NEEDED_PLUGIN, feature: '게임의 지금 값 읽기와 에디터' },
   { version: MARKET_PLUGIN, feature: '몸값·주급·나라·구단 이름' },
   { version: CLUB_PLUGIN, feature: '구단 현황·건강 카드' },
-  { version: EDITOR_SAFE_PLUGIN, feature: '에디터의 되돌림과 온라인 게임 쓰기 차단' }
+  { version: EDITOR_SAFE_PLUGIN, feature: '에디터의 되돌림과 온라인 게임 쓰기 차단' },
+  { version: TACTIC_PLUGIN, feature: '게임 전술 가져오기·역할 별점 읽기·게임 버전 확인' }
 ].sort((a, b) => (versionOlder(a.version, b.version) ? -1 : versionOlder(b.version, a.version) ? 1 : 0))
 
 /** 앱의 기능이 모두 켜지는 가장 낮은 플러그인 버전 */

@@ -13,6 +13,9 @@ export const MARKET_PLUGIN = '0.10.0'
 /** 내 구단의 프로필·시설·재정과 선수단의 건강·경기력을 게임에 물어 받는 기능이 들어간 플러그인 버전. 이보다 낮으면 대시보드의 그 카드가 비어 있다 */
 export const CLUB_PLUGIN = '0.11.0'
 
+/** 게임의 지금 전술과 선수들의 역할 별점을 읽고 게임 버전을 알려 주는 기능이 들어간 플러그인 버전. 이보다 낮으면 게임 전술 가져오기와 별점 대조가 꺼지고, 나머지 기능은 그대로다 */
+export const TACTIC_PLUGIN = '0.14.0'
+
 /** 버전 a가 b보다 낮은지("0.8.0" < "0.9.0"). 읽을 수 없는 버전은 낮은 것으로 본다 */
 export function versionOlder(a: string, b: string): boolean {
   const parts = (text: string): number[] => text.split('.').map((part) => Number.parseInt(part, 10) || 0)
@@ -35,7 +38,15 @@ export interface GameStatus {
   manager: string
   team: string
   teamShort: string
+  /**
+   * 켜져 있는 게임의 버전 글자(플러그인 TACTIC_PLUGIN 이상이 알려 준다. 못 읽으면 빈 글자). 플러그인이 더 낮으면 없다.
+   * 앱이 확인한 판인지는 shared/compat.ts의 checkGameVersion으로 본다
+   */
+  gameVersion?: string
 }
+
+/** 앱이 확인한 게임 판인지의 판정(shared/compat.ts): ok 확인한 판, unsupported 읽었지만 확인하지 않은 판, unknown 읽지 못함 */
+export type VersionStatus = 'ok' | 'unknown' | 'unsupported'
 
 /** 세이브 폴더에 있는 세이브 파일 하나 */
 export interface SaveFileInfo {
@@ -45,6 +56,10 @@ export interface SaveFileInfo {
   /** 게임이 마지막으로 저장한 시각 */
   savedAt: string
   bytes: number
+  /** 세이브를 저장한 게임의 판("26.3.2"). 세이브 요약에서 읽는다. 읽지 못했으면 없다 */
+  gameVersion?: string
+  /** gameVersion이 앱이 확인한 판인지(읽지 못했으면 unknown). 목록을 만들 때 채운다 */
+  versionStatus?: VersionStatus
 }
 
 /** 적용해 둔 세이브와, 화면에 보이는 값이 어디서 온 것인지 */
@@ -86,6 +101,11 @@ export interface LinkStatus {
 export interface ApplyResult {
   ok: boolean
   message: string
+  /**
+   * 세이브를 저장한 게임의 판을 앱이 확인하지 않았거나 읽지 못해 적용하지 않았다는 뜻이다(ok는 false).
+   * 사용자가 확인하면 applySave(path, { allowUnknownVersion: true })로 다시 부른다
+   */
+  needsConfirm?: boolean
 }
 
 export const NO_GAME: GameStatus = { connected: false, pluginVersion: '', pluginOld: false, loaded: false, manager: '', team: '', teamShort: '' }

@@ -90,7 +90,20 @@ internal static class PersonInfo
     private static readonly Field[] NationFields = { new("name", "Name") };
 
     private static readonly object Gate = new();
-    private static int failures;
+
+    /// <summary>
+    /// 조회 실패를 세는 칸. 창구마다 따로 둔다(0.14.0): 한 창구가 거듭 실패해도 다른 창구의 조회까지 멈추지 않게.
+    /// 다섯 번 실패하면 그 칸을 쓰는 조회는 게임을 다시 켤 때까지 꺼진다.
+    /// </summary>
+    internal sealed class FailureCount
+    {
+        public int Value;
+    }
+
+    /// <summary>몸값·건강·구단 같은 조회와 개발용 /fields의 실패</summary>
+    private static readonly FailureCount Common = new();
+    /// <summary>/tactic과 /rolestars의 실패(위의 조회를 멈추지 않는다)</summary>
+    internal static readonly FailureCount TacticFailures = new();
 
     internal static string Quote(string value)
     {
@@ -148,7 +161,7 @@ internal static class PersonInfo
     /// <summary>요청을 받은 스레드에서 불린다. 게임을 건드리는 일만 메인 스레드에 맡기고 값이 올 때까지 기다린다.</summary>
     internal static Answer Run(GameData.RecordKind kind, List<(uint Id, int Index)> targets, Field[] fields, string idKey, List<Context> contexts)
     {
-        if (failures >= MaxFailures) throw new HttpError(503, "game queries are off after repeated failures");
+        if (Common.Value >= MaxFailures) throw new HttpError(503, "game queries are off after repeated failures");
         if (targets.Count == 0) return new Answer();
         lock (Gate)
         {
@@ -159,7 +172,7 @@ internal static class PersonInfo
                 var placed = MainThread.Run(() =>
                 {
                     active = Accepted(fields, answer.Skipped);
-                    return Ask(kind, targets, active, contexts);
+                    return Ask(kind, targets, active, contexts, null, null, Common);
                 }, 30_000); // 처음에는 게임이 받는 항목 이름표를 읽느라 오래 걸릴 수 있다
                 if (placed != "ok") throw new HttpError(503, placed);
                 var watch = Stopwatch.StartNew();
@@ -187,9 +200,10 @@ internal static class PersonInfo
             }
             catch (Exception error)
             {
-                failures++;
-                Plugin.Logger.LogWarning($"game query ({failures}/{MaxFailures}): {error.Message}");
-                throw new HttpError(503, error.Message);
+                Common.Value++;
+                Plugin.Logger.LogWarning($"game query ({Common.Value}/{MaxFailures}): {error.Message}");
+                // 응답에는 요약만 싣는다(게임 쪽 호출 경로가 여러 줄로 붙은 글을 그대로 내보내지 않는다)
+                throw new HttpError(503, Server.Summary(error));
             }
             finally
             {
@@ -230,11 +244,13 @@ internal static class PersonInfo
     /// 개발용(/fields): 대상 하나에 항목들을 청한다. 기록 조건(contexts)과 수·참거짓 조건(values)을 함께 올릴 수 있고,
     /// listPath가 있으면 그 목록의 줄마다 itemPaths 항목을 청한다(역할 별점 표처럼 줄이 여럿인 항목).
     /// 돌려주는 JSON: {"id":…, "notes":{조건: 올렸는지}, "fields":{경로: 값}, "list":목록 글, "count":줄 수, "items":[{경로: 값}]}
+    /// failures는 이 조회의 실패를 셀 칸이다(주지 않으면 몸값·건강 조회와 같은 칸). /tactic과 /rolestars는 자기 칸(TacticFailures)을 넘긴다.
     /// </summary>
     internal static string Probe(GameData.RecordKind kind, uint id, int index, Field[] fields, List<Context> contexts,
-        List<ValueContext> values, string listPath, string[] itemPaths, int maxItems)
+        List<ValueContext> values, string listPath, string[] itemPaths, int maxItems, FailureCount failures = null)
     {
-        if (failures >= MaxFailures) throw new HttpError(503, "game queries are off after repeated failures");
+        failures ??= Common;
+        if (failures.Value >= MaxFailures) throw new HttpError(503, "game queries are off after repeated failures");
         maxItems = Math.Clamp(maxItems, 1, MaxListItems);
         lock (Gate)
         {
@@ -244,7 +260,7 @@ internal static class PersonInfo
                 var notes = new List<(string Name, string State)>();
                 var placed = MainThread.Run(() =>
                 {
-                    var state = Ask(kind, new List<(uint, int)> { (id, index) }, fields, contexts, values, notes);
+                    var state = Ask(kind, new List<(uint, int)> { (id, index) }, fields, contexts, values, notes, failures);
                     if (state == "ok" && listPath != null) GameData.Want(node + "." + listPath);
                     return state;
                 }, 30_000);
@@ -323,9 +339,9 @@ internal static class PersonInfo
             }
             catch (Exception error)
             {
-                failures++;
-                Plugin.Logger.LogWarning($"game probe ({failures}/{MaxFailures}): {error.Message}");
-                throw new HttpError(503, error.Message);
+                failures.Value++;
+                Plugin.Logger.LogWarning($"game probe ({failures.Value}/{MaxFailures}): {error.Message}");
+                throw new HttpError(503, Server.Summary(error));
             }
             finally
             {
@@ -376,7 +392,7 @@ internal static class PersonInfo
 
     /// <summary>메인 스레드: 대상을 가리키는 마디를 올리고 항목을 청한다. 조건(기록, 수·참거짓)은 항목을 청하기 전에 올린다.</summary>
     private static string Ask(GameData.RecordKind kind, List<(uint Id, int Index)> targets, Field[] fields, List<Context> contexts,
-        List<ValueContext> values = null, List<(string Name, string State)> notes = null)
+        List<ValueContext> values = null, List<(string Name, string State)> notes = null, FailureCount failures = null)
     {
         if (!GameData.Available) return "game data is not available";
         GameData.Drop(Root);
@@ -401,7 +417,7 @@ internal static class PersonInfo
         }
         if (asked == 0)
         {
-            failures++;
+            (failures ?? Common).Value++;
             return "could not point at the records";
         }
         return "ok";

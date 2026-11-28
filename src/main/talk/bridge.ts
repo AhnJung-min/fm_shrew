@@ -2,6 +2,7 @@ import { readFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { parsePluginAnswer, type PluginAnswer } from '@shared/club'
 import { parseTree, readGameScene, readMatchInfo, type GameScene } from '@shared/gameUi'
+import { STARS_PER_REQUEST } from '@shared/limits'
 
 /**
  * 게임 안 플러그인(plugin/)과 이야기하는 쪽.
@@ -293,7 +294,10 @@ export async function liveSetOutcome(edit: {
 
 /** 켜져 있는 게임이 알려 주는 상태 */
 export interface GameState {
+  /** 게임 안 플러그인의 버전 */
   version: string
+  /** 게임의 버전 글자(플러그인 0.14.0부터. 게임이 알려 주지 못했으면 빈 글자, 옛 플러그인이면 없다) */
+  gameVersion?: string
   /** 세이브를 불러와 감독으로 들어가 있는지 */
   loaded: boolean
   manager: string
@@ -311,6 +315,8 @@ export async function gameState(): Promise<GameState | null> {
       const raw = JSON.parse(text) as Partial<GameState>
       return {
         version: String(raw.version ?? ''),
+        // 옛 플러그인(0.14.0 미만)은 게임 버전을 알려 주지 않는다. 키가 없는 것과 빈 글자(읽지 못함)를 가른다
+        ...(typeof raw.gameVersion === 'string' ? { gameVersion: raw.gameVersion } : {}),
         loaded: raw.loaded === true,
         manager: String(raw.manager ?? ''),
         team: String(raw.team ?? ''),
@@ -363,4 +369,39 @@ export async function gameHealth(uids: number[], teamId?: number): Promise<Plugi
   const team = teamId !== undefined && teamId > 0 ? `&team=${Math.trunc(teamId)}` : ''
   const text = await ask(`/health?uids=${uids.slice(0, HEALTH_BATCH).join(',')}${team}`, 60_000)
   return text === null ? null : parsePluginAnswer(text)
+}
+
+/** 게임 전술을 읽는 시간 한도. 자리마다 역할 목록까지 읽으면(roles=1) 22번을 더 묻기 때문에 훨씬 오래 걸린다 */
+const TACTIC_WAIT_MS = 30_000
+const TACTIC_WITH_ROLES_WAIT_MS = 120_000
+/** 선수 5명의 역할 별점(선수마다 두 국면의 표)을 읽는 시간 한도 */
+const ROLE_STARS_WAIT_MS = 60_000
+
+function parseJson(text: string | null): unknown | null {
+  if (text === null) return null
+  try {
+    return JSON.parse(text) as unknown
+  } catch {
+    return null
+  }
+}
+
+/**
+ * 켜져 있는 게임의 지금 전술(자리 11개의 포지션·역할, 점유 시와 비점유 시)을 읽는다(플러그인 0.14.0 이상, 읽기만).
+ * uid는 내 팀 선수 한 명이다(전술은 선수를 거쳐 읽는다). withRoles가 참이면 자리마다 고를 수 있는 역할 목록도 읽는다(느리다).
+ * 풀어 읽는 것은 shared/tacticImport.ts(parseTacticAnswer)가 한다. 게임이 꺼져 있거나, 플러그인이 낮거나, 게임이 바쁘거나, 시간이 넘으면 null.
+ */
+export async function gameTactic(teamId: number, uid: number, withRoles = false): Promise<unknown | null> {
+  const roles = withRoles ? '&roles=1' : ''
+  return parseJson(await ask(`/tactic?team=${Math.trunc(teamId)}&uid=${Math.trunc(uid)}${roles}`, withRoles ? TACTIC_WITH_ROLES_WAIT_MS : TACTIC_WAIT_MS))
+}
+
+/**
+ * 선수들의 역할 별점 표(두 국면)를 켜져 있는 게임에 묻는다(플러그인 0.14.0 이상, 읽기만). 한 번에 STARS_PER_REQUEST명까지다.
+ * 게임에서 찾지 못한 선수는 빠진다. 풀어 읽는 것은 shared/roleStars.ts(parseRoleStars)가 한다. 읽지 못하면 null.
+ */
+export async function gameRoleStars(teamId: number, uids: number[]): Promise<unknown | null> {
+  if (uids.length === 0) return { players: [] }
+  const list = uids.slice(0, STARS_PER_REQUEST).map((uid) => Math.trunc(uid))
+  return parseJson(await ask(`/rolestars?team=${Math.trunc(teamId)}&uids=${list.join(',')}`, ROLE_STARS_WAIT_MS))
 }

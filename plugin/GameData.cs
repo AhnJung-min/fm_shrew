@@ -412,7 +412,8 @@ internal static unsafe class GameData
         {
             // 여기서 난 문제는 경기 카드를 끄지 않도록 세지 않는다
             Plugin.Logger.LogWarning($"game data: value {name} ({kind}): {error.Message}");
-            return "failed: " + error.Message;
+            // 알림은 앱으로 가는 응답(/tactic, /rolestars의 notes)에 실리므로 요약만 싣는다
+            return "failed: " + Server.Summary(error);
         }
     }
 

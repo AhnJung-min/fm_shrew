@@ -17,8 +17,8 @@ import { SaveFormatError } from './reader'
  * 그래서 값 수정은 세이브가 아니라 켜져 있는 게임에 한다(plugin/LiveMemory.cs).
  */
 
-const SIGNATURE = Buffer.from([0x02, 0x01, 0x66, 0x6d, 0x66, 0x2e, 0x08, 0x00, 0x00])
-const HEAD_SIZE = 26
+export const SIGNATURE = Buffer.from([0x02, 0x01, 0x66, 0x6d, 0x66, 0x2e, 0x08, 0x00, 0x00])
+export const HEAD_SIZE = 26
 const DATABASE = 'game_db'
 
 export interface TocEntry {
@@ -44,22 +44,8 @@ function u64(buffer: Buffer, at: number): number {
   return Number(value)
 }
 
-/** 세이브 파일의 목차를 읽는다. 구조가 예상과 다르면 SaveFormatError. */
-export function openContainer(data: Buffer): SaveContainer {
-  if (data.length < HEAD_SIZE + 16 || !data.subarray(0, SIGNATURE.length).equals(SIGNATURE)) {
-    throw new SaveFormatError('FM26 세이브 파일이 아니거나 형식이 바뀌었습니다.')
-  }
-  const tocHead = SIGNATURE.length + u64(data, SIGNATURE.length)
-  if (tocHead + SIGNATURE.length >= data.length || !data.subarray(tocHead, tocHead + SIGNATURE.length).equals(SIGNATURE)) {
-    throw new SaveFormatError('세이브 파일에서 목차를 찾지 못했습니다.')
-  }
-  let toc: Buffer
-  try {
-    toc = zstdDecompressSync(data.subarray(tocHead + SIGNATURE.length))
-  } catch {
-    throw new SaveFormatError('세이브 파일의 목차를 풀지 못했습니다.')
-  }
-
+/** 풀어 놓은 목차에서 파일 목록을 읽는다. 구조가 예상과 다르면 SaveFormatError. 파일 전체를 읽지 않고 목차만 읽을 때(save/peek.ts)도 쓴다. */
+export function parseToc(toc: Buffer): TocEntry[] {
   const entries: TocEntry[] = []
   try {
     let p = 4 + toc.readUInt32LE(0)
@@ -82,7 +68,25 @@ export function openContainer(data: Buffer): SaveContainer {
     if (error instanceof SaveFormatError) throw error
     throw new SaveFormatError('세이브 파일의 목차를 읽지 못했습니다.')
   }
-  return { data, tocHead, toc, entries }
+  return entries
+}
+
+/** 세이브 파일의 목차를 읽는다. 구조가 예상과 다르면 SaveFormatError. */
+export function openContainer(data: Buffer): SaveContainer {
+  if (data.length < HEAD_SIZE + 16 || !data.subarray(0, SIGNATURE.length).equals(SIGNATURE)) {
+    throw new SaveFormatError('FM26 세이브 파일이 아니거나 형식이 바뀌었습니다.')
+  }
+  const tocHead = SIGNATURE.length + u64(data, SIGNATURE.length)
+  if (tocHead + SIGNATURE.length >= data.length || !data.subarray(tocHead, tocHead + SIGNATURE.length).equals(SIGNATURE)) {
+    throw new SaveFormatError('세이브 파일에서 목차를 찾지 못했습니다.')
+  }
+  let toc: Buffer
+  try {
+    toc = zstdDecompressSync(data.subarray(tocHead + SIGNATURE.length))
+  } catch {
+    throw new SaveFormatError('세이브 파일의 목차를 풀지 못했습니다.')
+  }
+  return { data, tocHead, toc, entries: parseToc(toc) }
 }
 
 function databaseEntry(container: SaveContainer): TocEntry {

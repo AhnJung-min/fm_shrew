@@ -138,8 +138,12 @@ internal static class Server
         }
     }
 
-    /// <summary>예외의 종류와 첫 줄만(게임 쪽 호출 경로나 메모리 주소를 응답에 싣지 않는다).</summary>
-    private static string Summary(Exception error)
+    /// <summary>
+    /// 예외의 종류와 첫 줄만(게임 쪽 호출 경로나 메모리 주소를 응답에 싣지 않는다).
+    /// 게임에서 난 예외의 글을 응답에 싣는 곳은 모두 이것을 거친다: 서버의 500 응답, 게임에 묻는 조회의 503 응답(PersonInfo), 조건 값을 올리다 실패한 알림(GameData).
+    /// 자세한 글은 BepInEx 기록에만 남긴다.
+    /// </summary>
+    internal static string Summary(Exception error)
     {
         var inner = error.InnerException ?? error;
         var line = (inner.Message ?? "").Split('\n')[0].Trim();
@@ -217,6 +221,11 @@ internal static class Server
                 return ClubInfo.Club(Need("team"));
             case "/health":
                 return ClubInfo.Health(Need("uids"), query["team"]);
+            // 지금 게임 전술(자리 11개의 포지션·역할, 점유 시와 비점유 시)과 선수들의 역할 별점(0.14.0부터, 읽기만)
+            case "/tactic":
+                return TacticInfo.Tactic(Need("team"), Need("uid"), Flag("roles"));
+            case "/rolestars":
+                return TacticInfo.RoleStars(Need("team"), Need("uids"));
 
 #if DEV_ENDPOINTS
             // ── 아래는 개발용 창구(게임 구조 조사). -p:DevEndpoints=true로 빌드한 것에만 있다 ──
