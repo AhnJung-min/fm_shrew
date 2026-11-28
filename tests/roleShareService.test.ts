@@ -198,7 +198,8 @@ describe('가져오기 미리 보기와 적용', () => {
       const f = fake({ roleWeights: { 'ip.Goalkeeper': { handling: 1 }, cb: { marking: 3 } } })
       f.openPath.value = partial
       const preview = await previewRoleBundle(f.deps)
-      expect(preview.warnings.join(' ')).toContain('이 묶음에 없는 역할 1개')
+      // 미리 보기는 합치기 기준이다. 바꾸기로 더 바뀌는 역할은 경고가 이름과 개수로 알린다
+      expect(preview.warnings.join(' ')).toContain('이 묶음에 없는 역할 1개에는 고쳐 둔 가중치가 있습니다(골키퍼(공 소유 시))')
       const applied = await applyRoleBundle(f.deps, preview.token!, mode)
       expect(applied.ok).toBe(true)
       const weights = f.current().roleWeights

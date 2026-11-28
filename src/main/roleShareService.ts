@@ -79,7 +79,8 @@ export async function previewRoleBundle(deps: Phase2Deps): Promise<RoleBundlePre
   const parsed = parseBundle(read.text)
   if (!parsed.ok) return roleBundlePreviewFailed(`가져올 수 없는 파일입니다. ${parsed.reason}`)
   const settings = deps.settings.get()
-  // 합치기와 바꾸기는 묶음에 없는 역할에서만 다르고, 그 차이는 경고 글이 알린다. 바뀔 역할 목록은 두 방식이 같다
+  // 미리 보기의 바뀜 목록은 합치기로 적용했을 때의 것이다. 합치기와 바꾸기는 묶음에 없는 역할에서만 다르다: 바꾸기는 그 역할의 고친 값을 원래 값으로 돌려서
+  // 바뀌는 역할이 더 많을 수 있고(그래서 적용한 뒤 글의 개수가 미리 본 개수보다 클 수 있다), 더 바뀌는 역할은 경고 글이 이름(앞의 셋)과 개수로 알린다
   const { changes, warnings } = previewImport(parsed.bundle, settings, activeCatalog(settings), 'merge')
   const token = randomUUID()
   pending.set(deps, { token, bundle: parsed.bundle })

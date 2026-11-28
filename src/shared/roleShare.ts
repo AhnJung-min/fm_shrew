@@ -228,7 +228,7 @@ export function bundleAppliedMessage(changeCount: number, mode: 'merge' | 'repla
   return changeCount > 0 ? `역할 ${changeCount}개의 가중치를 ${mode === 'replace' ? '바꾸었' : '합쳤'}습니다.` : '바뀐 가중치가 없습니다.'
 }
 
-const roleName =(role: CatalogRole): string => (role.phase === 'both' ? role.label : `${role.label}(${PHASE_NAME[role.phase]})`)
+const roleName = (role: CatalogRole): string => (role.phase === 'both' ? role.label : `${role.label}(${PHASE_NAME[role.phase]})`)
 
 /** 묶음의 실효 가중치 표를 가져오는 쪽의 원래 값과 견주어, 다른 칸만 고친 값으로 남긴다(0으로 끄는 칸도 고친 값이다) */
 function overridesFrom(table: Record<string, number>, base: Weights): Record<string, number> {
@@ -259,7 +259,8 @@ function changeLine(role: CatalogRole, before: Weights, after: Weights): string 
  * 설정은 바꾸지 않는다. patch는 지금 설정 위에 얹으면 되는 roleWeights 전체이고, 사용자 역할(customRoles)은 이 판에서 가져오지 않아 담지 않는다.
  *
  * 묶음에 든 역할은 묶음의 실효 가중치가 이긴다(두 방식 모두): 가져오는 쪽의 원래 값과 다른 칸만 고친 값으로 남기고, 같아진 칸의 옛 고친 값은 지운다.
- * 묶음에 없는 역할은 합치기(merge)면 그대로 두고, 바꾸기(replace)면 고친 값을 지워 원래 값으로 돌린다. 지금 카탈로그에 없는 역할(옛 14역할 id 포함)의 고친 값은 어느 쪽도 건드리지 않는다.
+ * 묶음에 없는 역할은 합치기(merge)면 그대로 두고, 바꾸기(replace)면 고친 값을 지워 원래 값으로 돌린다. 그래서 바꾸기는 바뀌는 역할이 합치기보다 더 많을 수 있고,
+ * 더 바뀌는 역할은 경고가 이름(앞의 셋)과 개수로 알린다. 지금 카탈로그에 없는 역할(옛 14역할 id 포함)의 고친 값은 어느 쪽도 건드리지 않는다.
  * 카탈로그에 없는 묶음의 역할 id는 건너뛰고 알린다. 묶음의 카탈로그나 게임 판이 지금과 다르면 경고한다.
  */
 export function previewImport(
@@ -297,14 +298,15 @@ export function previewImport(
   }
   if (bundle.customRoles.length > 0) warnings.push(`묶음에 든 사용자 역할 ${bundle.customRoles.length}개는 이 판의 앱이 아직 가져오지 못해 건너뜁니다.`)
 
-  // 묶음에 없는 역할: 합치기는 그대로, 바꾸기는 원래 값으로
+  // 묶음에 없는 역할: 합치기는 그대로, 바꾸기는 원래 값으로. 바꾸기로 더 바뀌는 역할은 이름(앞의 셋)과 개수로 알린다(건너뛴 역할 경고와 같은 꼴)
   const absent = catalog.roles.filter((role) => !Object.hasOwn(bundle.weights, role.id) && Object.keys(before[role.id] ?? {}).length > 0)
   if (absent.length > 0) {
+    const names = `${absent.slice(0, 3).map(roleName).join(', ')}${absent.length > 3 ? ' 외' : ''}`
     if (replace) {
       for (const role of absent) delete next[role.id]
-      warnings.push(`이 묶음에 없는 역할 ${absent.length}개에 고쳐 둔 가중치는 원래 값으로 돌아갑니다.`)
+      warnings.push(`이 묶음에 없는 역할 ${absent.length}개에 고쳐 둔 가중치는 원래 값으로 돌아갑니다(${names}).`)
     } else {
-      warnings.push(`이 묶음에 없는 역할 ${absent.length}개에는 고쳐 둔 가중치가 있습니다. 합치기는 그대로 두고, 바꾸기는 원래 값으로 되돌립니다.`)
+      warnings.push(`이 묶음에 없는 역할 ${absent.length}개에는 고쳐 둔 가중치가 있습니다(${names}). 합치기는 그대로 두고, 바꾸기는 원래 값으로 되돌립니다.`)
     }
   }
 

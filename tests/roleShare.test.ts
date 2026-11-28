@@ -385,11 +385,42 @@ describe('가져오기 미리 보기', () => {
     expect(Object.keys(replaced.patch.roleWeights!).sort()).toEqual(['cb', 'ip.CentralDefender'])
     expect(replaced.patch.roleWeights!.cb).toEqual({ marking: 5 })
     expect(replaced.warnings.join(' ')).toContain('이 묶음에 없는 역할 2개')
+    // 두 방식 모두 경고가 원래 값으로 돌아갈(합치기는 돌아가지 않을) 역할의 이름을 적는다
+    for (const preview of [merged, replaced]) {
+      const warning = preview.warnings.find((line) => line.startsWith('이 묶음에 없는 역할'))!
+      expect(warning).toContain('(골키퍼(공 소유 시), 골키퍼(공 미소유 시))')
+      expect(warning).not.toContain(' 외)')
+    }
     // 합치기에서도 묶음에 든 역할(센터백)은 묶음의 값이 이긴다
     expect(effectiveRoleWeights(catalog, 'ip.CentralDefender', merged.patch.roleWeights!)).toMatchObject({ marking: 5 })
     // 바꾸기가 지우는 것은 changes에도 나온다
     expect(replaced.changes.some((line) => line.startsWith('골키퍼(공 소유 시)'))).toBe(true)
     expect(merged.changes.some((line) => line.startsWith('골키퍼(공 소유 시)'))).toBe(false)
+  })
+
+  it('묶음에 없는 역할이 넷 이상이면 이름은 앞의 셋만 적고 나머지는 "외"로 알리며, 바꾸기로 더 바뀌는 역할이 그 수만큼 바뀜 목록에 오른다', () => {
+    const edited = ['ip.Goalkeeper', 'oop.OPGoalkeeper', 'ip.CentralDefender', 'ip.CentreForward', 'oop.OPCentreBack'].filter((id) => catalog.role(id))
+    expect(edited).toHaveLength(5)
+    const mine = settingsOf(Object.fromEntries(edited.map((id) => [id, { composure: 5 }])))
+    // 묶음은 어떤 역할도 담지 않아 다섯 역할이 모두 묶음에 없다
+    const empty = bundleOf({})
+    const merged = previewImport(empty, mine, catalog, 'merge')
+    const replaced = previewImport(empty, mine, catalog, 'replace')
+    const nameOf = (id: string): string => {
+      const role = catalog.role(id)!
+      return `${role.label}(${role.phase === 'ip' ? '공 소유 시' : '공 미소유 시'})`
+    }
+    // 카탈로그 순서의 앞 셋
+    const firstThree = catalog.roles.filter((role) => edited.includes(role.id)).slice(0, 3).map((role) => nameOf(role.id))
+    for (const [preview, text] of [[merged, '에는 고쳐 둔 가중치가 있습니다'], [replaced, '에 고쳐 둔 가중치는 원래 값으로 돌아갑니다']] as const) {
+      const warning = preview.warnings.find((line) => line.startsWith('이 묶음에 없는 역할 5개'))!
+      expect(warning, preview === merged ? '합치기' : '바꾸기').toContain(text)
+      expect(warning).toContain(`(${firstThree.join(', ')} 외)`)
+    }
+    // 합치기는 아무것도 바꾸지 않고, 바꾸기는 다섯 역할을 모두 원래 값으로 돌린다(그 수가 바뀜 목록의 줄 수다)
+    expect(merged.changes).toHaveLength(0)
+    expect(replaced.changes).toHaveLength(5)
+    expect(replaced.patch.roleWeights).toEqual({})
   })
 
   it('묶음에 든 역할은 묶음의 값이 이긴다: 가져오는 쪽의 원래 값과 같아진 칸은 옛 고친 값을 지운다', () => {
