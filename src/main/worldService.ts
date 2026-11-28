@@ -7,10 +7,10 @@ import { NO_DATA, type DataStatus, type SaveFileInfo } from '@shared/game'
 import { POSITION_KEYS, positionOrder, positionsLabel } from '@shared/positions'
 import { footValues, formatPounds, hiddenAttributes, isGoalkeeper, visibleAttributes } from '@shared/playerView'
 import type { RoleNorm, RoleNorms } from '@shared/norms'
-import { effectiveRoleWeights, LEGACY_CATALOG, prepareProfile, profileSpec, referenceSpec, type NormSpec, type ReferenceProfile, type RoleCatalog } from '@shared/roleCatalog'
+import { effectiveRoleWeights, LEGACY_CATALOG, profileSpec, profileWeights, referenceSpec, type NormSpec, type ReferenceProfile, type RoleCatalog } from '@shared/roleCatalog'
 import { SHARE_SCALE } from '@shared/limits'
-import { DEFAULT_ROLE, prepareWeights, savedRoleScore, type PreparedRole } from '@shared/roles'
-import type { Phase, RatingInput, SlotProfile } from '@shared/slotProfile'
+import { DEFAULT_ROLE } from '@shared/roles'
+import type { Phase, RatingInput, SlotProfile, Weights } from '@shared/slotProfile'
 import {
   clubStature,
   recommend,
@@ -52,7 +52,7 @@ import { ageAt, findTeamByNames, NO_TEAM, readWorld, SEX_FEMALE, signedClubTeam,
 import { clubChoices } from './clubChoices'
 import { playerResult, reportOf, skippedResult } from './editorReport'
 import { meanCaStarOf, normOfSpec, startCaOf, type ProfileNormSpec } from './roleNorms'
-import { poolKeyOf, ProfileColumns, weightsKeyOf } from './profileColumns'
+import { poolKeyOf, ProfileColumns, scorerOf, weightsKeyOf, type ProfileParts } from './profileColumns'
 import { checkSaveWorld } from './saveCheck'
 import { NameBook } from './names'
 import { calendar } from './save/contracts'
@@ -756,7 +756,8 @@ export class WorldService {
 
     // 점수를 낼 대상. 전술의 한 자리면 그 자리 프로파일이다: 두 국면 역할의 가중치를 비중으로 섞은 표, 점유 시 포지션의 숙련으로 자격을 보고,
     // 숙련 감점은 두 국면 포지션이 다르면 두 숙련을 비중으로 섞는다. 역할만 고르면 그 역할의 참조 프로파일(역할 하나, 비중 100, 풀 = 고를 수 있는 포지션 전부)이다
-    let prepared: PreparedRole
+    let weights: Weights
+    let parts: ProfileParts
     let norm: RoleNorm
     let goalkeeper: boolean
     let ipSlots: number[]
@@ -765,8 +766,8 @@ export class WorldService {
     let sharePct = SHARE_SCALE
     if (slotFound) {
       const profile = slotFound.slot.profile
-      // 스쿼드 화면과 같은 값이 나오도록 게임 표시값(1~20)으로 계산한다(roles.ts의 savedRoleScore 하나)
-      prepared = prepareProfile(catalog, profile, roleWeights)
+      weights = profileWeights(catalog, profile, roleWeights)
+      parts = { ip: effectiveRoleWeights(catalog, profile.ip.roleId, roleWeights), oop: effectiveRoleWeights(catalog, profile.oop.roleId, roleWeights), sharePct: profile.sharePct }
       norm = slotFound.norm
       goalkeeper = catalog.role(slotFound.slot.roleId)?.goalkeeper ?? false
       ipSlots = [POSITION_INDEX.get(profile.ip.position)!]
@@ -778,7 +779,8 @@ export class WorldService {
       const reference = catalog.referenceOf(query.roleId)
       if (!reference) return fail('알 수 없는 역할입니다.', saveName)
       const spec = this.referenceNormSpec(catalog, reference, roleWeights)
-      prepared = prepareWeights(spec.weights)
+      weights = spec.weights
+      parts = spec.parts!
       norm = this.normsOfSpecs(world, [spec], this.referenceNormSpecs(catalog, roleWeights, 'ip'))[spec.key]
       goalkeeper = reference.goalkeeper
       ipSlots = reference.positions.map((key) => POSITION_INDEX.get(key)!).filter((index) => index !== undefined)
@@ -792,7 +794,9 @@ export class WorldService {
     const eligible = (k: number): boolean => ratingOf(k) >= K.PLAYABLE_RATING
     /** 숙련 감점에 쓰는 숙련(점유 시 숙련 rating을 받는다). 두 국면의 포지션이 다른 자리만 점유 시와 비점유 시 숙련을 비중으로 섞는다(같으면 숙련 하나라 옛 뜻 그대로다) */
     const penaltyRatingOf = (k: number, rating: number): RatingInput => (oopSlot === null ? rating : { ip: rating, oop: ratingAt(k, oopSlot), sharePct })
-    const scoreOf = (k: number): number | null => savedRoleScore(world.attributes, k * ATTRIBUTE_COUNT, prepared)
+    // 스쿼드 화면과 같은 값이 나오도록 게임 표시값(1~20)으로 계산한다(roles.ts의 savedRoleScore와 끝자리까지 같다).
+    // 선수 10만 명을 도는 일이라, 가중치가 0~5의 정수이면 역할별 정수 합 열로 센다(능력치가 다 있지 않은 선수와 열로 셀 수 없는 가중치는 savedRoleScore로 간다)
+    const scoreOf = scorerOf(world, weights, this.normScopeOf(world).columns, parts)
 
     // 내 팀(1군)의 주급·몸값 수준과, 이 역할을 뛸 수 있는 선수들
     const mine: Array<{ k: number; score: number; eff: number }> = []

@@ -115,7 +115,9 @@ const CANDIDATES: Array<[string, number, number, number]> = [
   ['후보 라', 20, 20, 14],
   ['후보 마', 16, 16, 14],
   ['후보 바', 8, 20, 14],
-  ['후보 사', 20, 12, 16]
+  ['후보 사', 20, 12, 16],
+  // 능력치 둘이 비어 있는 선수(저장값 0): 능력치가 다 있지 않아 역할별 합 열을 못 쓰고 직접 계산으로 간다(가중치 합의 60% 이상이 있어 점수는 난다)
+  ['후보 아', 20, 20, 14]
 ]
 
 function crossWorld(): SaveWorld {
@@ -139,6 +141,7 @@ function crossWorld(): SaveWorld {
     // 점유 시 역할(안쪽 공격수)에 걸린 능력치는 높고 공 미소유 시 역할(측면 미드)에만 걸린 능력치는 낮다: 두 역할을 섞으면 점유 시 역할만 볼 때와 점수가 다르다
     for (const id of ipKeys) world.attributes[k * ATTRIBUTE_COUNT + SAVE_ATTRIBUTE_ORDER.indexOf(id as (typeof SAVE_ATTRIBUTE_ORDER)[number])] = 18 * 5
     for (const id of oopKeys) world.attributes[k * ATTRIBUTE_COUNT + SAVE_ATTRIBUTE_ORDER.indexOf(id as (typeof SAVE_ATTRIBUTE_ORDER)[number])] = (CANDIDATES[i][3] - 8) * 5
+    if (CANDIDATES[i][0] === '후보 아') for (const id of ipKeys.slice(0, 2)) world.attributes[k * ATTRIBUTE_COUNT + SAVE_ATTRIBUTE_ORDER.indexOf(id as (typeof SAVE_ATTRIBUTE_ORDER)[number])] = 0
   })
   return world
 }
