@@ -336,7 +336,7 @@ describe.skipIf(!SAVE || !Number.isInteger(TEAM) || TEAM <= 0 || !RUN)('고정 �
           '',
           differences.length === 0
             ? '[민감도] 대장의 측정 표와 같다.'
-            : `[민감도] 대장의 측정 표와 다른 상수 ${differences.length}개(검사는 실패하지 않는다. 표는 아래 붙일 줄로 고친다):`,
+            : `[민감도] 대장의 측정 표와 다른 상수 ${differences.length}개(검사는 실패하지 않는다${ONLY.length === 0 ? '. 표는 아래 붙일 줄로 고친다' : ''}):`,
           ...differences.map((line) => `  ${line}`),
           '',
           '[민감도] 건너뛴 상수:',
