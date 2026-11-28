@@ -1,8 +1,10 @@
 import { K } from './ledger'
 import { withJosa } from './korean'
+import { SHARE_SCALE } from './limits'
 import { FALLBACK_NORM, gainOf, type RoleNorm } from './norms'
 import { formatPounds } from './playerView'
 import { lowGate } from './positions'
+import type { RatingInput } from './slotProfile'
 import {
   benchmarkOf,
   effectiveFit,
@@ -280,8 +282,18 @@ export interface RecommendInput {
   goalkeeper: boolean
   /** 고른 역할의 점수(0~100). 화면에 보이는 적합도이고, 숙련 감점·나이 하락은 recommend()가 뺀다 */
   roleScore: number
-  /** 그 역할의 자리(들) 가운데 가장 높은 포지션 숙련도(1~20). 모르면 null(감점하지 않는다) */
+  /**
+   * 그 역할의 자리(들) 가운데 가장 높은 포지션 숙련도(1~20). 모르면 null(감점하지 않는다).
+   * 전술의 자리를 기준으로 찾을 때는 점유 시 포지션의 숙련이다: 10 미만 곱셈 보정(lowGate)은 이 값만 본다
+   */
   roleRating: number | null
+  /**
+   * 비점유 시 포지션의 숙련도(1~20). 두 국면의 포지션이 다른 자리에서만 준다(없으면 점유 시 숙련 하나로 감점한다).
+   * 적합도에서 빼는 숙련 감점에만 쓰고, 점유 시 숙련과 비중(sharePct)으로 섞는다
+   */
+  oopRating?: number | null
+  /** 점유 시 비중(0~100 정수). 없으면 100(섞지 않고 점유 시 숙련만 본다) */
+  sharePct?: number
   age: number | null
   ca: number
   pa: number
@@ -504,11 +516,27 @@ interface Part {
 
 const unknown = (reason: string): Part => ({ fit: K.UNKNOWN_FIT, assumed: true, note: `${reason} ${UNKNOWN_NOTE}` })
 
-/** 포지션 숙련·나이 하락을 뺀 값을 한 줄로 */
+/**
+ * 숙련 감점에 쓸 숙련 입력. 비점유 시 숙련(oopRating)과 비중(sharePct)이 있고 비중이 가득이 아니면 두 국면 숙련을 점유 시 비중으로 섞고,
+ * 아니면 점유 시 숙련 하나다(옛 입력과 같은 길). 숙련을 모르면 null(감점하지 않는다)
+ */
+function penaltyRatingOf(input: RecommendInput): RatingInput | null {
+  if (input.roleRating === null) return null
+  const { oopRating, sharePct } = input
+  if (oopRating === undefined || oopRating === null || sharePct === undefined || sharePct >= SHARE_SCALE) return input.roleRating
+  return { ip: input.roleRating, oop: oopRating, sharePct }
+}
+
+/** 포지션 숙련·나이 하락을 뺀 값을 한 줄로. 두 국면의 숙련이 다를 때만 두 숙련을 함께 적고, 같으면 지금 글 그대로다 */
 export function fitNoteOf(adjust: FitAdjust, rating: number | null, age: number | null): string {
   const pieces: string[] = []
   if (adjust.positionPoints > 0.05 && rating !== null) {
-    pieces.push(`포지션 숙련 ${rating}이라 적합도에서 ${fixed1(adjust.positionPoints)}점 뺐습니다`)
+    const mixed = adjust.ipRating !== undefined && adjust.oopRating !== undefined && adjust.ipRating !== adjust.oopRating
+    pieces.push(
+      mixed
+        ? `점유 시 포지션 숙련 ${adjust.ipRating}, 비점유 시 ${adjust.oopRating}라 적합도에서 ${fixed1(adjust.positionPoints)}점 뺐습니다`
+        : `포지션 숙련 ${rating}이라 적합도에서 ${fixed1(adjust.positionPoints)}점 뺐습니다`
+    )
   }
   if (adjust.agePoints > 0 && age !== null) {
     pieces.push(`${age}세라 내년 하락을 감안해 ${fixed1(adjust.agePoints)}점 뺐습니다`)
@@ -709,8 +737,8 @@ export function recommend(input: RecommendInput, ctx: RecommendContext, withNote
   const weights = { ...K.RECOMMEND_WEIGHTS[input.category] }
   const need = ctx.need ?? K.NEED_DEFAULT
   weights.immediate *= K.NEED_WEIGHT_LOW + (K.NEED_WEIGHT_HIGH - K.NEED_WEIGHT_LOW) * clamp01(need / 100)
-  // f_eff: 포지션 숙련과 나이 하락을 뺀, 비교에 쓰는 적합도
-  const adjust = effectiveFit(input.roleScore, input.roleRating, input.age, norm, input.goalkeeper)
+  // f_eff: 포지션 숙련과 나이 하락을 뺀, 비교에 쓰는 적합도. 숙련 감점은 두 국면의 숙련을 섞은 값이고(비점유 시 숙련이 있을 때), 10 미만 곱셈 보정은 점유 시 숙련만 본다
+  const adjust = effectiveFit(input.roleScore, penaltyRatingOf(input), input.age, norm, input.goalkeeper)
   const parts: Record<ComponentId, Part> = {
     immediate: immediatePart(input, ctx, adjust, withNotes),
     maturity: maturityPart(input, ctx, adjust, withNotes),

@@ -1,7 +1,8 @@
 import { K } from './ledger'
 import { FALLBACK_NORM, type RoleNorm } from './norms'
-import { posPenaltySigma } from './positions'
 import type { Recommendation, RecommendTierId, SquadMoney } from './recommend'
+import { gateRatingOf, penaltySigmaOf, type RatingInput } from './slotProfile'
+import type { Tactic } from './tacticModel'
 
 /** 세이브 전체(모든 구단의 선수)를 놓고 하는 일: 영입 후보 찾기와 능력치 수정 */
 
@@ -156,9 +157,12 @@ export function agingDrop(age: number | null | undefined, goalkeeper = false): n
   return K.AGING_DROP_PER_YEAR * Math.max(0, age - start)
 }
 
-/** f_eff = f - σ·posPenaltySigma(r) - 나이 하락. 숙련을 모르면(null) 숙련 감점은 없다(많은 선수를 도는 곳에서 쓰는 숫자만 돌려주는 꼴) */
-export function effectiveScore(score: number, rating: number | null | undefined, age: number | null | undefined, sigma: number, goalkeeper = false): number {
-  const position = rating === null || rating === undefined ? 0 : sigma * posPenaltySigma(rating)
+/**
+ * f_eff = f - σ·(숙련 감점) - 나이 하락. 숙련을 모르면(null) 숙련 감점은 없다(많은 선수를 도는 곳에서 쓰는 숫자만 돌려주는 꼴).
+ * rating이 숫자이면 한 포지션의 숙련 하나라서 지금 뜻 그대로(posPenaltySigma)이고, 두 국면 숙련(SlotRatings)이면 점유 시 비중으로 섞은 감점이다(mixedPenaltySigma).
+ */
+export function effectiveScore(score: number, rating: RatingInput | null | undefined, age: number | null | undefined, sigma: number, goalkeeper = false): number {
+  const position = rating === null || rating === undefined ? 0 : sigma * penaltySigmaOf(rating)
   return score - position - agingDrop(age, goalkeeper)
 }
 
@@ -174,20 +178,29 @@ export interface FitAdjust {
   positionSigma: number
   /** 나이 하락(점) */
   agePoints: number
+  /** 감점에 쓴 점유 시 포지션 숙련. 숙련을 모르면(null) 없다 */
+  ipRating?: number
+  /** 감점에 쓴 비점유 시 포지션 숙련. 숫자 하나로 부르면 점유 시 숙련과 같다. 숙련을 모르면 없다 */
+  oopRating?: number
 }
 
-/** f_eff = f - σ·posPenaltySigma(r) - 나이 하락. 숙련을 모르면(null) 숙련 감점은 없다 */
+/** f_eff = f - σ·(숙련 감점) - 나이 하락. 숙련을 모르면(null) 숙련 감점은 없다. rating의 두 꼴은 effectiveScore와 같다 */
 export function effectiveFit(
   score: number,
-  rating: number | null | undefined,
+  rating: RatingInput | null | undefined,
   age: number | null | undefined,
   norm: RoleNorm = FALLBACK_NORM,
   goalkeeper = false
 ): FitAdjust {
-  const positionSigma = rating === null || rating === undefined ? 0 : posPenaltySigma(rating)
+  const positionSigma = rating === null || rating === undefined ? 0 : penaltySigmaOf(rating)
   const positionPoints = norm.sigma * positionSigma
   const agePoints = agingDrop(age, goalkeeper)
-  return { shown: score, effective: effectiveScore(score, rating, age, norm.sigma, goalkeeper), positionPoints, positionSigma, agePoints }
+  const fit: FitAdjust = { shown: score, effective: effectiveScore(score, rating, age, norm.sigma, goalkeeper), positionPoints, positionSigma, agePoints }
+  if (rating !== null && rating !== undefined) {
+    fit.ipRating = gateRatingOf(rating)
+    fit.oopRating = typeof rating === 'number' ? rating : rating.oop
+  }
+  return fit
 }
 
 /** 비교 기준: 주전의 하락을 감안한 적합도(기준점), 그만큼 낮춘 점수, 현재 능력 문턱 */
@@ -276,10 +289,10 @@ export interface ProspectCheck {
 
 /**
  * 유망주 자격 전체: room ∧ margin ≥ 0. 영입 후보(categoriesOf)와 대시보드 "임대 보내 키울 선수"가 이 함수 하나를 쓴다(5회차 수정 C).
- * player.score는 화면에 보이는 적합도, rating은 그 자리 포지션 숙련이다. 기준은 anchor'(주전의 나이 하락에 첫 후보까지 반영)를 쓴다.
+ * player.score는 화면에 보이는 적합도, rating은 그 자리 포지션 숙련이다(숫자 하나이거나, 두 국면 포지션이 다른 자리면 두 국면 숙련). 기준은 anchor'(주전의 나이 하락에 첫 후보까지 반영)를 쓴다.
  */
 export function prospectCheck(
-  player: { score: number; age: number | null; ca: number; pa: number; rating?: number | null },
+  player: { score: number; age: number | null; ca: number; pa: number; rating?: RatingInput | null },
   bench: CandidateBench,
   norm: RoleNorm = FALLBACK_NORM,
   goalkeeper = false,
@@ -306,7 +319,7 @@ export function prospectCheck(
  * 같은 포지션·같은 역할 자리가 여럿이면 bench가 그 그룹의 값이다(shared/tactic.ts의 slotBench).
  */
 export function categoriesOf(
-  player: { score: number; age: number | null; ca: number; pa: number; hasClub: boolean; rating?: number | null },
+  player: { score: number; age: number | null; ca: number; pa: number; hasClub: boolean; rating?: RatingInput | null },
   bench: CandidateBench,
   norm: RoleNorm = FALLBACK_NORM,
   goalkeeper = false,
@@ -334,7 +347,30 @@ export function gapVsAnchor(effective: number, bench: CandidateBench, norm: Role
   return Math.round((effective - benchmarkOf(bench.starter, norm, goalkeeper).anchor) * 10) / 10
 }
 
+/** 전술의 한 자리를 기준으로 찾는 옛 꼴: 포메이션 id, 자리별 역할(settings.slotRoles), 자리 순번 */
+export interface LegacySlotQuery {
+  formation: string
+  slotRoles: Record<string, string>
+  index: number
+}
+
+/**
+ * 전술의 한 자리를 기준으로 찾는 새 꼴: 전술 하나와 자리 순번(전술의 자리 순번). 자리의 프로파일(두 국면의 포지션·역할, 비중)로 찾는다.
+ * 같은 프로파일의 자리(예: 4-2-3-1의 중앙 수비 두 자리)는 한 묶음이라 어느 자리를 골라도 결과가 같다.
+ */
+export interface TacticSlotQuery {
+  tactic: Tactic
+  index: number
+}
+
+/** 자리를 기준으로 찾는 두 꼴. 새 꼴을 받는 것은 본체(WorldService)가 새 꼴을 처리하게 된 뒤다(CandidateQuery.slot의 주석) */
+export type CandidateSlotQuery = LegacySlotQuery | TacticSlotQuery
+
 export interface CandidateQuery {
+  /**
+   * 역할 id. 전술의 자리를 기준으로 찾으면 그 자리의 역할이 우선이다. 역할만 고른 찾기는 이 역할의 참조 프로파일(역할 하나, 비중 100,
+   * 풀 = 그 역할을 고를 수 있는 포지션 전부)로 찾는다. 옛 카탈로그는 옛 14역할 id 그대로다.
+   */
   roleId: string
   category: CandidateCategory
   /** 이 나이 이하만. 제한이 없으면 null */
@@ -352,8 +388,12 @@ export interface CandidateQuery {
    * 같은 포지션·같은 역할의 자리(예: 4-2-3-1의 중앙 수비 두 자리)는 한 그룹으로 보므로, 그룹의 어느 자리를 골라도 결과가 같다.
    * 가장 약한 주전·그룹의 첫 후보·그룹의 보강 필요도(자리들 가운데 최대)를 기준으로 하고, 역할(roleId)은 자리의 역할로 본다.
    * 없으면 고른 역할(roleId)만으로 찾는다.
+   *
+   * 지금 타입은 옛 꼴(LegacySlotQuery)뿐이다: 본체(worldService.ts)와 미리보기(mockWorld.ts)가 slot.formation과 slot.slotRoles를 읽어서,
+   * 여기를 CandidateSlotQuery(옛 꼴 | `{ tactic, index }`)로 넓히면 두 곳이 함께 고쳐질 때까지 컴파일되지 않는다.
+   * 본체가 새 꼴을 처리하는 단위(U5)가 이 한 줄을 `slot?: CandidateSlotQuery | null`로 바꾸고 두 곳에서 갈라 읽는다.
    */
-  slot?: { formation: string; slotRoles: Record<string, string>; index: number } | null
+  slot?: LegacySlotQuery | null
 }
 
 export interface CandidateRow {
