@@ -3,6 +3,7 @@ import { basename, join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { app, BrowserWindow, dialog, ipcMain, Menu, nativeImage, net, protocol, session, shell, Tray } from 'electron'
 import { activeCatalog } from '@shared/catalogs'
+import { TACTIC_SLOTS, TACTICS_PER_SAVE } from '@shared/limits'
 import { dropMainOwned, normsFailed } from '@shared/tacticApi'
 import { resolveMainTactic, saveKeyOf } from '@shared/tacticModel'
 import type { AppStatus, Settings } from '@shared/types'
@@ -159,8 +160,8 @@ function createTray(): void {
   tray.on('click', showWindow)
 }
 
-/** 화면이 기준 분포(worldNorms)를 한 번에 물을 수 있는 프로파일 수(전술 묶음 3개 × 자리 11개) */
-const NORMS_PROFILES_MAX = 33
+/** 화면이 기준 분포(worldNorms)를 한 번에 물을 수 있는 프로파일 수(세이브마다 둘 수 있는 전술 수 × 전술의 자리 수) */
+const NORMS_PROFILES_MAX = TACTICS_PER_SAVE * TACTIC_SLOTS
 
 /** 역할 가중치 묶음 파일의 대화상자 설정. 파일 경로는 화면이 정하지 않고 본체의 대화상자로만 받는다(N-03) */
 const BUNDLE_FILTERS = [{ name: '역할 가중치 묶음(JSON)', extensions: ['json'] }]
