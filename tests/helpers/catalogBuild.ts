@@ -7,6 +7,8 @@
  * - role-key-attributes.json: 역할마다 국면, 번호(gameId), 열거형 이름, 이름, 짧은 이름, 핵심 능력치 목록. 설명 글(help)은 모양(zod)에 없어서 읽히지 않는다.
  * - role-slots.json(role-slots*.json 모두): 켜진 게임의 전술 자리마다 포지션 비트와, 국면마다 고를 수 있는 역할 번호 목록. 선수 이름은 모양에 없어서 읽히지 않는다.
  * - role-stars.json(있을 때 검사에만): 1군 선수의 포지션 숙련과 역할 별점 표. 초안이 이 표와 어긋나지 않는지 본다. 선수 이름은 읽지 않는다.
+ * - role-by-position.json(있을 때 검사에만): 한 포지션만 뛰는 선수의 역할 표로 정리한 포지션별 역할(번호, 이름, 짧은 이름. 선수 이름 없음).
+ *   자료의 포지션별 역할이 이 표와 같은지 본다. 칸 종류 단위의 목록은 이 표로 알 수 없다(그 칸은 게임에서 전술을 바꿔 봐야 한다).
  *
  * 원본에서 오지 않는 것(이 파일의 표)
  * - 능력치 이름 → 앱 능력치 id(계획 부록 A), 이름이 없는 옛 역할 10개의 이름, 게임에서 보지 못한 칸 종류의 초안과 근거,
@@ -259,9 +261,13 @@ const StarsFile = z.object({
   )
 })
 
+const PositionRole = z.object({ id: z.string().regex(/^\d+$/), short: z.string().nullish(), name: z.string().nullish() })
+const PositionTableFile = z.object({ positions: z.record(z.string(), z.object({ ip: z.array(PositionRole), oop: z.array(PositionRole) })) })
+
 export type ParsedKeyAttributes = z.infer<typeof KeyAttributesFile>
 export type ParsedSlots = z.infer<typeof SlotsFile>
 export type ParsedStars = z.infer<typeof StarsFile>
+export type ParsedPositionTable = z.infer<typeof PositionTableFile>
 
 function parseWith<T>(schema: z.ZodType<T>, json: unknown, what: string): T {
   const result = schema.safeParse(json)
@@ -274,6 +280,8 @@ export const parseKeyAttributes = (json: unknown): ParsedKeyAttributes => parseW
 export const parseSlots = (json: unknown): ParsedSlots => parseWith(SlotsFile, json, 'role-slots.json')
 /** 1군 역할 별점 파일(role-stars.json). 포지션 숙련과 역할 번호만 읽고 선수 이름은 읽지 않는다 */
 export const parseStars = (json: unknown): ParsedStars => parseWith(StarsFile, json, 'role-stars.json')
+/** 포지션별 역할 표(role-by-position.json). 역할 번호와 이름만 읽는다 */
+export const parsePositionTable = (json: unknown): ParsedPositionTable => parseWith(PositionTableFile, json, 'role-by-position.json')
 
 // ---------- 포지션 비트 → 칸 종류 ----------
 
@@ -548,16 +556,22 @@ const STAR_POSITIONS: Readonly<Record<string, PositionKey>> = {
   'WB (R)': 'WBR'
 }
 
+/** 역할 id → 그 역할이 든 칸 종류들의 포지션(자료의 칸 종류 목록에서) */
+function positionsByRole(data: Fm26Data): Map<string, Set<PositionKey>> {
+  const positionsOf = new Map<string, Set<PositionKey>>()
+  for (const kind of Object.keys(data.slotKinds)) {
+    for (const { roleId } of data.slotKinds[kind]) positionsOf.set(roleId, (positionsOf.get(roleId) ?? new Set<PositionKey>()).add(kindPosition(kind)))
+  }
+  return positionsOf
+}
+
 /**
  * 자료의 역할별 포지션이 1군 별점 표와 어긋나지 않는지 본다(선수 이름은 쓰지 않고 순번만). 표는 선수가 뛸 수 있는 포지션(숙련이 minRating 이상) 전부에서
  * 고를 수 있는 역할을 합친 것이라서, 선수마다 (가) 표에 있는 역할은 자료의 포지션 가운데 선수가 뛸 수 있는 것이 하나는 있어야 하고,
  * (나) 표에 없는 역할은 자료의 포지션 가운데 선수가 뛸 수 있는 것이 없어야 한다. 어긋난 것을 글로 모아 돌려준다(없으면 빈 목록).
  */
 export function checkStarTables(data: Fm26Data, stars: ParsedStars, minRating = 12): string[] {
-  const positionsOf = new Map<string, Set<PositionKey>>()
-  for (const kind of Object.keys(data.slotKinds)) {
-    for (const { roleId } of data.slotKinds[kind]) positionsOf.set(roleId, (positionsOf.get(roleId) ?? new Set<PositionKey>()).add(kindPosition(kind)))
-  }
+  const positionsOf = positionsByRole(data)
   const problems: string[] = []
   stars.players.forEach((player, at) => {
     const can = new Set<PositionKey>()
@@ -581,5 +595,38 @@ export function checkStarTables(data: Fm26Data, stars: ParsedStars, minRating = 
       }
     }
   })
+  return problems
+}
+
+// ---------- 포지션별 역할 표와 견주기 ----------
+
+/**
+ * 자료의 포지션별 역할이 게임에서 읽은 포지션별 역할 표(role-by-position.json)와 같은지 본다. 이 표는 한 포지션만 뛰는 선수의 역할 표라서
+ * 칸 종류로 가르기 전의 "그 포지션에서 고를 수 있는 역할 전체"다. 포지션 14개 × 두 국면마다 (가) 게임 표에만 있는 역할, (나) 자료에만 있는 역할,
+ * (다) 둘 다 있는데 이름이나 짧은 이름이 다른 역할을 글로 모아 돌려준다(없으면 빈 목록). 칸 종류 단위의 어긋남은 이 표로 알 수 없다.
+ */
+export function checkPositionTables(data: Fm26Data, table: ParsedPositionTable): string[] {
+  const positionsOf = positionsByRole(data)
+  const problems: string[] = []
+  for (const position of POSITION_ORDER) {
+    const game = Object.hasOwn(table.positions, position) ? table.positions[position] : undefined
+    if (!game) {
+      problems.push(`${position}: 게임 표에 이 포지션이 없습니다.`)
+      continue
+    }
+    for (const phase of PHASES) {
+      const mine = data.roles.filter((role) => role.phase === phase && role.selectable && positionsOf.get(role.id)?.has(position))
+      for (const row of game[phase]) {
+        const role = mine.find((each) => each.gameId === row.id)
+        if (role) {
+          if ((row.name ?? role.name) !== role.name || (row.short ?? role.short) !== role.short) problems.push(`${position} ${phase}: ${role.id}의 이름이나 짧은 이름이 게임 표와 다릅니다.`)
+          continue
+        }
+        const other = data.roles.find((each) => each.phase === phase && each.gameId === row.id)
+        problems.push(other ? `${position} ${phase}: ${other.id}가 게임 표에는 있는데 자료는 이 포지션에서 고를 수 없게 되어 있습니다.` : `${position} ${phase}: 게임 표의 역할 번호 ${row.id}가 자료에 없습니다.`)
+      }
+      for (const role of mine) if (!game[phase].some((row) => row.id === role.gameId)) problems.push(`${position} ${phase}: ${role.id}가 자료에만 있습니다(게임 표에 없음).`)
+    }
+  }
   return problems
 }

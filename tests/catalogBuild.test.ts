@@ -7,7 +7,7 @@
  *
  * 환경 변수(원본이 있을 때만 도는 시험)
  *   FMB_CATALOG_SOURCE  켜진 게임에서 읽은 파일이 있는 폴더(메인 체크아웃의 review-notes/ingame). role-key-attributes.json, role-slots*.json이 필요하고
- *                       role-stars.json이 있으면 1군 별점 표와의 어긋남도 본다.
+ *                       role-stars.json이 있으면 1군 별점 표와의 어긋남도, role-by-position.json이 있으면 포지션별 역할 표와의 어긋남도 본다.
  *   FMB_CATALOG_WRITE   1이면 원본에서 만든 글을 자료 파일에 쓴다(`npm run catalog:build`). 아니면 자료 파일과 같은지만 본다.
  *                       쓰는 실행에서는 "자료 파일과 생성기가 어긋나지 않았다"를 보는 시험 넷(아래 CHECK_FILE)을 건너뛴다. 규칙이나 표를 바꾼 뒤의 첫 실행은
  *                       옛 자료 파일을 새 생성기와 견주게 되어 빨갛게 나오기 때문이다. 쓴 뒤에 `npm test -- tests/catalogBuild.test.ts`로 다시 확인한다.
@@ -24,6 +24,7 @@ import {
   appAttributesOf,
   ATTRIBUTE_NAMES,
   buildFm26Data,
+  checkPositionTables,
   checkStarTables,
   COMMITTED_APP_RULE,
   decodePosition,
@@ -35,9 +36,12 @@ import {
   NOTE_GAME,
   observedKinds,
   parseKeyAttributes,
+  parsePositionTable,
   parseSlots,
   parseStars,
+  POSITION_ORDER,
   type BuildSource,
+  type ParsedPositionTable,
   type ParsedSlots,
   type ParsedStars
 } from './helpers/catalogBuild'
@@ -76,12 +80,19 @@ describe('원본 읽기: 필요한 칸만 읽는다', () => {
     expect(parsed.players[0]).toEqual({ positions: { GK: 20 }, ip: [{ id: '1' }], oop: [] })
   })
 
+  it('포지션별 역할 표는 역할 번호와 이름만 읽고 모르는 칸은 읽지 않는다', () => {
+    const parsed = parsePositionTable({ readAt: 'x', plugin: '9.9.9', source: '지어낸 출처', positions: { GK: { ip: [{ id: '1', short: 'GK', name: '골키퍼', player: '지어낸 선수' }], oop: [] } } })
+    expect(parsed).toEqual({ positions: { GK: { ip: [{ id: '1', short: 'GK', name: '골키퍼' }], oop: [] } } })
+    expect(JSON.stringify(parsed)).not.toContain('지어낸')
+  })
+
   it('모양이 다르면 어느 파일인지 적어서 던진다', () => {
     expect(() => parseKeyAttributes({ roles: 'x' })).toThrow('role-key-attributes.json')
     expect(() => parseKeyAttributes({ readAt: 'x', roles: [{ phase: 'both', id: '1', enumName: 'A', keyAttributes: [] }] })).toThrow()
     expect(() => parseKeyAttributes({ readAt: 'x', roles: [{ phase: 'ip', id: '글자', enumName: 'A', keyAttributes: [] }] })).toThrow()
     expect(() => parseSlots({ slots: [{ index: 0 }] })).toThrow('role-slots.json')
     expect(() => parseStars({ players: [{ positions: { GK: '20' }, ip: [], oop: [] }] })).toThrow('role-stars.json')
+    expect(() => parsePositionTable({ positions: { GK: { ip: [{ id: '글자' }], oop: [] } } })).toThrow('role-by-position.json')
   })
 })
 
@@ -380,6 +391,49 @@ describe('1군 별점 표와 견주기(checkStarTables)', () => {
   })
 })
 
+describe('포지션별 역할 표와 견주기(checkPositionTables)', () => {
+  // 지어낸 자료: 점유 시 역할 둘(하나는 고를 수 없음), 비점유 시 역할 하나. 번호 1은 점유 시와 비점유 시에 따로 있다
+  const data = {
+    roles: [
+      { id: 'ip.A', phase: 'ip', gameId: '1', name: '가', short: 'A', selectable: true },
+      { id: 'ip.B', phase: 'ip', gameId: '2', name: '나', short: 'B', selectable: true },
+      { id: 'ip.Old', phase: 'ip', gameId: '4', name: '옛', short: '', selectable: false },
+      { id: 'oop.C', phase: 'oop', gameId: '1', name: '다', short: 'C', selectable: true }
+    ],
+    slotKinds: {
+      DM: [{ roleId: 'ip.A', evidence: 'game' }],
+      'MC.pair': [{ roleId: 'ip.B', evidence: 'game' }, { roleId: 'oop.C', evidence: 'game' }]
+    }
+  } as unknown as Fm26Data
+  type Row = { id: string; short?: string; name?: string }
+  const A: Row = { id: '1', short: 'A', name: '가' }
+  const B: Row = { id: '2', short: 'B', name: '나' }
+  const C: Row = { id: '1', short: 'C', name: '다' }
+  /** 포지션 14개가 모두 있는 표. 자료와 같은 DM·MC 말고는 빈 목록이다 */
+  const table = (edit: Record<string, { ip: Row[]; oop: Row[] }> = {}): ParsedPositionTable => ({
+    positions: { ...Object.fromEntries(POSITION_ORDER.map((position) => [position, { ip: [], oop: [] }])), DM: { ip: [A], oop: [] }, MC: { ip: [B], oop: [C] }, ...edit }
+  })
+
+  it('역할의 포지션이 게임 표와 같으면 문제가 없다(번호는 국면마다 따로 센다)', () => {
+    expect(checkPositionTables(data, table())).toEqual([])
+  })
+
+  it('자료에만 있는 역할, 게임 표에만 있는 역할, 고를 수 없는 역할, 다른 이름, 빠진 포지션을 알린다', () => {
+    expect(checkPositionTables(data, table({ DM: { ip: [], oop: [] } }))).toEqual(['DM ip: ip.A가 자료에만 있습니다(게임 표에 없음).'])
+    expect(checkPositionTables(data, table({ MC: { ip: [B], oop: [] } }))).toEqual(['MC oop: oop.C가 자료에만 있습니다(게임 표에 없음).'])
+    expect(checkPositionTables(data, table({ DM: { ip: [A, { id: '99' }], oop: [] } }))).toEqual(['DM ip: 게임 표의 역할 번호 99가 자료에 없습니다.'])
+    expect(checkPositionTables(data, table({ DM: { ip: [A, B], oop: [] } }))).toEqual(['DM ip: ip.B가 게임 표에는 있는데 자료는 이 포지션에서 고를 수 없게 되어 있습니다.'])
+    expect(checkPositionTables(data, table({ DM: { ip: [A, { id: '4' }], oop: [] } }))).toEqual(['DM ip: ip.Old가 게임 표에는 있는데 자료는 이 포지션에서 고를 수 없게 되어 있습니다.'])
+    expect(checkPositionTables(data, table({ MC: { ip: [{ ...B, name: '다른 이름' }], oop: [C] } }))).toEqual(['MC ip: ip.B의 이름이나 짧은 이름이 게임 표와 다릅니다.'])
+    expect(checkPositionTables(data, table({ MC: { ip: [B], oop: [{ ...C, short: 'X' }] } }))).toEqual(['MC oop: oop.C의 이름이나 짧은 이름이 게임 표와 다릅니다.'])
+    // 이름을 주지 않은 줄은 이름을 견주지 않는다
+    expect(checkPositionTables(data, table({ DM: { ip: [{ id: '1' }], oop: [] } }))).toEqual([])
+    const missing = table()
+    delete (missing.positions as Record<string, unknown>).ST
+    expect(checkPositionTables(data, missing)).toEqual(['ST: 게임 표에 이 포지션이 없습니다.'])
+  })
+})
+
 describe.skipIf(!SOURCE && !WRITE)('원본으로 만들기(FMB_CATALOG_SOURCE)', () => {
   const dir = SOURCE ?? ''
   const read = (name: string): unknown => JSON.parse(readFileSync(join(dir, name), 'utf8'))
@@ -421,6 +475,11 @@ describe.skipIf(!SOURCE && !WRITE)('원본으로 만들기(FMB_CATALOG_SOURCE)',
     const { source, stars } = readSource()
     if (!stars) return
     expect(checkStarTables(buildFm26Data(source), stars)).toEqual([])
+  })
+
+  it.skipIf(!SOURCE)('게임에서 읽은 포지션별 역할 표(role-by-position.json)와 어긋나는 포지션이 없다', () => {
+    if (!existsSync(join(dir, 'role-by-position.json'))) return
+    expect(checkPositionTables(buildFm26Data(readSource().source), parsePositionTable(read('role-by-position.json')))).toEqual([])
   })
 
   it.skipIf(!SOURCE)('자료 파일에 선수 이름과 역할 설명 글이 없다', () => {
