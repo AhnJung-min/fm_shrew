@@ -1,6 +1,9 @@
 /**
  * 2단계 새 창구의 계약(U1): 창구 이름이 화면(preload, 미리보기 목업)과 본체(tacticIpc.ts)에 모두 있고,
- * 본체만 쓰는 설정 열쇠는 화면이 보낸 patch에서 버려지며, 아직 채우지 않은 서비스와 목업은 "준비되지 않았습니다"를 돌려주고 던지지 않는다.
+ * 본체만 쓰는 설정 열쇠는 화면이 보낸 patch에서 버려지며, 본체의 창구는 어떤 값을 받아도 던지지 않고 결과 모양(ok와 그 창구의 목록 칸)을 지킨다.
+ *
+ * 이 시험은 서비스(tacticStore, tacticImportService, tacticSearchService, roleShareService, roleStarService)와 미리보기 목업을
+ * 뒤 단위가 채운 뒤에도 그대로 참이어야 한다. 그래서 빈 틀이 돌려주는 글("준비되지 않았습니다")은 보지 않고, 채워도 변하지 않는 것만 본다.
  */
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
@@ -9,7 +12,7 @@ import { registerTacticIpc, type Phase2Deps } from '../src/main/tacticIpc'
 import { mockRoleToolsApi } from '../src/renderer/src/lib/mock/roleTools'
 import { mockTacticsApi } from '../src/renderer/src/lib/mock/tactics'
 import { mockTacticToolsApi } from '../src/renderer/src/lib/mock/tacticTools'
-import { dropMainOwned, MAIN_OWNED_KEYS, NOT_READY, normsFailed, TACTIC_CHANNELS } from '../src/shared/tacticApi'
+import { dropMainOwned, MAIN_OWNED_KEYS, normsFailed, TACTIC_CHANNELS } from '../src/shared/tacticApi'
 import type { Settings } from '../src/shared/types'
 
 const SRC = join(__dirname, '..', 'src')
@@ -108,7 +111,7 @@ function fakeDeps(overrides: Partial<Phase2Deps> = {}): Phase2Deps {
     settings: {} as never,
     world: {} as never,
     link: {} as never,
-    norms: () => normsFailed(NOT_READY),
+    norms: () => normsFailed('준비 중'),
     pickSavePath: async () => null,
     pickOpenPath: async () => null,
     dataDir: '',
@@ -124,38 +127,72 @@ function registered(deps: Phase2Deps = fakeDeps()): Map<string, Handler> {
   return handlers
 }
 
-describe('아직 채우지 않은 창구는 "준비되지 않았습니다"를 돌려주고 던지지 않는다', () => {
-  const NOT_READY_RESULT = { ok: false, message: NOT_READY }
-  const SHAPES: Record<keyof typeof TACTIC_CHANNELS, Record<string, unknown>> = {
-    tacticsSave: { problems: [] },
-    worldNorms: { norms: {} },
-    tacticImport: { problems: [], unknownBits: [] },
-    tacticRecommend: { ranked: [], suggestions: [], elapsedMs: 0 },
-    customRolesSave: {},
-    roleBundleExport: {},
-    roleBundlePreview: { changes: [], warnings: [] },
-    roleBundleApply: {},
-    roleStarCheck: { rows: [], players: 0, readAt: null },
-    migrationAck: {}
+/** 창구마다 결과가 갖춰야 하는 목록 칸(타입이 정한 필수 칸이라 서비스를 채운 뒤에도 같다) */
+const RESULT_FIELDS: Record<keyof typeof TACTIC_CHANNELS, Record<string, 'array' | 'object' | 'number'>> = {
+  tacticsSave: { problems: 'array' },
+  worldNorms: { norms: 'object' },
+  tacticImport: { problems: 'array', unknownBits: 'array' },
+  tacticRecommend: { ranked: 'array', suggestions: 'array', elapsedMs: 'number' },
+  customRolesSave: {},
+  roleBundleExport: {},
+  roleBundlePreview: { changes: 'array', warnings: 'array' },
+  roleBundleApply: {},
+  roleStarCheck: { rows: 'array', players: 'number' },
+  migrationAck: {}
+}
+
+/** 결과 하나가 그 창구의 모양을 갖췄는가: 객체이고, ok가 참이든 거짓이든 불리언이고, 글이 있으면 글자이고, 목록 칸이 제 종류다 */
+function expectShape(method: keyof typeof TACTIC_CHANNELS, result: unknown, where: string): void {
+  expect(result, where).toBeTypeOf('object')
+  expect(result, where).not.toBeNull()
+  const record = result as Record<string, unknown>
+  expect(typeof record.ok, `${where}: ok`).toBe('boolean')
+  if (record.message !== undefined) expect(typeof record.message, `${where}: message`).toBe('string')
+  for (const [field, kind] of Object.entries(RESULT_FIELDS[method])) {
+    const value = record[field]
+    if (kind === 'array') expect(Array.isArray(value), `${where}: ${field}는 목록`).toBe(true)
+    else if (kind === 'object') expect(value !== null && typeof value === 'object' && !Array.isArray(value), `${where}: ${field}는 객체`).toBe(true)
+    else expect(typeof value, `${where}: ${field}`).toBe('number')
   }
+}
+
+describe('본체의 창구는 어떤 값을 받아도 던지지 않고 결과 모양을 지킨다(서비스를 채운 뒤에도 같다)', () => {
   const ARGUMENTS: unknown[][] = [[], [null], [undefined, undefined], ['a.fm', { 엉뚱한: '값' }], [7, 'x', {}], [[1, 2], '?']]
 
-  it('본체의 채널마다: 어떤 값을 받아도 준비되지 않았다는 결과가 나온다', async () => {
-    const handlers = registered()
-    expect(NOT_READY).toBe('아직 준비되지 않았습니다.')
-    for (const method of METHODS) {
-      const handler = handlers.get(TACTIC_CHANNELS[method])!
-      for (const args of ARGUMENTS) {
-        await expect(handler({}, ...args), `${method}(${JSON.stringify(args)})`).resolves.toEqual({ ...NOT_READY_RESULT, ...SHAPES[method] })
+  it('가짜 의존물로 엉뚱한 값을 넣어 불러도 던지지 않고, ok(참 또는 거짓)와 그 창구의 목록 칸이 있는 결과를 준다', async () => {
+    // 서비스가 던지면 창구가 막아서 실패 결과를 주고 콘솔에만 남긴다
+    const spy = vi.spyOn(console, 'error').mockImplementation(() => undefined)
+    try {
+      const handlers = registered()
+      for (const method of METHODS) {
+        const handler = handlers.get(TACTIC_CHANNELS[method])!
+        for (const args of ARGUMENTS) {
+          const where = `${method}(${JSON.stringify(args)})`
+          expectShape(method, await handler({}, ...args), where)
+        }
       }
+    } finally {
+      spy.mockRestore()
     }
   })
 
-  it('미리보기 목업마다: 같은 결과가 나온다', async () => {
-    const state = { getSettings: () => ({}) as Settings, setSettings: () => undefined }
-    const shells = { ...mockTacticsApi(state), ...mockTacticToolsApi(state), ...mockRoleToolsApi(state) } as unknown as Record<string, (...args: unknown[]) => Promise<unknown>>
-    for (const method of METHODS) {
-      for (const args of ARGUMENTS) await expect(shells[method](...args), `${method}(${JSON.stringify(args)})`).resolves.toEqual({ ...NOT_READY_RESULT, ...SHAPES[method] })
+  it('의존물을 건드리면 던지는 가짜로도 던지지 않고 결과 모양을 지킨다', async () => {
+    const spy = vi.spyOn(console, 'error').mockImplementation(() => undefined)
+    const explode = (): never => {
+      throw new Error('C:\\비밀\\경로 때문에 깨졌다')
+    }
+    const trap = (): never => new Proxy({}, { get: explode, has: explode }) as never
+    try {
+      const handlers = registered(fakeDeps({ settings: trap(), world: trap(), link: trap(), norms: explode, pickSavePath: async () => explode(), pickOpenPath: async () => explode() }))
+      for (const method of METHODS) {
+        const handler = handlers.get(TACTIC_CHANNELS[method])!
+        for (const args of ARGUMENTS) {
+          const where = `${method}(${JSON.stringify(args)})`
+          expectShape(method, await handler({}, ...args), where)
+        }
+      }
+    } finally {
+      spy.mockRestore()
     }
   })
 
@@ -168,7 +205,7 @@ describe('아직 채우지 않은 창구는 "준비되지 않았습니다"를 �
     expect(seen).toEqual([[profile], []])
   })
 
-  it('서비스가 던져도 화면에는 실패 결과를 주고 오류 내용은 담지 않는다', async () => {
+  it('이어 준 함수가 던져도 화면에는 실패 결과를 주고 오류 내용은 담지 않는다', async () => {
     const spy = vi.spyOn(console, 'error').mockImplementation(() => undefined)
     try {
       const handlers = registered(fakeDeps({ norms: () => { throw new Error('C:\\비밀\\경로 때문에 깨졌다') } }))
@@ -182,11 +219,7 @@ describe('아직 채우지 않은 창구는 "준비되지 않았습니다"를 �
     }
   })
 
-  it('파일 대화상자 의존물은 본체가 준다(화면은 경로를 주지 않는다): 의존물에 두 함수가 있다', () => {
-    const deps = fakeDeps()
-    expect(typeof deps.pickSavePath).toBe('function')
-    expect(typeof deps.pickOpenPath).toBe('function')
-    // 화면으로 가는 창구 어디에도 경로를 받는 메서드가 없다
+  it('화면으로 가는 창구 어디에도 파일 경로를 받는 메서드가 없다(경로는 본체의 저장·열기 대화상자가 정한다)', () => {
     expect(preload).not.toMatch(/(roleBundleExport|roleBundlePreview|roleBundleApply): \([^)]*(path|file)/i)
   })
 })

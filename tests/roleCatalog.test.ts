@@ -243,30 +243,48 @@ describe('withCustomRoles: 사용자 역할 얹기', () => {
   })
 
   it('위쪽 카탈로그를 고르는 한 곳(catalogs.ts): 기본은 옛 14역할이고, 설정의 catalog와 customRoles를 따른다', () => {
+    // 전환 묶음(기본 카탈로그를 FM26으로 바꾸는 한 줄의 커밋)에서 고칠 곳은 이 한 줄뿐이다. 아래는 모두 DEFAULT_CATALOG를 따라 읽는다
     expect(DEFAULT_CATALOG).toBe('legacy14')
+    const base = catalogOf(DEFAULT_CATALOG)
     expect(catalogOf('legacy14')).toBe(LEGACY_CATALOG)
     expect(catalogOf('fm26')).toBe(FM26_CATALOG)
-    expect(activeCatalog({})).toBe(LEGACY_CATALOG)
+    expect(activeCatalog({})).toBe(base)
     expect(activeCatalog({ catalog: 'legacy14' })).toBe(LEGACY_CATALOG)
     expect(activeCatalog({ catalog: 'fm26' })).toBe(FM26_CATALOG)
     // 손으로 고쳐 모르는 값이 들어가도 기본으로 돈다
-    expect(activeCatalog({ catalog: 'zzz' as never })).toBe(LEGACY_CATALOG)
+    expect(activeCatalog({ catalog: 'zzz' as never })).toBe(base)
     expect(activeCatalog({ customRoles: [custom('user.a', 'ip', ['MC'])] }).role('user.a')).toBeDefined()
-    expect(activeCatalog({ customRoles: [] })).toBe(LEGACY_CATALOG)
+    expect(activeCatalog({ customRoles: [] })).toBe(base)
   })
 })
 
-describe('FM26 카탈로그(빈 틀): 자료를 채우기 전에도 죽지 않는다', () => {
-  it('역할이 없고, 목록을 묻는 함수는 빈 결과를 준다', () => {
+describe('FM26 카탈로그: 자료를 채우기 전에도 채운 뒤에도 죽지 않는다', () => {
+  // 채운 뒤의 계약(번호, 가중치, 칸마다 역할 목록 등)은 채우는 단위가 catalogContract(FM26_CATALOG)로 본다. 여기서는 빈 틀이든 채운 것이든 참인 것만 본다
+  it('번호가 fm26이고, 무엇을 물어도 던지지 않고 제 모양의 답을 준다', () => {
     expect(FM26_CATALOG.id).toBe('fm26')
-    expect(FM26_CATALOG.dataVersion).toBe('26.3.2')
-    expect(FM26_CATALOG.roles).toEqual([])
-    expect(FM26_CATALOG.role('ip.CentralDefender')).toBeUndefined()
-    expect(FM26_CATALOG.roleByGameId('ip', '1')).toBeUndefined()
-    expect(FM26_CATALOG.choicesAt('DC', 'ip', 'DC.pair')).toEqual([])
-    expect(FM26_CATALOG.baseWeights('ip.CentralDefender')).toEqual({})
-    expect(FM26_CATALOG.references()).toEqual([])
-    expect(FM26_CATALOG.legacyMap()).toEqual({})
+    expect(FM26_CATALOG.dataVersion.length).toBeGreaterThan(0)
+    expect(Array.isArray(FM26_CATALOG.roles)).toBe(true)
+    for (const id of ['', '없는 역할', 'constructor', '__proto__', 'ip.없는역할', 'user.없는역할']) {
+      expect(() => FM26_CATALOG.role(id), id).not.toThrow()
+      expect(() => FM26_CATALOG.referenceOf(id), id).not.toThrow()
+      expect(typeof FM26_CATALOG.baseWeights(id), id).toBe('object')
+      expect(typeof FM26_CATALOG.baseTags(id), id).toBe('object')
+    }
+    for (const phase of ['ip', 'oop'] as const) {
+      for (const gameId of ['', '1', '비트가 아닌 글자', '99999999999999999999']) expect(() => FM26_CATALOG.roleByGameId(phase, gameId), `${phase} ${gameId}`).not.toThrow()
+      expect(Array.isArray(FM26_CATALOG.references(phase)), phase).toBe(true)
+      for (const position of POSITIONS) {
+        for (const kind of kindsOf(position)) {
+          expect(Array.isArray(FM26_CATALOG.choicesAt(position, phase, kind)), `${position} ${phase} ${kind}`).toBe(true)
+          expect(typeof FM26_CATALOG.defaultRole(position, phase, kind), `${position} ${phase} ${kind}`).toBe('string')
+        }
+      }
+    }
+    expect(Array.isArray(FM26_CATALOG.references())).toBe(true)
+    const profile: SlotProfile = { ip: { position: 'DC', roleId: 'ip.CentralDefender' }, oop: { position: 'DC', roleId: 'oop.OPCentreBack' }, sharePct: 60 }
+    expect(Array.isArray(FM26_CATALOG.poolOf(profile))).toBe(true)
+    expect(typeof FM26_CATALOG.normKey(profile)).toBe('string')
+    expect(typeof FM26_CATALOG.legacyMap()).toBe('object')
   })
 })
 

@@ -357,7 +357,7 @@ describe('validateTactic: 저장하기 전 검사', () => {
       expect(() => validateTactic(garbage as never, LEGACY_CATALOG), JSON.stringify(garbage)).not.toThrow()
       expect(validateTactic(garbage as never, LEGACY_CATALOG).length, JSON.stringify(garbage)).toBeGreaterThan(0)
     }
-    // 아직 채우지 않은 FM26 카탈로그로 검사해도 죽지 않고 역할을 찾지 못한다고 답한다
+    // FM26 카탈로그로 옛 역할 번호를 가진 전술을 검사해도(자료를 채우기 전이나 뒤나) 죽지 않고 역할을 찾지 못한다고 답한다
     expect(codesOf(validateTactic({ ...preset('4-4-2'), catalog: 'fm26' }, FM26_CATALOG))).toContain('roleMissing')
   })
 })
