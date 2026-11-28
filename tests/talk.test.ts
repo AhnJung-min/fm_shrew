@@ -82,10 +82,10 @@ describe('buildSayPrompt: 대화 단계에 보내는 글', () => {
         { from: 'me', speaker: '감독', text: '이기겠다' }
       ],
       '(물병을 던지며) 이게 경기냐',
-      ['버질 반 다이크', '알리송 베케르']
+      ['마르코 델 바르코', '주앙 페레이로']
     )
     expect(prompt).toContain('  1: 아직 끝나지 않았다. (어조: 단호하게)')
-    expect(prompt).toContain('[내 팀 선수] 버질 반 다이크, 알리송 베케르')
+    expect(prompt).toContain('[내 팀 선수] 마르코 델 바르코, 주앙 페레이로')
     expect(prompt).toContain('기자: 각오는?')
     expect(prompt).toContain('감독: 이기겠다')
     expect(prompt.trimEnd().endsWith('(물병을 던지며) 이게 경기냐')).toBe(true)

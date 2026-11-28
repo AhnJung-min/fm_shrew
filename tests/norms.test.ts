@@ -163,17 +163,17 @@ describe('로테이션 탭 경계 안내(4회차, 5회차에 창으로 바꿈)',
 
 describe('한국어 조사', () => {
   it('받침 있는 이름은 이/은/을, 없는 이름은 가/는/를', () => {
-    expect(withJosa('반 다이크', '이/가')).toBe('반 다이크가')
-    expect(withJosa('케르케즈', '이/가')).toBe('케르케즈가')
-    expect(withJosa('김민재', '은/는')).toBe('김민재는')
-    expect(withJosa('손흥민', '은/는')).toBe('손흥민은')
-    expect(withJosa('손흥민', '을/를')).toBe('손흥민을')
-    expect(withJosa('이강인', '과/와')).toBe('이강인과')
+    expect(withJosa('델 바르코', '이/가')).toBe('델 바르코가')
+    expect(withJosa('라우리노', '이/가')).toBe('라우리노가')
+    expect(withJosa('한지후', '은/는')).toBe('한지후는')
+    expect(withJosa('서도현', '은/는')).toBe('서도현은')
+    expect(withJosa('서도현', '을/를')).toBe('서도현을')
+    expect(withJosa('윤이안', '과/와')).toBe('윤이안과')
     expect(hasBatchim('아')).toBe(false)
     expect(hasBatchim('악')).toBe(true)
   })
   it('한글로 끝나지 않으면 둘을 함께 적는다', () => {
-    expect(josa('Rodri', '이/가')).toBe('이(가)')
+    expect(josa('Marco', '이/가')).toBe('이(가)')
     expect(josa('Player 7', '은/는')).toBe('은(는)')
     expect(josa('', '이/가')).toBe('이(가)')
   })

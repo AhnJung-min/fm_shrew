@@ -34,8 +34,8 @@ beforeEach(() => {
 
 describe('parseBackupName', () => {
   it('사본 이름에서 세이브 이름·저장 시각·종류를 읽는다', () => {
-    const parsed = parseBackupName('내 팀 - 리버풀__20261126-021530__pre.fm')!
-    expect(parsed.saveName).toBe('내 팀 - 리버풀.fm')
+    const parsed = parseBackupName('내 팀 - 가온 시티__20261126-021530__pre.fm')!
+    expect(parsed.saveName).toBe('내 팀 - 가온 시티.fm')
     expect(new Date(parsed.savedAt).getHours()).toBe(2)
     expect(parsed.beforeRestore).toBe(true)
     expect(parseBackupName('내 팀__20261126-021530.fm')!.beforeRestore).toBe(false)

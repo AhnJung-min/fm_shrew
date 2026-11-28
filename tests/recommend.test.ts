@@ -145,8 +145,8 @@ describe('즉시 전력', () => {
     expect(immediateFit(68, old, 'starter')).toBeGreaterThan(immediateFit(68, young, 'starter'))
     // 골키퍼는 34세까지 하락을 따지지 않는다
     expect(immediateFit(68, old, 'starter', true)).toBeCloseTo(immediateFit(68, young, 'starter', true))
-    const note = part('immediate', { roleScore: 68 }, context({ starter: { name: '반 다이크', score: 70, ca: 150, age: 34 }, backup: null })).note
-    expect(note).toContain('반 다이크가 34세라 내년 하락을 감안해 기준을 3.0점 낮춰')
+    const note = part('immediate', { roleScore: 68 }, context({ starter: { name: '델 바르코', score: 70, ca: 150, age: 34 }, backup: null })).note
+    expect(note).toContain('델 바르코가 34세라 내년 하락을 감안해 기준을 3.0점 낮춰')
   })
 })
 

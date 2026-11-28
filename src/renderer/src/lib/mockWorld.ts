@@ -76,7 +76,7 @@ const PLAYERS: MockPlayer[] = Array.from({ length: 150 }, (_, i) => {
   const attributes = SAVE_ATTRIBUTE_ORDER.map(() => Math.max(5, Math.min(100, Math.round(level + (random() - 0.5) * 36))))
   const ca = Math.round(level * 1.9 + 20)
   const pa = Math.min(200, ca + Math.round(random() * (age <= 21 ? 45 : 6)))
-  const club = mine ? '리버풀' : CLUBS[Math.floor(random() * CLUBS.length)]
+  const club = mine ? '가온 시티' : CLUBS[Math.floor(random() * CLUBS.length)]
   return {
     uid: 1000 + i,
     name: `${FAMILY[i % FAMILY.length]}${GIVEN[(i * 7) % GIVEN.length]}`,
@@ -201,7 +201,7 @@ export function mockCandidates(query: CandidateQuery, empty: boolean): Candidate
 
   return {
     ok: true,
-    saveName: '리버풀 2025.fm',
+    saveName: '가온 시티 2025.fm',
     bench,
     counts,
     matched: picked.length,
@@ -246,7 +246,7 @@ export function mockEditorList(search: string, empty: boolean): { ok: boolean; m
   if (empty) return { ok: false, message: '세이브 폴더에 세이브가 없습니다. 게임에서 한 번 저장해 주세요.', items: [] }
   const wanted = search.trim()
   const found = wanted ? PLAYERS.filter((player) => player.name.includes(wanted)) : PLAYERS.filter((player) => player.mine)
-  return { ok: true, saveName: '리버풀 2025.fm', items: found.map(listItem) }
+  return { ok: true, saveName: '가온 시티 2025.fm', items: found.map(listItem) }
 }
 
 export function mockEditorPlayer(uid: number, gameOn: boolean): EditorPlayer | null {
@@ -448,7 +448,7 @@ export function mockDashboard(empty: boolean, settings: { formation: string; slo
   }
   return {
     ok: true,
-    meta: { saveName: '리버풀 2025.fm', savedAt: new Date(Date.now() - 0.4 * 3_600_000).toISOString(), gameDate: { year: 2026, month: 7, day: 1 }, abilitySource: 'save', liveAt: null, club: '한강 유나이티드', clubUid: null },
+    meta: { saveName: '가온 시티 2025.fm', savedAt: new Date(Date.now() - 0.4 * 3_600_000).toISOString(), gameDate: { year: 2026, month: 7, day: 1 }, abilitySource: 'save', liveAt: null, club: '한강 유나이티드', clubUid: null },
     brief: buildBrief({
       table: season.table ?? null,
       recent: season.recent,

@@ -8,25 +8,25 @@ describe('positionsLabel: 실제 세이브의 숙련도와 게임 표기를 맞�
   it('골키퍼', () => {
     expect(positionsLabel(ratings({ 0: 20 }))).toBe('GK')
   })
-  it('흐라번베르흐: DM, M (C)', () => {
+  it('DM, M (C)', () => {
     expect(positionsLabel(ratings({ 5: 20, 7: 18 }))).toBe('DM, M (C)')
   })
-  it('소보슬라이: DM, M/AM (C) (숙련도 12 이하는 뺀다)', () => {
+  it('DM, M/AM (C) (숙련도 12 이하는 뺀다)', () => {
     expect(positionsLabel(ratings({ 4: 12, 5: 18, 7: 20, 9: 10, 10: 18, 11: 12 }))).toBe('DM, M/AM (C)')
   })
-  it('아라우호: D (RC), WB (R)', () => {
+  it('D (RC), WB (R)', () => {
     expect(positionsLabel(ratings({ 3: 20, 4: 16, 14: 15 }))).toBe('D (RC), WB (R)')
   })
-  it('치미카스: D/WB/M (L)', () => {
+  it('D/WB/M (L)', () => {
     expect(positionsLabel(ratings({ 2: 20, 6: 15, 13: 17 }))).toBe('D/WB/M (L)')
   })
-  it('프림퐁: D/WB/AM (R)', () => {
+  it('D/WB/AM (R)', () => {
     expect(positionsLabel(ratings({ 4: 20, 11: 17, 14: 18 }))).toBe('D/WB/AM (R)')
   })
-  it('엔도: D (C), DM, M (C)', () => {
+  it('D (C), DM, M (C)', () => {
     expect(positionsLabel(ratings({ 3: 16, 5: 20, 7: 16 }))).toBe('D (C), DM, M (C)')
   })
-  it('키에사: AM (RLC), ST (C)', () => {
+  it('AM (RLC), ST (C)', () => {
     expect(positionsLabel(ratings({ 9: 20, 10: 16, 11: 19, 12: 16 }))).toBe('AM (RLC), ST (C)')
   })
 })

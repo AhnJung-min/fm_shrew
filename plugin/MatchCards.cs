@@ -1186,7 +1186,7 @@ internal static class MatchCards
     }
 
     /// <summary>
-    /// 표에는 짧은 이름("B. Barcola")이, 골 알림에는 온전한 이름("브래들리 바르콜라")이 나온다.
+    /// 표에는 짧은 이름("H. Do")이, 골 알림에는 온전한 이름("도하람")이 나온다.
     /// 경기 중에 적어 둔 골 기록에서 같은 팀이고 득점·도움 수가 꼭 맞는 선수가 한 명뿐이면 그 이름을 쓴다.
     /// </summary>
     private static string FullName(Row row)
@@ -1463,23 +1463,23 @@ internal static class MatchCards
         {
             var best = new Row
             {
-                Team = "LIV", Club = "리버풀", Name = "B. Barcola", Bench = true, SubMinute = "76'",
+                Team = "GAO", Club = "가온 시티", Name = "H. Do", Bench = true, SubMinute = "76'",
                 Goals = 1, Assists = 1, Rating = 8.8f, RatingText = "8.8",
-                FullName = "브래들리 바르콜라", PersonId = person, KeyPasses = 4, ShotsOnTarget = 2, Shots = 3
+                FullName = "도하람", PersonId = person, KeyPasses = 4, ShotsOnTarget = 2, Shots = 3
             };
-            ShowBest(best, "프리미어 리그", "리버풀 3 : 0 울브스", root, sample);
+            ShowBest(best, "1부 리그", "가온 시티 3 : 0 서천 FC", root, sample);
             return "shown";
         }
 
         var goal = new Goal
         {
             Minute = "61'",
-            Team = "LIV",
+            Team = "GAO",
             Number = "9",
-            Scorer = "알렉산데르 이삭",
+            Scorer = "모유찬",
             AssistNumber = "29",
-            Assist = "브래들리 바르콜라",
-            ScoreLine = "LIV 2 - 0 WOL",
+            Assist = "도하람",
+            ScoreLine = "GAO 2 - 0 SEO",
             Fact = kind == "fact" ? "13경기에서 4득점을 달성했습니다" : "",
             PersonId = person
         };
@@ -1499,17 +1499,17 @@ internal static class MatchCards
             goal.AssistSeason = 8;
             goal.TopGoals = new List<Ranked>
             {
-                new() { Position = "1", Name = "엘링 홀란", Team = "MCI", Value = "18" },
-                new() { Position = "2", Name = "알렉산데르 이삭", Team = "LIV", Value = "13" },
-                new() { Position = "3", Name = "니콜라 잭슨", Team = "AVL", Value = "11" },
-                new() { Position = "4", Name = "조르지뇨 뤼테", Team = "BHA", Value = "10" },
-                new() { Position = "=", Name = "모건 로저스", Team = "CHE", Value = "10" }
+                new() { Position = "1", Name = "류시온", Team = "HAN", Value = "18" },
+                new() { Position = "2", Name = "모유찬", Team = "GAO", Value = "13" },
+                new() { Position = "3", Name = "진태윤", Team = "BUK", Value = "11" },
+                new() { Position = "4", Name = "설서준", Team = "NAM", Value = "10" },
+                new() { Position = "=", Name = "한준서", Team = "DON", Value = "10" }
             };
             goal.TopAssists = new List<Ranked>
             {
-                new() { Position = "1", Name = "마티아스 페르난데스 파르도", Team = "NFO", Value = "9" },
-                new() { Position = "=", Name = "필 포든", Team = "MCI", Value = "9" },
-                new() { Position = "4", Name = "브래들리 바르콜라", Team = "LIV", Value = "8" }
+                new() { Position = "1", Name = "마르코 델 바르코 페레이로", Team = "SEH", Value = "9" },
+                new() { Position = "=", Name = "서건우", Team = "HAN", Value = "9" },
+                new() { Position = "4", Name = "도하람", Team = "GAO", Value = "8" }
             };
         }
         ShowGoal(goal, kind == "multi" ? 2 : kind == "hat" ? 3 : 1, kind == "multi" ? 2 : 1, root, sample);

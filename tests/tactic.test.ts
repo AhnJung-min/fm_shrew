@@ -455,13 +455,13 @@ describe('역할 기준 분포로 재는 보강 필요도', () => {
     expect(checked).toBeGreaterThan(500)
   })
 
-  it('이름 뒤 조사를 받침에 맞게 쓴다(반 다이크가 34세입니다)', () => {
+  it('이름 뒤 조사를 받침에 맞게 쓴다(델 바르코가 34세입니다)', () => {
     const rows = [
       ...squad().filter((row) => row.name !== '오른풀백'),
-      player({ name: '반 다이크', position: 'D (R)', level: 13, age: 34, end: 20290630 })
+      player({ name: '델 바르코', position: 'D (R)', level: 13, age: 34, end: 20290630 })
     ]
     const analysis = analyseTactic(base(rows))!
-    expect(find(analysis, 'DR').factors.find((each) => each.id === 'age')!.note).toContain('주전 반 다이크가 34세입니다')
+    expect(find(analysis, 'DR').factors.find((each) => each.id === 'age')!.note).toContain('주전 델 바르코가 34세입니다')
   })
 
   it('알 수 없는 나이·계약은 빼지 않고 보통 위험으로 계산하며, 이유로 올리지 않는다', () => {

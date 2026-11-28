@@ -127,18 +127,18 @@ describe('readMatchInfo: 경기 화면의 점수판과 중계', () => {
     const info = readMatchInfo(
       parseTree(`#1 SI.Bindable.Panel "OverviewHeader" [0,0 100x100]
  #2 SI.Bindable.SIText "Time" .sitext [0,0 10x10] text="74:27"
- #3 SI.Bindable.SIText "HomeTeamText" .sitext [0,0 10x10] text="BOU"
+ #3 SI.Bindable.SIText "HomeTeamText" .sitext [0,0 10x10] text="HAN"
  #4 SI.Bindable.SIText "HomeScore" .sitext [0,0 10x10] text="1"
  #5 SI.Bindable.SIText "AwayScore" .sitext [0,0 10x10] text="2"
- #6 SI.Bindable.SIText "AwayTeamText" .sitext [0,0 10x10] text="LIV"
+ #6 SI.Bindable.SIText "AwayTeamText" .sitext [0,0 10x10] text="GAO"
  #7 SI.Bindable.BindingExpect "BindingExpect_MatchCommentary" [0,0 10x10]
   #8 SI.Bindable.SIText .sitext [0,0 10x10] invisible text="지나간 중계 문구입니다"
-  #9 SI.Bindable.SIText .sitext [0,0 10x10] text="학포가 측면을 파고듭니다"
+  #9 SI.Bindable.SIText .sitext [0,0 10x10] text="도하람이 측면을 파고듭니다"
 `)
     )
-    expect(info.situation).toBe('BOU 1-2 LIV (앞이 홈), 경기 시간 74:27')
-    expect(info.teams).toEqual(['BOU', 'LIV'])
-    expect(info.facts).toEqual(['중계: 학포가 측면을 파고듭니다'])
+    expect(info.situation).toBe('HAN 1-2 GAO (앞이 홈), 경기 시간 74:27')
+    expect(info.teams).toEqual(['HAN', 'GAO'])
+    expect(info.facts).toEqual(['중계: 도하람이 측면을 파고듭니다'])
   })
 
   it('경기 화면이 아니면 비어 있다', async () => {
@@ -151,18 +151,18 @@ describe('guessOwnTeam: 여러 경기에 다 나오는 약칭이 우리 팀', ()
   it('한 경기만 봤으면 알 수 없다', async () => {
     const { guessOwnTeam } = await import('../src/shared/gameUi')
     expect(guessOwnTeam([])).toBeNull()
-    expect(guessOwnTeam(['BOU|LIV'])).toBeNull()
-    expect(guessOwnTeam(['BOU|LIV', 'BOU|LIV'])).toBeNull()
+    expect(guessOwnTeam(['HAN|GAO'])).toBeNull()
+    expect(guessOwnTeam(['HAN|GAO', 'HAN|GAO'])).toBeNull()
   })
 
   it('서로 다른 두 경기에 나온 약칭을 고른다', async () => {
     const { guessOwnTeam } = await import('../src/shared/gameUi')
-    expect(guessOwnTeam(['BOU|LIV', 'LIV|TOT'])).toBe('LIV')
-    expect(guessOwnTeam(['BOU|LIV', 'LIV|TOT', 'TOT|ARS', 'LIV|ARS'])).toBe('LIV')
+    expect(guessOwnTeam(['HAN|GAO', 'GAO|BUK'])).toBe('GAO')
+    expect(guessOwnTeam(['HAN|GAO', 'GAO|BUK', 'BUK|NAM', 'GAO|NAM'])).toBe('GAO')
   })
 
   it('같은 횟수로 나온 약칭이 둘이면 정하지 않는다', async () => {
     const { guessOwnTeam } = await import('../src/shared/gameUi')
-    expect(guessOwnTeam(['BOU|LIV', 'LIV|BOU'])).toBeNull()
+    expect(guessOwnTeam(['HAN|GAO', 'GAO|HAN'])).toBeNull()
   })
 })

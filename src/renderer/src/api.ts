@@ -51,7 +51,7 @@ function createMockApi(): Api & ExtraApi {
     { teamId: 4, uid: 0, name: '라온 레이디스', short: 'RAO', nation: '가상 나라', women: true, players: 24, strength: 96, human: false }
   ]
   const hour = 3_600_000
-  const names = ['리버풀 2025', '리버풀 2025 (v02)', '뉴캐슬 시작']
+  const names = ['가온 시티 2025', '가온 시티 2025 (v02)', '새 시작']
   const saves: SaveFileInfo[] = [0.4, 26, 50].map((ago, i) => ({
     path: `${settings.saveDir}\\${names[i]}.fm`,
     name: `${names[i]}.fm`,
@@ -61,7 +61,7 @@ function createMockApi(): Api & ExtraApi {
   let applied: SaveFileInfo | null = params.has('empty') ? null : saves[0]
   let mockBackups: BackupEntry[] = [0.4, 2.1, 26, 27.5, 50].map((ago, i) => ({
     id: `sample-${i}`,
-    saveName: '리버풀 2025.fm',
+    saveName: '가온 시티 2025.fm',
     savedAt: new Date(Date.now() - ago * hour).toISOString(),
     beforeRestore: i === 2,
     bytes: 141_000_000 + i * 310_000

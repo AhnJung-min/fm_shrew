@@ -28,7 +28,7 @@ export function josa(word: string, pair: JosaPair): string {
   return batchim ? withBatchim : without
 }
 
-/** 낱말 + 조사. 예: withJosa('케르케즈', '이/가') → '케르케즈가', withJosa('반 다이크', '은/는') → '반 다이크는' */
+/** 낱말 + 조사. 예: withJosa('라우리노', '이/가') → '라우리노가', withJosa('델 바르코', '은/는') → '델 바르코는' */
 export function withJosa(word: string, pair: JosaPair): string {
   return `${word}${josa(word, pair)}`
 }

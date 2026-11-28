@@ -3,9 +3,9 @@ import { join } from 'node:path'
 
 /** 게임이 알려 준 팀 하나 */
 export interface TeamName {
-  /** 팀 이름("리버풀 U21") */
+  /** 팀 이름("가온 시티 U21") */
   name: string
-  /** 그 팀이 속한 구단 이름("리버풀") */
+  /** 그 팀이 속한 구단 이름("가온 시티") */
   club: string
   /** 여자 팀인지 */
   female: boolean
