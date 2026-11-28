@@ -7,6 +7,7 @@ import { NO_DATA, type DataStatus, type SaveFileInfo } from '@shared/game'
 import { POSITION_KEYS, positionOrder, positionsLabel } from '@shared/positions'
 import { footValues, formatPounds, hiddenAttributes, isGoalkeeper, visibleAttributes } from '@shared/playerView'
 import { normOf, type RoleNorms } from '@shared/norms'
+import { LEGACY_CATALOG } from '@shared/roleCatalog'
 import { prepareRole, ROLE_BY_ID, savedRoleScore } from '@shared/roles'
 import {
   clubStature,
@@ -25,6 +26,7 @@ import {
   checkEdit,
   effectiveScore,
   gapVsAnchor,
+  isTacticSlot,
   rotationWindowOf,
   SAVE_ATTRIBUTE_ORDER,
   shownValue,
@@ -597,8 +599,11 @@ export class WorldService {
     const female = this.femaleMask(world)
     // 전술의 한 자리를 기준으로 찾으면 그 자리의 역할·주전·두 번째 선수·보강 필요도를 쓴다(스쿼드 전술판과 같은 계산)
     const table = this.squadOf(world)
+    // 옛 꼴(포메이션과 자리별 역할)은 지금 그대로다. 새 꼴(전술)은 쓰는 카탈로그를 본체가 알게 되기 전까지 옛 14역할 카탈로그로 분석한다
     const analysis = query.slot
-      ? analyseTactic({ rows: table.rows, columns: table.columns, today: table.today, formation: query.slot.formation, slotRoles: query.slot.slotRoles, roleWeights, norms })
+      ? isTacticSlot(query.slot)
+        ? analyseTactic({ rows: table.rows, columns: table.columns, today: table.today, tactic: query.slot.tactic, catalog: LEGACY_CATALOG, roleWeights, norms })
+        : analyseTactic({ rows: table.rows, columns: table.columns, today: table.today, formation: query.slot.formation, slotRoles: query.slot.slotRoles, roleWeights, norms })
       : null
     const slotFound = analysis?.slots[query.slot?.index ?? -1] ?? null
     const roleId = slotFound ? slotFound.slot.roleId : query.roleId

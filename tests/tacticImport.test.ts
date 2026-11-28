@@ -8,7 +8,7 @@ import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { FM26_CATALOG } from '../src/shared/catalogFm26'
 import { roleGameId, SUPPORTED_VERSIONS } from '../src/shared/compat'
-import { LEGACY_CATALOG, withCustomRoles } from '../src/shared/roleCatalog'
+import { LEGACY_CATALOG, withCustomRoles, type RoleCatalog } from '../src/shared/roleCatalog'
 import { cellOfPosition, parseTacticAnswer, roleListReport, tacticFromGame, type GameTacticAnswer } from '../src/shared/tacticImport'
 import { validateTactic } from '../src/shared/tacticModel'
 import { fakeCatalogFromTactic } from './helpers/fakeGameCatalog'
@@ -259,7 +259,7 @@ describe('tacticFromGame: 견본 → 전술 초안', () => {
     const result = convert(json)
     expect(result.ok).toBe(false)
     expect(result.tactic).toBeUndefined()
-    expect(result.unknownBits).toEqual(['점유 시 역할 5', '비점유 시 역할 77'])
+    expect(result.unknownBits).toEqual(['공 소유 시 역할 5', '공 미소유 시 역할 77'])
     expect(result.problems.some((text) => text.includes('(값 5)'))).toBe(true)
     expect(result.problems.some((text) => text.includes('(값 77)'))).toBe(true)
   })
@@ -282,7 +282,7 @@ describe('tacticFromGame: 견본 → 전술 초안', () => {
     const result = convert(json)
     expect(result.ok).toBe(false)
     expect(result.tactic).toBeUndefined()
-    expect(result.unknownBits).toContain('비점유 시 역할 4096')
+    expect(result.unknownBits).toContain('공 미소유 시 역할 4096')
     // 두 국면의 답을 통째로 바꿔 보내도 문제 없이 통과하지 않는다
     const swapped = fresh()
     ;[swapped.ip, swapped.oop] = [swapped.oop, swapped.ip]
@@ -311,6 +311,8 @@ describe('tacticFromGame: 견본 → 전술 초안', () => {
     expect(unmatchedResult.ok).toBe(false)
     expect(unmatchedResult.tactic).toBeUndefined()
     expect(unmatchedResult.problems.join('\n')).toContain('서로 맞지 않습니다')
+    // 화면에 그대로 나오는 글이라 국면 이름은 게임 낱말이다
+    expect(unmatchedResult.problems).toContain('공 소유 시와 공 미소유 시의 자리 번호가 서로 맞지 않습니다.')
 
     const duplicated = fresh()
     duplicated.ip.items[3].Index = '2'
@@ -381,11 +383,11 @@ describe('tacticFromGame: 견본 → 전술 초안', () => {
     // 두 국면의 알림이 국면 표시와 함께 따로 적힌다(같은 글이 두 번 나오지 않는다)
     const notes = result.problems.filter((text) => text.includes('확인하지 못한 값'))
     expect(notes).toHaveLength(2)
-    expect(notes[0]).toMatch(/^1번째 자리의 점유 시 포지션: /)
-    expect(notes[1]).toMatch(/^1번째 자리의 비점유 시 포지션: /)
+    expect(notes[0]).toMatch(/^1번째 자리의 공 소유 시 포지션: /)
+    expect(notes[1]).toMatch(/^1번째 자리의 공 미소유 시 포지션: /)
     expect(new Set(notes).size).toBe(2)
     // 골키퍼 여부 문제는 초안의 11번째 자리(골키퍼)로 적힌다. 게임이 준 순서의 1번째 자리(순번 0)가 아니다
-    expect(result.problems).toContain('11번째 자리의 점유 시 포지션이 게임이 알려 준 골키퍼 여부와 맞지 않습니다.')
+    expect(result.problems).toContain('11번째 자리의 공 소유 시 포지션이 게임이 알려 준 골키퍼 여부와 맞지 않습니다.')
     // 자리 번호 차례로 나온다
     const numbers = result.problems.map((text) => Number(/^(\d+)번째 자리/.exec(text)?.[1]))
     expect(numbers.every((each) => Number.isInteger(each))).toBe(true)
@@ -416,9 +418,9 @@ describe('tacticFromGame: 견본 → 전술 초안', () => {
     const result = convert(json)
     expect(result.tactic).toBeUndefined()
     expect(result.problems).toEqual([
-      '3번째 자리의 점유 시 역할(값 5)을 앱이 모릅니다.',
-      '9번째 자리의 비점유 시 역할(값 77)을 앱이 모릅니다.',
-      expect.stringMatching(/^11번째 자리의 점유 시 포지션: 최전방 오른쪽/)
+      '3번째 자리의 공 소유 시 역할(값 5)을 앱이 모릅니다.',
+      '9번째 자리의 공 미소유 시 역할(값 77)을 앱이 모릅니다.',
+      expect.stringMatching(/^11번째 자리의 공 소유 시 포지션: 최전방 오른쪽/)
     ])
   })
 
@@ -460,13 +462,60 @@ describe('tacticFromGame: 견본 → 전술 초안', () => {
   })
 })
 
+describe('tacticFromGame: 앱의 칸 종류 목록이 게임에서 확인 전이어도 가져온 전술은 거절되지 않는다', () => {
+  /** 견본의 수비형 미드(게임 순번 6)의 점유 시 역할(ip.16)을 앱의 그 칸 목록에서 빼고 목록의 근거를 바꾼 카탈로그: 게임이 고른 역할이 앱의 목록에 없는 경우 */
+  const lacking = (evidence: 'game' | 'inferred' | 'unknown'): RoleCatalog => ({
+    ...catalog,
+    choicesAt: (position, phase, kind) =>
+      catalog
+        .choicesAt(position, phase, kind)
+        .filter((choice) => !(phase === 'ip' && position === 'DM' && choice.roleId === 'ip.16'))
+        .map((choice) => ({ ...choice, evidence }))
+  })
+  /** 저장 순서로 본 그 자리의 번호(1부터) */
+  const slotNumber = CANONICAL.indexOf(6) + 1
+
+  it('앱의 목록이 확인 전(근거 inferred·unknown)이면 알림만 문제 목록에 담고, 전술 초안은 그대로 나오고 ok도 참이다', () => {
+    const baseline = convert().tactic
+    expect(baseline!.slots[CANONICAL.indexOf(6)].ip.roleId).toBe('ip.16')
+    for (const evidence of ['inferred', 'unknown'] as const) {
+      const result = convert(fresh(), lacking(evidence))
+      expect(result.tactic, evidence).toEqual(baseline)
+      expect(result.ok, evidence).toBe(true)
+      expect(result.unknownBits, evidence).toEqual([])
+      expect(result.problems, evidence).toHaveLength(1)
+      expect(result.problems[0].startsWith('게임에서 확인 전인 자리입니다: '), evidence).toBe(true)
+      expect(result.problems[0], evidence).toContain(`${slotNumber}번째 자리의 공 소유 시 역할`)
+    }
+  })
+
+  it('앱의 목록이 게임에서 확인한 것(근거 game)이면 오류로 알리고 ok는 거짓이지만, 전술 초안은 그대로 나온다', () => {
+    const result = convert(fresh(), lacking('game'))
+    expect(result.ok).toBe(false)
+    expect(result.tactic).toEqual(convert().tactic)
+    expect(result.problems).toHaveLength(1)
+    expect(result.problems[0]).toContain('공 소유 시 역할로')
+    expect(result.problems[0]).toContain('고를 수 없습니다')
+  })
+
+  it('읽으면서 만난 문제(확인하지 못한 최전방 비트)가 있으면 알림이 함께 있어도 ok는 거짓이다', () => {
+    const json = fresh()
+    json.ip.items[10].Position = '32768'
+    const result = convert(json, lacking('inferred'))
+    expect(result.tactic).toBeDefined()
+    expect(result.ok).toBe(false)
+    expect(result.problems.some((text) => text.includes('확인하지 못한 값'))).toBe(true)
+    expect(result.problems.some((text) => text.startsWith('게임에서 확인 전인 자리입니다: '))).toBe(true)
+  })
+})
+
 describe('roleListReport: 자리별 역할 목록을 앱의 목록과 견준다', () => {
   const answer = parseTacticAnswer(fresh())!
   const tactic = convert().tactic!
 
   it('견본의 목록은 견본으로 만든 카탈로그와 모두 같다(22곳)', () => {
     const report = roleListReport(answer, catalog, row, tactic)
-    expect(report).toEqual({ compared: 22, different: 0, lines: [] })
+    expect(report).toEqual({ compared: 22, different: 0, unreadable: 0, lines: [] })
   })
 
   it('게임에만 있는 역할과 앱에만 있는 역할을 자리와 칸 종류와 함께 적는다', () => {
@@ -479,7 +528,7 @@ describe('roleListReport: 자리별 역할 목록을 앱의 목록과 견준다'
     expect(report.compared).toBe(22)
     expect(report.different).toBe(1)
     expect(report.lines).toHaveLength(1)
-    expect(report.lines[0]).toContain('점유 시(DM.single)')
+    expect(report.lines[0]).toContain('공 소유 시(DM.single)')
     expect(report.lines[0]).toContain('게임에만 있음 [가상 역할 34359738368(값 34359738368)]')
     expect(report.lines[0]).toContain('앱에만 있음 [가상 역할 999]')
   })
@@ -495,7 +544,43 @@ describe('roleListReport: 자리별 역할 목록을 앱의 목록과 견준다'
     partial.roles = partial.roles.slice(0, 5)
     partial.roles[1].probe.fields['Team.Tactic.PositionValue'] = '3'
     const report = roleListReport(parseTacticAnswer(partial)!, catalog, row, tactic)
-    expect(report).toEqual({ compared: 4, different: 0, lines: [] })
+    expect(report).toEqual({ compared: 4, different: 0, unreadable: 0, lines: [] })
+  })
+
+  it('읽을 수 있는 역할 번호가 하나도 없는 목록(목록이 비어 옴, 번호가 모두 오지 않음, 번호가 글자가 아님)은 견준 것으로도 다른 것으로도 세지 않고 읽지 못한 것으로 센다', () => {
+    const listOf = (json: Json, index: number, phase: 'ip' | 'oop'): Json => json.roles.find((list: Json) => list.index === index && list.phase === phase)
+    const edited = fresh()
+    // 점유 시 DM 자리(자리 6)는 목록이 비어 오고, 비점유 시 DM 자리는 줄은 오는데 역할 번호가 오지 않고, 골키퍼 자리(자리 0)의 점유 시 목록은 번호가 숫자가 아니다
+    listOf(edited, 6, 'ip').probe.items = []
+    listOf(edited, 6, 'oop').probe.items = listOf(edited, 6, 'oop').probe.items.map((item: Json) => ({ 'RowData.DisplayValue.TacticsRoleName': item['RowData.DisplayValue.TacticsRoleName'] }))
+    listOf(edited, 0, 'ip').probe.items = listOf(edited, 0, 'ip').probe.items.map((item: Json) => ({ ...item, 'RowData.DisplayValue.Role': '없음' }))
+    const report = roleListReport(parseTacticAnswer(edited)!, catalog, row, tactic)
+    expect(report).toEqual({ compared: 19, different: 0, unreadable: 3, lines: [] })
+    // 받은 22곳이 견준 곳과 읽지 못한 곳으로 나뉜다
+    expect(report.compared + report.unreadable).toBe(22)
+  })
+
+  it('목록이 비어 와도 앱의 목록 전체가 "앱에만 있음"으로 적히지 않고, 다른 곳의 줄도 만들지 않는다', () => {
+    const empty = fresh()
+    for (const list of empty.roles) list.probe.items = []
+    const report = roleListReport(parseTacticAnswer(empty)!, catalog, row, tactic)
+    expect(report).toEqual({ compared: 0, different: 0, unreadable: 22, lines: [] })
+    // 값이 하나도 오지 않은 줄({})만 있는 목록도 같다
+    const blank = fresh()
+    for (const list of blank.roles) list.probe.items = [{}, {}]
+    expect(roleListReport(parseTacticAnswer(blank)!, catalog, row, tactic)).toEqual({ compared: 0, different: 0, unreadable: 22, lines: [] })
+  })
+
+  it('번호를 읽을 수 있는 역할이 하나라도 있으면 지금처럼 견주고, 읽지 못한 줄은 이름 없음(값 ?)으로 적는다', () => {
+    const edited = fresh()
+    const dm = edited.roles.find((list: Json) => list.index === 6 && list.phase === 'ip')
+    // 목록의 첫 줄은 번호가 오지 않았고 나머지는 그대로다: 목록은 견주고, 읽지 못한 줄은 게임에만 있는 것으로 적힌다
+    dm.probe.items = [{ 'RowData.DisplayValue.TacticsRoleName': '' }, ...dm.probe.items]
+    const report = roleListReport(parseTacticAnswer(edited)!, catalog, row, tactic)
+    expect(report.unreadable).toBe(0)
+    expect(report.compared).toBe(22)
+    expect(report.different).toBe(1)
+    expect(report.lines[0]).toContain('게임에만 있음 [이름 없음(값 ?)]')
   })
 })
 

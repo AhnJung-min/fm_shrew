@@ -658,7 +658,7 @@ function surplusReason(player: FirstTeamPlayer, scored: SurplusScore, basis: Fit
       stem(
         basis.oopRating === null
           ? `그 자리 포지션 숙련이 ${basis.rating}이라 ${basis.penaltyPoints.toFixed(1)}점 뺐`
-          : `그 자리 포지션 숙련(점유 시 ${basis.rating}, 비점유 시 ${basis.oopRating})에 따라 ${basis.penaltyPoints.toFixed(1)}점 뺐`,
+          : `그 자리 포지션 숙련(공 소유 시 ${basis.rating}, 공 미소유 시 ${basis.oopRating})에 따라 ${basis.penaltyPoints.toFixed(1)}점 뺐`,
         '고',
         '습니다'
       )
@@ -793,7 +793,7 @@ export function surplusReport(args: {
   columns: ColumnInfo[]
   analysis: TacticAnalysis
   roleWeights: Record<string, Record<string, number>>
-  /** 분석에 쓴 역할 카탈로그(analysis를 만들 때 쓴 것과 같아야 한다). 없으면 옛 14역할 */
+  /** 분석에 쓴 역할 카탈로그(analysis를 만들 때 쓴 것과 같아야 하고, 다르면 던진다). 없으면 옛 14역할이라 FM26 분석에는 꼭 넘겨야 한다 */
   catalog?: RoleCatalog
   norms?: RoleNorms
   /** 주급 기대치 모델. 없으면 주급 위험은 보통(0.5) */
@@ -804,6 +804,10 @@ export function surplusReport(args: {
   minScore?: number
 }): { rows: SurplusRow[]; prospects: ProspectRow[] } {
   const { players, rows, columns, analysis, roleWeights, catalog = LEGACY_CATALOG, norms, wageModel, loanedIn = new Set<number>(), minScore = K.SURPLUS_MIN_SHOWN } = args
+  // 분석을 만든 카탈로그와 다른 카탈로그로 계산하면 오류 없이 모든 선수의 적합도가 "알 수 없음"이 된다(역할 번호를 못 찾는다). 조용히 틀리지 않고 멈춘다
+  if (analysis.catalogId !== catalog.id) {
+    throw new Error(`정리 후보를 계산하려면 분석을 만든 역할 카탈로그(${analysis.catalogId})를 catalog로 넘겨야 합니다. 지금 받은 카탈로그는 ${catalog.id}입니다.`)
+  }
   const used = new Set<number>()
   for (const slot of analysis.slots) {
     if (slot.slot.starter) used.add(slot.slot.starter.idx)

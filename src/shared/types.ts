@@ -183,7 +183,8 @@ export interface Api {
   listSaves(): Promise<SaveFileInfo[]>
   /**
    * 세이브를 골라 적용한다. 그 세이브의 자료로 모든 화면이 돈다. 몇 초 걸린다.
-   * allowUnknownVersion은 지원하는 목록에 없는 게임 판의 세이브를 확인한 뒤에도 적용하겠다는 뜻이다(본체의 처리는 게임 읽기 단위가 넣는다)
+   * 그 세이브를 저장한 게임의 판이 앱이 확인한 판(shared/compat.ts의 지원 표)이 아니거나 읽을 수 없으면 적용하지 않고 ok 거짓에 needsConfirm 참으로 돌려준다.
+   * allowUnknownVersion은 사용자가 그것을 확인한 뒤에도 적용하겠다는 뜻이다. 앱을 켤 때의 자동 적용은 이 값을 주지 않아 그런 세이브를 건너뛴다(본체 gameLink.ts의 apply)
    */
   applySave(path: string, options?: { allowUnknownVersion?: boolean }): Promise<ApplyResult>
   /** 켜져 있는 게임에서 지금 값을 다시 받는다 */

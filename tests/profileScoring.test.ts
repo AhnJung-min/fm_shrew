@@ -13,7 +13,7 @@
 import { describe, expect, it } from 'vitest'
 import { bestRolesOf, buildDepth, buildDepthFor, depthObjective, FORMATION_BY_ID, shapeOfTactic, slotRatingsOf } from '../src/shared/depth'
 import { recommendSlotOf, surplusReport, type FirstTeamPlayer } from '../src/shared/dashboard'
-import { groupKeyAttributes, keyAttributesOf, POSITION_GROUPS, profileKeyAttributes } from '../src/shared/keyAttributes'
+import { groupKeyAttributes, keyAttributesOf, KEY_WEIGHT_MIN, POSITION_GROUPS, profileKeyAttributes } from '../src/shared/keyAttributes'
 import { K } from '../src/shared/ledger'
 import { posPenaltySigma, POSITION_KEYS } from '../src/shared/positions'
 import { fitNoteOf, recommend, type RecommendContext, type RecommendInput } from '../src/shared/recommend'
@@ -321,7 +321,13 @@ describe('숙련: 자격은 점유 시 포지션만, 감점은 두 국면의 숙
     const different = effectiveFit(70, { ip: 16, oop: 12, sharePct: 60 }, 26, norm)
     // 3.15 · (0.6 · 0.32 + 0.4 · 1.3) = 2.2428
     expect(different.positionPoints).toBeCloseTo(3.15 * (0.6 * 0.32 + 0.4 * 1.3), 10)
-    expect(fitNoteOf(different, 16, 26)).toContain('점유 시 포지션 숙련 16, 비점유 시 12라 적합도에서 2.2점 뺐습니다')
+    expect(fitNoteOf(different, 16, 26)).toContain('포지션 숙련(공 소유 시 16, 공 미소유 시 12)에 따라 적합도에서 2.2점 뺐습니다')
+    // 숫자 뒤에 조사를 붙이지 않아서 숙련이 어떤 수여도 같은 꼴이다(1·2·3·6·7·10·12·20처럼 받침이 있거나 없는 수)
+    for (const [ip, oop] of [[1, 2], [3, 4], [6, 7], [10, 12], [20, 5]] as const) {
+      const note = fitNoteOf(effectiveFit(70, { ip, oop, sharePct: 60 }, 26, norm), ip, 26)
+      expect(note.startsWith(`포지션 숙련(공 소유 시 ${ip}, 공 미소유 시 ${oop})에 따라 적합도에서 `), `${ip}·${oop}`).toBe(true)
+      expect(note, `${ip}·${oop}`).toContain('점 뺐습니다')
+    }
     const alike = effectiveFit(70, { ip: 16, oop: 16, sharePct: 60 }, 26, norm)
     expect(fitNoteOf(alike, 16, 26)).toBe(fitNoteOf(effectiveFit(70, 16, 26, norm), 16, 26))
     expect(fitNoteOf(alike, 16, 26)).toContain('포지션 숙련 16이라 적합도에서 1.0점 뺐습니다')
@@ -451,11 +457,11 @@ describe('자리 분석의 값: 뛸 수 있는 선수 수와 선수 목록의 �
     const noteOf = (row: PlayerRow, sharePct: number): string =>
       analyse([row], tacticOf([AMR_TO_MR], sharePct), norms).slots[0].factors.find((factor) => factor.id === 'quality')!.note
     // 비중 60: 75점에서 4 · (0.6 · 0 + 0.4 · 1.3) = 2.08점을 뺀다
-    expect(noteOf(first, 60)).toContain('포지션 숙련(점유 시 20, 비점유 시 12)에 따라 적합도 75점에서 2.1점 빼고 견주었습니다.')
+    expect(noteOf(first, 60)).toContain('포지션 숙련(공 소유 시 20, 공 미소유 시 12)에 따라 적합도 75점에서 2.1점 빼고 견주었습니다.')
     // 비중 100: 점유 시 숙련만 본다. 점유 시 16이면 4 · 0.32 = 1.28점을 빼고, 비점유 시 숙련(12)은 적지 않는다
     const sixteen = player({ name: '시험 선수 마', position: 'AM (R)', level: 15, ratings: { AMR: 16, MR: 12 } })
     expect(noteOf(sixteen, 100)).toContain('포지션 숙련이 16이라 적합도 75점에서 1.3점 빼고 견주었습니다.')
-    expect(noteOf(sixteen, 100)).not.toContain('비점유 시')
+    expect(noteOf(sixteen, 100)).not.toContain('공 미소유 시')
   })
 })
 
@@ -508,14 +514,14 @@ describe('정리 후보와 임대 유망주: 자리 경로는 그 자리 프로�
     // 두 숙련이 다르면 섞은 감점(4 · 0.52 = 2.08점)을 빼고, 풀이 글에 두 숙련을 적는다
     expect(rowOf('시험 선수 가')).toMatchObject({ fit: 'slot', slotLabel: '오른쪽 공격', fitGap: 3.1, fitGapSigma: 0.8 })
     expect(rowOf('시험 선수 가').reason).toContain('가장 가까운 오른쪽 공격 자리에서도 첫 후보 시험 후보보다 적합도가 3.1점(이 역할의 보통 점수 차이의 약 0.8배) 낮')
-    expect(rowOf('시험 선수 가').reason).toContain('그 자리 포지션 숙련(점유 시 20, 비점유 시 12)에 따라 2.1점 뺐')
+    expect(rowOf('시험 선수 가').reason).toContain('그 자리 포지션 숙련(공 소유 시 20, 공 미소유 시 12)에 따라 2.1점 뺐')
     // 두 숙련이 20으로 같으면 감점이 없어 격차는 67 - 66 = 1점이고, 숙련 문장이 없다
     expect(rowOf('시험 선수 나')).toMatchObject({ fit: 'slot', fitGap: 1 })
     expect(rowOf('시험 선수 나').reason).not.toContain('포지션 숙련')
     // 두 숙련이 16으로 같으면 섞지 않고 지금 문장 그대로다: 4 · 0.32 = 1.28점을 빼 격차 2.28점
     expect(rowOf('시험 선수 다')).toMatchObject({ fit: 'slot', fitGap: 2.3 })
     expect(rowOf('시험 선수 다').reason).toContain('그 자리 포지션 숙련이 16이라 1.3점 뺐')
-    expect(rowOf('시험 선수 다').reason).not.toContain('점유 시 16')
+    expect(rowOf('시험 선수 다').reason).not.toContain('공 소유 시 16')
   })
 
   it('비중이 100이면 숙련을 섞지 않는다: 점유 시 숙련 하나로 감점하고, 비점유 시 숙련이 달라도 지금 문장 그대로다', () => {
@@ -526,7 +532,7 @@ describe('정리 후보와 임대 유망주: 자리 경로는 그 자리 프로�
     const row = run([first, second, odd], {}, 100).rows.find((each) => each.name === '시험 선수 가')!
     expect(row).toMatchObject({ fit: 'slot', fitGap: 11.3 })
     expect(row.reason).toContain('그 자리 포지션 숙련이 16이라 1.3점 뺐')
-    expect(row.reason).not.toContain('비점유 시')
+    expect(row.reason).not.toContain('공 미소유 시')
   })
 
   it('임대 유망주도 같은 감점을 쓴다: 20세(현재 능력 86, 잠재 150)가 점유 시 20·비점유 시 12면 63.92 + 9.12 = 73.04점이라 기준선(74.0점)에 못 미치고, 20·20이면 75.12점이라 넘는다', () => {
@@ -676,15 +682,15 @@ describe('스리백·윙백 둘(오른쪽·왼쪽)·투톱·공격형 미드·�
       '중앙 미드',
       '공격형 미드',
       '오른쪽 공격',
-      '최전방(점유 마무리, 비점유 시 최전방 비점유 압박)',
-      '최전방(점유 마무리, 비점유 시 최전방 비점유 커버)'
+      '최전방(점유 마무리, 공 미소유 시 최전방 비점유 압박)',
+      '최전방(점유 마무리, 공 미소유 시 최전방 비점유 커버)'
     ])
     // 점유 시 포지션이 같은 묶음 둘이 점유 시 역할이 다르면 역할만 붙인다
     const twoRoles = analyse(rows, tacticOf([[['AM', 'R', 'ip.finisher'], ['AM', 'R', 'oop.cover']], [['AM', 'C', 'ip.maker'], ['AM', 'C', 'oop.cover']], [['AM', 'C', 'ip.finisher'], ['AM', 'C', 'oop.cover']]], 60))
     expect(twoRoles.groups.map((group) => group.label)).toEqual(['오른쪽 공격', '공격형 미드(점유 조율)', '공격형 미드(점유 마무리)'])
     // 오른쪽 공격(점유 시)이지만 비점유 시 오른쪽 미드로 내려오는 묶음과 그대로 있는 묶음은 점유 시 역할이 같아 비점유 시를 붙여 가른다
     const droppingAndStaying = analyse(rows, tacticOf([[['AM', 'R', 'ip.finisher'], ['M', 'R', 'oop.cover']], [['AM', 'R', 'ip.finisher'], ['AM', 'R', 'oop.cover']]], 60))
-    expect(droppingAndStaying.groups.map((group) => group.label)).toEqual(['오른쪽 공격(점유 마무리, 비점유 시 오른쪽 미드 비점유 커버)', '오른쪽 공격(점유 마무리, 비점유 시 오른쪽 공격 비점유 커버)'])
+    expect(droppingAndStaying.groups.map((group) => group.label)).toEqual(['오른쪽 공격(점유 마무리, 공 미소유 시 오른쪽 미드 비점유 커버)', '오른쪽 공격(점유 마무리, 공 미소유 시 오른쪽 공격 비점유 커버)'])
   })
 
   it('줄 요약은 점유 시 포지션으로 센다: 윙백은 비점유 시 수비로 내려와도 미드필드, 오른쪽 공격은 비점유 시 미드로 내려와도 공격', () => {
@@ -815,13 +821,14 @@ describe('최적 역할과 주요 능력치: 국면마다 하나씩, 합성 가�
     expect(bestRolesOf(row, COLUMNS.filter((col) => col.field !== 'position'), { catalog: FAKE, overrides: {} })).toEqual({ ip: null, oop: null })
   })
 
-  it('주요 능력치: 섞은 표를 역할의 눈금(0~5)으로 되돌려 적고, 섞지 않으면 그 역할의 값 그대로다(옛 keyAttributesOf와 같다)', () => {
+  it('주요 능력치: 섞은 표를 역할의 눈금(0~5)으로 되돌려 적되 핵심은 어느 한 국면의 역할에서 핵심이면 핵심이고, 섞지 않으면 그 역할의 값 그대로다(옛 keyAttributesOf와 같다)', () => {
     const at = (sharePct: number): SlotProfile => ({ ip: { position: 'AMC', roleId: 'ip.finisher' }, oop: { position: 'AMC', roleId: 'oop.stopper' }, sharePct })
     // 비중 60: 합성 가중치 1920·960·960·480·480 × (6.8 / 4800) = 2.72, 1.36, 1.36, 0.68, 0.68. 같으면 게임 화면 순서(드리블, 태클 / 대인 방어, 지구력)
+    // 섞은 값은 순서와 설명에만 쓴다. 핵심은 한 국면의 역할에서 4(문턱 3 이상)인 마무리(점유 시 역할)와 태클(비점유 시 역할)이고, 나머지는 어느 쪽에서도 2다
     expect(profileKeyAttributes(FAKE, at(60), {})).toEqual([
-      { id: 'finishing', weight: 2.7, core: false },
+      { id: 'finishing', weight: 2.7, core: true },
       { id: 'dribbling', weight: 1.4, core: false },
-      { id: 'tackling', weight: 1.4, core: false },
+      { id: 'tackling', weight: 1.4, core: true },
       { id: 'marking', weight: 0.7, core: false },
       { id: 'stamina', weight: 0.7, core: false }
     ])
@@ -836,6 +843,25 @@ describe('최적 역할과 주요 능력치: 국면마다 하나씩, 합성 가�
     expect(profileKeyAttributes(LEGACY_CATALOG, centre, {})).toEqual(keyAttributesOf('cb', {}))
     const edited = { cb: { marking: 5, tackling: 0 } }
     expect(profileKeyAttributes(LEGACY_CATALOG, centre, edited)).toEqual(keyAttributesOf('cb', edited))
+  })
+
+  it('핵심은 비중과 상관없이 한 국면의 역할에서 핵심이면 핵심이고, 어느 쪽에서도 핵심이 아니면 아니다(섞은 가중치가 문턱 아래여도)', () => {
+    const at = (sharePct: number): SlotProfile => ({ ip: { position: 'AMC', roleId: 'ip.finisher' }, oop: { position: 'AMC', roleId: 'oop.stopper' }, sharePct })
+    const coreOf = (profile: SlotProfile, overrides = {}): string[] =>
+      profileKeyAttributes(FAKE, profile, overrides)
+        .filter((key) => key.core)
+        .map((key) => key.id)
+        .sort()
+    // 마무리(점유 시 4)와 태클(비점유 시 4)은 비중이 1이든 99든 핵심이다. 섞은 가중치는 비중에 따라 크게 달라진다
+    for (const share of [1, 10, 35, 60, 90, 99]) expect(coreOf(at(share)), `비중 ${share}`).toEqual(['finishing', 'tackling'])
+    const light = profileKeyAttributes(FAKE, at(10), {}).find((key) => key.id === 'finishing')!
+    expect(light.weight).toBeLessThan(KEY_WEIGHT_MIN)
+    expect(light.core).toBe(true)
+    // 사용자가 고친 가중치도 따른다: 점유 시 역할의 드리블을 3으로 올리면 핵심이 되고, 비점유 시 역할의 태클을 2로 내리면 핵심이 아니다
+    expect(coreOf(at(60), { 'ip.finisher': { dribbling: 3 }, 'oop.stopper': { tackling: 2 } })).toEqual(['dribbling', 'finishing'])
+    // 섞지 않는 비중(100, 0)은 그 역할의 표 그대로다
+    expect(coreOf(at(100))).toEqual(['finishing'])
+    expect(coreOf(at(0))).toEqual(['tackling'])
   })
 
   it('포지션 묶음 보기의 주요 능력치: 그 묶음에서 고를 수 있는 점유 시 역할만 평균한다(비점유 시 역할과 못 고르는 역할은 넣지 않는다)', () => {

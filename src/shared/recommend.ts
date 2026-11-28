@@ -527,14 +527,17 @@ function penaltyRatingOf(input: RecommendInput): RatingInput | null {
   return { ip: input.roleRating, oop: oopRating, sharePct }
 }
 
-/** 포지션 숙련·나이 하락을 뺀 값을 한 줄로. 두 국면의 숙련이 다를 때만 두 숙련을 함께 적고, 같으면 지금 글 그대로다 */
+/**
+ * 포지션 숙련·나이 하락을 뺀 값을 한 줄로. 두 국면의 숙련이 다를 때만 두 숙련을 함께 적고, 같으면 지금 글 그대로다.
+ * 두 숙련을 적는 꼴은 숫자 뒤에 조사를 붙이지 않는다(숫자에 따라 조사가 달라지지 않게): "포지션 숙련(공 소유 시 16, 공 미소유 시 12)에 따라 적합도에서 1.6점 뺐습니다"
+ */
 export function fitNoteOf(adjust: FitAdjust, rating: number | null, age: number | null): string {
   const pieces: string[] = []
   if (adjust.positionPoints > 0.05 && rating !== null) {
     const mixed = adjust.ipRating !== undefined && adjust.oopRating !== undefined && adjust.ipRating !== adjust.oopRating
     pieces.push(
       mixed
-        ? `점유 시 포지션 숙련 ${adjust.ipRating}, 비점유 시 ${adjust.oopRating}라 적합도에서 ${fixed1(adjust.positionPoints)}점 뺐습니다`
+        ? `포지션 숙련(공 소유 시 ${adjust.ipRating}, 공 미소유 시 ${adjust.oopRating})에 따라 적합도에서 ${fixed1(adjust.positionPoints)}점 뺐습니다`
         : `포지션 숙련 ${rating}이라 적합도에서 ${fixed1(adjust.positionPoints)}점 뺐습니다`
     )
   }

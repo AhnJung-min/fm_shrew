@@ -18,6 +18,7 @@ import { footValues, formatPounds, hiddenAttributes, isGoalkeeper, visibleAttrib
 import { POSITION_KEYS, positionsLabel } from '@shared/positions'
 import { FALLBACK_NORM, type RoleNorms } from '@shared/norms'
 import { recommend, squadMoney, tierRanker, type RecommendContext, type RecommendInput, type TraitId, type Traits } from '@shared/recommend'
+import { LEGACY_CATALOG } from '@shared/roleCatalog'
 import { ROLE_BY_ID, ROLES } from '@shared/roles'
 import { analyseTactic, loanEndFrom, slotBench } from '@shared/tactic'
 import type { SeasonMatch, SeasonResult, SeasonTableRow } from '@shared/season'
@@ -26,6 +27,7 @@ import {
   categoriesOf,
   effectiveScore,
   gapVsAnchor,
+  isTacticSlot,
   SAVE_ATTRIBUTE_ORDER,
   shownValue,
   type CandidateBench,
@@ -115,7 +117,9 @@ export function mockCandidates(query: CandidateQuery, empty: boolean): Candidate
   // 전술의 한 자리를 기준으로 찾으면 그 자리의 역할·주전·두 번째 선수·보강 필요도를 쓴다(실제 앱과 같은 계산)
   const squad = mockSquad(false)
   const analysis = query.slot
-    ? analyseTactic({ rows: squad.rows, columns: squad.columns, today: squad.today, formation: query.slot.formation, slotRoles: query.slot.slotRoles, roleWeights: {}, norms: squad.roleNorms })
+    ? isTacticSlot(query.slot)
+      ? analyseTactic({ rows: squad.rows, columns: squad.columns, today: squad.today, tactic: query.slot.tactic, catalog: LEGACY_CATALOG, roleWeights: {}, norms: squad.roleNorms })
+      : analyseTactic({ rows: squad.rows, columns: squad.columns, today: squad.today, formation: query.slot.formation, slotRoles: query.slot.slotRoles, roleWeights: {}, norms: squad.roleNorms })
     : null
   const slotFound = analysis?.slots[query.slot?.index ?? -1] ?? null
   const role = ROLE_BY_ID[slotFound ? slotFound.slot.roleId : query.roleId]

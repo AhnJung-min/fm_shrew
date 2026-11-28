@@ -47,8 +47,9 @@ const positiveSum = (weights: Readonly<Record<string, number>>): number => Objec
  * 자리 프로파일에서 가중치가 걸린 능력치: 두 국면 역할의 가중치를 비중으로 섞은 표(compositeWeights)에서 무거운 것부터, 같으면 게임 화면 순서.
  * 섞지 않는 경우(두 국면의 역할이 같거나, 두 표가 같거나, 비중이 100 또는 0)는 그 역할의 가중치 그대로라 keyAttributesOf와 같다.
  * 정말 섞였을 때는 합성 가중치가 눈금이 크므로(정수 산술로 합이 수천이다) 역할의 눈금(0~5)으로 되돌려 적는다: 두 역할의 가중치를 각자의 합으로 나눠
- * 비중대로 섞은 몫에, 두 역할의 가중치 합을 같은 비중으로 섞은 값을 곱한다(한 자리까지). 그래서 핵심(KEY_WEIGHT_MIN 이상) 구분과 "가중치 ○" 설명이 역할 화면과 같은 눈금이다.
- * 순서는 합성 가중치 그대로다.
+ * 비중대로 섞은 몫에, 두 역할의 가중치 합을 같은 비중으로 섞은 값을 곱한다(한 자리까지). 그래서 "가중치 ○" 설명이 역할 화면과 같은 눈금이다.
+ * 섞은 가중치(weight)는 순서와 설명에만 쓴다. 핵심(core)은 두 국면 가운데 어느 한 역할의 표에서 KEY_WEIGHT_MIN 이상이면 핵심이다:
+ * 비중 60에서 한 국면에서만 핵심(4)인 능력치는 섞으면 2.4~2.7로 줄어 문턱 아래로 내려가지만, 그 국면에서는 핵심으로 보이는 능력치다.
  */
 export function profileKeyAttributes(catalog: RoleCatalog, profile: SlotProfile, overrides: RoleOverrides): KeyAttribute[] {
   const ip = effectiveRoleWeights(catalog, profile.ip.roleId, overrides)
@@ -59,10 +60,11 @@ export function profileKeyAttributes(catalog: RoleCatalog, profile: SlotProfile,
   const sumIp = positiveSum(ip)
   const sumOop = positiveSum(oop)
   const unit = (profile.sharePct * sumIp + (SHARE_SCALE - profile.sharePct) * sumOop) / SHARE_SCALE / (SHARE_SCALE * sumIp * sumOop)
-  return ranked.map((key) => {
-    const weight = Math.round(key.weight * unit * 10) / 10
-    return { id: key.id, weight, core: weight >= KEY_WEIGHT_MIN }
-  })
+  return ranked.map((key) => ({
+    id: key.id,
+    weight: Math.round(key.weight * unit * 10) / 10,
+    core: (ip[key.id] ?? 0) >= KEY_WEIGHT_MIN || (oop[key.id] ?? 0) >= KEY_WEIGHT_MIN
+  }))
 }
 
 /** 스쿼드 표에서 고르는 포지션 묶음 */

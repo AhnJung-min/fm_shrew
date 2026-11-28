@@ -9,8 +9,11 @@ import { DashboardService, wageModelMissing } from '../src/main/dashboardService
 import { ATTRIBUTE_COUNT, POSITION_COUNT } from '../src/main/save/reader'
 import { NO_TEAM, SEX_MALE, signedClubTeam, type SaveWorld } from '../src/main/save/world'
 import { WorldService } from '../src/main/worldService'
+import { mockCandidates } from '../src/renderer/src/lib/mockWorld'
 import { POSITION_KEYS } from '../src/shared/positions'
+import { LEGACY_CATALOG } from '../src/shared/roleCatalog'
 import { ROLES } from '../src/shared/roles'
+import { legacyTactic, presetTactic } from '../src/shared/tacticModel'
 import { SAVE_ATTRIBUTE_ORDER, type CandidateCategory, type CandidateQuery } from '../src/shared/world'
 
 interface Spec {
@@ -385,5 +388,40 @@ describe('N-04 단조성: 능력치 하나를 한 단계 올리면 어느 탭에
     const ws = service(world)
     const result = ws.candidates(ask({ roleId: ROLES[0].id, category: 'all', onlyEligible: false, search: '후보-' }))
     expect(result.rows.find((row) => row.name === '후보-injuryProneness')!.recommend.total).toBeLessThan(result.rows.find((row) => row.name === '후보-기준')!.recommend.total)
+  })
+})
+
+describe('자리를 기준으로 찾는 요청의 두 꼴: 옛 14역할 전술로 낸 새 꼴({ tactic, index })은 옛 꼴({ formation, slotRoles, index })과 같은 결과다', () => {
+  // 4-2-3-1의 자리: 0 최전방, 4 수비형 미드, 7 중앙 수비(자리별 역할을 바꿔 둔 자리), 10 골키퍼
+  const slotRoles = { '4-2-3-1:7': 'bpd' }
+  const oldForm = (index: number, roles: Record<string, string> = slotRoles): CandidateQuery => ask({ slot: { formation: '4-2-3-1', slotRoles: roles, index } })
+
+  it('본체(WorldService): 옛 전술(legacyTactic)과 프리셋 전술(presetTactic) 둘 다 옛 꼴과 같다', () => {
+    const ws = service(makeWorld())
+    for (const index of [0, 4, 7, 10]) {
+      const expected = ws.candidates(oldForm(index))
+      // 자리 경로가 실제로 돌았는지(그 자리의 묶음이 있다)
+      expect(expected.group, `${index}번째 자리`).toBeTruthy()
+      expect(ws.candidates(ask({ slot: { tactic: legacyTactic('4-2-3-1', slotRoles), index } })), `옛 전술 ${index}`).toEqual(expected)
+      expect(ws.candidates(ask({ slot: { tactic: presetTactic('4-2-3-1', LEGACY_CATALOG), index } })), `프리셋 ${index}`).toEqual(ws.candidates(oldForm(index, {})))
+    }
+  })
+
+  it('본체(WorldService): 새 꼴의 전술이 실제로 분석에 쓰인다(포메이션이 다르면 묶음이 다르다)', () => {
+    const ws = service(makeWorld())
+    const four231 = ws.candidates(ask({ slot: { tactic: presetTactic('4-2-3-1', LEGACY_CATALOG), index: 0 } }))
+    const four42 = ws.candidates(ask({ slot: { tactic: presetTactic('4-4-2', LEGACY_CATALOG), index: 0 } }))
+    expect(four231.group).toEqual({ label: '최전방', slots: 1 })
+    expect(four42.group).toEqual({ label: '최전방 (2자리)', slots: 2 })
+  })
+
+  it('미리보기 목업(mockCandidates)도 같다', () => {
+    for (const index of [0, 4, 7, 10]) {
+      const expected = mockCandidates(oldForm(index), false)
+      expect(expected.group, `${index}번째 자리`).toBeTruthy()
+      expect(mockCandidates(ask({ slot: { tactic: legacyTactic('4-2-3-1', slotRoles), index } }), false), `옛 전술 ${index}`).toEqual(expected)
+      expect(mockCandidates(ask({ slot: { tactic: presetTactic('4-2-3-1', LEGACY_CATALOG), index } }), false), `프리셋 ${index}`).toEqual(mockCandidates(oldForm(index, {}), false))
+    }
+    expect(mockCandidates(ask({ slot: { tactic: presetTactic('4-4-2', LEGACY_CATALOG), index: 0 } }), false).group).toEqual({ label: '최전방 (2자리)', slots: 2 })
   })
 })

@@ -24,7 +24,7 @@ export interface PhaseSpot {
   position: PositionKey
   roleId: string
 }
-/** 자리 프로파일. sharePct는 점유 시 몫(0~100 정수). 60 = "점유 시 60 : 비점유 시 40" */
+/** 자리 프로파일. sharePct는 점유 시 몫(0~100 정수). 60 = "공 소유 시 60 : 공 미소유 시 40" */
 export interface SlotProfile {
   ip: PhaseSpot
   oop: PhaseSpot
@@ -114,7 +114,7 @@ export function defaultSharePct(): number {
   return Math.round(K.IP_SHARE_DEFAULT * SHARE_SCALE)
 }
 
-/** "점유 시 60 : 비점유 시 40". 화면 글은 이 한 함수로 만든다 */
+/** "공 소유 시 60 : 공 미소유 시 40"(게임 한국어판의 국면 이름). 화면 글은 이 한 함수로 만든다 */
 export function shareLabel(sharePct: number): string {
-  return `점유 시 ${sharePct} : 비점유 시 ${SHARE_SCALE - sharePct}`
+  return `공 소유 시 ${sharePct} : 공 미소유 시 ${SHARE_SCALE - sharePct}`
 }

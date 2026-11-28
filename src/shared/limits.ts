@@ -10,7 +10,7 @@
 export const TACTIC_SLOTS = 11
 /** 세이브마다 둘 수 있는 전술 수 */
 export const TACTICS_PER_SAVE = 3
-/** 점유 시 비중의 눈금: 비중은 0~이 값의 정수이고, 60이면 "점유 시 60 : 비점유 시 40"이다 */
+/** 점유 시 비중의 눈금: 비중은 0~이 값의 정수이고, 60이면 "공 소유 시 60 : 공 미소유 시 40"이다 */
 export const SHARE_SCALE = 100
 /** 역할 가중치의 최댓값(0~이 값의 정수) */
 export const ROLE_WEIGHT_MAX = 5

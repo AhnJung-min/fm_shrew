@@ -1,16 +1,19 @@
 import { describe, expect, it } from 'vitest'
-import { FM26_CATALOG } from '../src/shared/catalogFm26'
+import { createFm26Catalog, FM26_CATALOG, type Fm26Data } from '../src/shared/catalogFm26'
+import raw from '../src/shared/data/fm26-roles.json'
 import { buildDepth, FORMATION_BY_ID, FORMATIONS } from '../src/shared/depth'
 import { TACTIC_NAME_MAX, TACTIC_SLOTS, TACTICS_PER_SAVE } from '../src/shared/limits'
-import { LEGACY_CATALOG, prepareProfile, withCustomRoles, type CustomRole, type RoleCatalog } from '../src/shared/roleCatalog'
+import { LEGACY_CATALOG, prepareProfile, withCustomRoles, type CustomRole, type Evidence, type RoleCatalog } from '../src/shared/roleCatalog'
 import { DEFAULT_ROLE, prepareRole, ROLES, type PositionKey } from '../src/shared/roles'
 import { groupIdOf, shareLabel } from '../src/shared/slotProfile'
 import {
   addTactic,
+  blockingProblems,
   canonicalOrder,
   cellPosition,
   copyTactic,
   currentSet,
+  isBlocking,
   layoutRows,
   legacySlotRolePatch,
   legacyTactic,
@@ -277,8 +280,8 @@ describe('프리셋과 옛 설정에서 전술 만들기', () => {
     expect(profileOf(broken, 0).oop.position).toBe('ST')
   })
 
-  it('shareLabel(60)은 "점유 시 60 : 비점유 시 40"', () => {
-    expect(shareLabel(60)).toBe('점유 시 60 : 비점유 시 40')
+  it('shareLabel(60)은 "공 소유 시 60 : 공 미소유 시 40"', () => {
+    expect(shareLabel(60)).toBe('공 소유 시 60 : 공 미소유 시 40')
   })
 })
 
@@ -322,6 +325,8 @@ describe('validateTactic: 저장하기 전 검사', () => {
       expect(problems[0].phase, phase).toBeUndefined()
       expect(problems[0].message, phase).toContain('8번째 자리')
       expect(problems[1].message, phase).toContain('11번째 자리')
+      // 화면에 그대로 나오는 글이라 국면 이름은 게임 낱말이다
+      for (const problem of problems) expect(problem.message, phase).toContain('공 소유 시와 공 미소유 시 모두 골키퍼 칸')
       // 저장해 둔 묶음에 이런 전술이 있으면 분석을 돌릴 수 없는 것으로 보아 쓰지 않는다
       const set = { catalog: 'fm26', tactics: [{ ...tactic, catalog: 'fm26' as const }], mainId: tactic.id } satisfies TacticSet
       expect(resolveMainTactic(settingsOf({ formation: '3-5-2', tacticsDefault: set }), null, FAKE_FM26).id).toBe('preset:3-5-2')
@@ -387,6 +392,8 @@ describe('validateTactic: 저장하기 전 검사', () => {
     for (const share of [101, -1, 1.5, Number.NaN, Number.POSITIVE_INFINITY, '60', undefined]) {
       expect(codesOf(validateTactic({ ...base, sharePct: share as number }, LEGACY_CATALOG)), `${String(share)}`).toEqual(['share'])
     }
+    // 화면에 그대로 나오는 글이라 국면 이름은 게임 낱말이다
+    expect(validateTactic({ ...base, sharePct: 101 }, LEGACY_CATALOG)[0].message).toContain('공 소유 시 비중은')
   })
 
   it('이름은 1~40글자여야 한다(너무 길거나 빈 이름 거절)', () => {
@@ -409,6 +416,130 @@ describe('validateTactic: 저장하기 전 검사', () => {
     }
     // FM26 카탈로그로 옛 역할 번호를 가진 전술을 검사해도(자료를 채우기 전이나 뒤나) 죽지 않고 역할을 찾지 못한다고 답한다
     expect(codesOf(validateTactic({ ...preset('4-4-2'), catalog: 'fm26' }, FM26_CATALOG))).toContain('roleMissing')
+  })
+})
+
+describe('validateTactic: 게임에서 확인하지 못한 칸 종류의 목록은 막지 않고 알리고, 포지션별 역할 집합과 확인한 칸 종류의 목록은 막는다', () => {
+  const data = raw as unknown as Fm26Data
+  const real = FM26_CATALOG
+  /** 칸 종류 하나의 근거를 모두 바꾼 FM26 카탈로그(같은 전술이 그 칸 종류의 근거에 따라 어떻게 달라지는지 본다) */
+  const withEvidence = (kind: string, evidence: Evidence): RoleCatalog =>
+    createFm26Catalog({ ...data, slotKinds: { ...data.slotKinds, [kind]: data.slotKinds[kind].map((entry) => ({ ...entry, evidence })) } })
+  /** 4-2-3-1: 7·8번 자리가 DC.pair(근거 game), 3-5-2: 7·9번 자리가 DC.trio.side, 8번 자리가 DC.trio.centre(둘 다 근거 inferred), 5번 자리가 DM.single(근거 game) */
+  const four231 = presetTactic('4-2-3-1', real)
+  const threeFiveTwo = presetTactic('3-5-2', real)
+  const put = (tactic: Tactic, index: number, roleId: string, phase: 'ip' | 'oop' = 'ip'): Tactic => mutated(tactic, (copy) => (copy.slots[index][phase].roleId = roleId))
+  const custom = (id: string): CustomRole => ({ id, phase: 'ip', name: `사용자 ${id}`, positions: ['DC'], weights: { passing: 4 } })
+
+  it('고른 예가 자료와 맞다: 전진형 센터백(ip.Libero)은 DC.trio.side 목록에 없고, 와이드 센터백(ip.WideCentreBack)은 DC.trio.side에만 있다', () => {
+    expect([slotKindOf(four231, 7, 'ip'), slotKindOf(threeFiveTwo, 7, 'ip'), slotKindOf(threeFiveTwo, 8, 'ip'), slotKindOf(threeFiveTwo, 5, 'ip')]).toEqual(['DC.pair', 'DC.trio.side', 'DC.trio.centre', 'DM.single'])
+    const listOf = (kind: string): string[] => real.choicesAt('DC', 'ip', kind).map((choice) => choice.roleId)
+    expect(listOf('DC.trio.side')).not.toContain('ip.Libero')
+    expect(listOf('DC.trio.side')).toContain('ip.WideCentreBack')
+    expect(listOf('DC.pair')).not.toContain('ip.WideCentreBack')
+    expect(listOf('DC.pair')).toContain('ip.Libero')
+    expect(real.role('ip.Libero')!.positions).toContain('DC')
+    expect(real.role('ip.WideCentreBack')!.positions).toContain('DC')
+    expect(real.choicesAt('DC', 'ip', 'DC.trio.side').every((choice) => choice.evidence === 'inferred')).toBe(true)
+    expect(real.choicesAt('DC', 'ip', 'DC.pair').every((choice) => choice.evidence === 'game')).toBe(true)
+  })
+
+  it('포지션에는 맞지만 확인 전인 칸 종류(근거 inferred)의 목록에 없는 역할은 알림(note)만 남기고 막지 않는다', () => {
+    const problems = validateTactic(put(threeFiveTwo, 7, 'ip.Libero'), real)
+    expect(problems).toEqual([expect.objectContaining({ code: 'roleUnconfirmed', level: 'note', index: 7, phase: 'ip' })])
+    expect(problems[0].message.startsWith('게임에서 확인 전인 자리입니다: ')).toBe(true)
+    expect(problems[0].message).toContain('8번째 자리')
+    expect(problems[0].message).toContain('공 소유 시')
+    expect(problems.some(isBlocking)).toBe(false)
+    expect(blockingProblems(problems)).toEqual([])
+    // 가운데 칸(DC.trio.centre)과 비점유 시 역할도 같다: 와이드 센터백은 DC.trio.side에만 있고, 비점유 시 와이드 센터백도 그렇다
+    expect(validateTactic(put(threeFiveTwo, 8, 'ip.WideCentreBack'), real)).toEqual([expect.objectContaining({ code: 'roleUnconfirmed', level: 'note', index: 8, phase: 'ip' })])
+    const oop = validateTactic(put(threeFiveTwo, 8, 'oop.OPWideCentreBack', 'oop'), real)
+    expect(oop).toEqual([expect.objectContaining({ code: 'roleUnconfirmed', level: 'note', index: 8, phase: 'oop' })])
+    expect(oop[0].message).toContain('공 미소유 시')
+  })
+
+  it('이름으로 짠 초안(근거 unknown)인 칸 종류도 확인 전이라 알리기만 한다', () => {
+    const catalog = withEvidence('DC.trio.side', 'unknown')
+    expect(validateTactic(put(threeFiveTwo, 7, 'ip.Libero'), catalog)).toEqual([expect.objectContaining({ code: 'roleUnconfirmed', level: 'note', index: 7 })])
+  })
+
+  it('게임에서 확인한 칸 종류(근거 game)의 목록에 없는 역할은 막는다(오류, level 없음)', () => {
+    // 4-2-3-1의 가운데 수비 둘(DC.pair)에 와이드 센터백: 센터백 자리에는 맞지만 게임이 보여 준 이 칸의 목록에는 없다
+    const problems = validateTactic(put(four231, 7, 'ip.WideCentreBack'), real)
+    expect(problems).toEqual([expect.objectContaining({ code: 'roleChoice', index: 7, phase: 'ip' })])
+    expect(problems[0].level).toBeUndefined()
+    expect(problems[0].message).toContain('고를 수 없습니다')
+    expect(blockingProblems(problems)).toEqual(problems)
+    // 3-5-2의 수비형 미드(DM.single, 근거 game)에 박스 투 박스: DM 줄의 역할이지만 이 칸의 목록에는 없다
+    expect(validateTactic(put(threeFiveTwo, 5, 'ip.BoxToBoxMidfielder'), real)).toEqual([expect.objectContaining({ code: 'roleChoice', index: 5, phase: 'ip' })])
+  })
+
+  it('같은 전술이 칸 종류의 근거에 따라 오류와 알림으로 갈린다(근거만 바꾼 카탈로그로 본다)', () => {
+    // DC.pair를 짐작으로 낮추면 와이드 센터백은 알림이 되고, DC.trio.side를 게임에서 확인한 것으로 올리면 전진형 센터백은 오류가 된다
+    const wide = put(four231, 7, 'ip.WideCentreBack')
+    expect(blockingProblems(validateTactic(wide, real)).map((problem) => problem.code)).toEqual(['roleChoice'])
+    const lowered = validateTactic(wide, withEvidence('DC.pair', 'inferred'))
+    expect(lowered.map((problem) => [problem.code, problem.level])).toEqual([['roleUnconfirmed', 'note']])
+    const libero = put(threeFiveTwo, 7, 'ip.Libero')
+    expect(validateTactic(libero, real).map((problem) => problem.level)).toEqual(['note'])
+    const raised = validateTactic(libero, withEvidence('DC.trio.side', 'game'))
+    expect(raised.map((problem) => [problem.code, problem.level])).toEqual([['roleChoice', undefined]])
+  })
+
+  it('다른 포지션의 역할은 칸 종류의 근거가 무엇이든 막는다(포지션별 역할 집합은 확실한 규칙이다)', () => {
+    expect(real.role('ip.Winger')!.positions).not.toContain('DC')
+    const winger = put(four231, 7, 'ip.Winger')
+    for (const catalog of [real, withEvidence('DC.pair', 'inferred'), withEvidence('DC.pair', 'unknown')]) {
+      expect(validateTactic(winger, catalog).map((problem) => [problem.code, problem.index, problem.phase, problem.level])).toEqual([['roleChoice', 7, 'ip', undefined]])
+    }
+    // 확인 전인 칸(3-5-2의 DC.trio.side)에서도 막는다
+    expect(blockingProblems(validateTactic(put(threeFiveTwo, 7, 'ip.Winger'), real)).map((problem) => problem.code)).toEqual(['roleChoice'])
+    // 비점유 시 칸에서도 같다: 가운데 수비에서 고를 수 없는 비점유 시 역할을 가운데 수비 자리의 비점유 시에 둔다
+    const wideOop = real.roles.find((role) => role.phase === 'oop' && role.selectable && !role.positions.includes('DC') && !role.goalkeeper)!
+    expect(validateTactic(put(four231, 7, wideOop.id, 'oop'), real).map((problem) => [problem.code, problem.phase])).toEqual([['roleChoice', 'oop']])
+  })
+
+  it('사용자 역할(근거 user)은 알림도 오류도 만들지 않는다: 고를 수 있는 모든 칸의 목록에 더해진다', () => {
+    const catalog = withCustomRoles(real, [custom('user.x')])
+    expect(validateTactic(put(threeFiveTwo, 7, 'user.x'), catalog)).toEqual([])
+    expect(validateTactic(put(four231, 7, 'user.x'), catalog)).toEqual([])
+    // 확인한 칸의 목록(DC.pair)에 사용자 역할이 섞여도 게임의 역할이 목록 밖이면 여전히 오류다
+    expect(blockingProblems(validateTactic(put(four231, 7, 'ip.WideCentreBack'), catalog)).map((problem) => problem.code)).toEqual(['roleChoice'])
+  })
+
+  it('isBlocking과 blockingProblems: level이 note인 것만 막지 않고, level이 없으면 오류다', () => {
+    const error = { code: 'a', message: '오류' }
+    const explicit = { code: 'b', message: '오류', level: 'error' as const }
+    const note = { code: 'c', message: '알림', level: 'note' as const }
+    expect([error, explicit, note].map(isBlocking)).toEqual([true, true, false])
+    expect(blockingProblems([note, error, note, explicit])).toEqual([error, explicit])
+    expect(blockingProblems([])).toEqual([])
+  })
+
+  it('묶음 검사(validateTacticSet)는 막는 문제만 돌려준다: 알림만 있는 묶음은 통과하고, 오류가 있으면 전술 이름이 붙은 오류만 나온다', () => {
+    const noteOnly = put(threeFiveTwo, 7, 'ip.Libero')
+    expect(validateTactic(noteOnly, real).map((problem) => problem.level)).toEqual(['note'])
+    const set: TacticSet = { catalog: 'fm26', tactics: [noteOnly], mainId: noteOnly.id }
+    expect(validateTacticSet(set, real)).toEqual([])
+    // 알림이 있는 전술과 오류가 있는 전술이 함께 있으면 오류만 나온다
+    const broken = { ...put(four231, 7, 'ip.WideCentreBack'), id: 'second' }
+    const both: TacticSet = { catalog: 'fm26', tactics: [noteOnly, broken], mainId: noteOnly.id }
+    const problems = validateTacticSet(both, real)
+    expect(problems.map((problem) => [problem.code, problem.index])).toEqual([['roleChoice', 7]])
+    expect(problems[0].message.startsWith('“4-2-3-1” ')).toBe(true)
+  })
+
+  it('저장해 둔 묶음에 알림만 있는 전술이 있어도 쓸 수 있는 묶음으로 본다(옛 설정의 프리셋으로 물러서지 않는다)', () => {
+    const noteOnly = put(threeFiveTwo, 7, 'ip.Libero')
+    const set: TacticSet = { catalog: 'fm26', tactics: [noteOnly], mainId: noteOnly.id }
+    const settings = settingsOf({ formation: '4-2-3-1', tactics: { 'a.fm': set } })
+    expect(currentSet(settings, 'a.fm', real)).toBe(set)
+    expect(resolveMainTactic(settings, 'a.fm', real).slots[7].ip.roleId).toBe('ip.Libero')
+    // 오류(포지션 밖 역할)가 있는 전술은 분석을 못 돌리는 것은 아니라서 지금처럼 그대로 쓴다
+    const wrongPosition = put(threeFiveTwo, 7, 'ip.Winger')
+    const stored = settingsOf({ tactics: { 'a.fm': { catalog: 'fm26', tactics: [wrongPosition], mainId: wrongPosition.id } } })
+    expect(resolveMainTactic(stored, 'a.fm', real).slots[7].ip.roleId).toBe('ip.Winger')
   })
 })
 

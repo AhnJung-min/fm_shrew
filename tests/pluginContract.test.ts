@@ -696,6 +696,24 @@ describe('게임에서 전술 가져오기(서비스): 문과 읽기 순서', ()
     }
   })
 
+  it('자리별 역할 목록이 비어 오면(읽지 못한 것) 앱의 목록 전체를 "앱에만 있음"으로 적지 않고 다른 곳으로도 세지 않는다', async () => {
+    plugin = '0.14.0'
+    try {
+      // 점유 시 골키퍼 자리의 목록이 비어 오고, 비점유 시 골키퍼 자리의 목록은 줄은 오는데 값이 하나도 오지 않는다
+      const emptied = JSON.parse(tacticText)
+      emptied.roles[0].probe.items = []
+      emptied.roles[1].probe.items = emptied.roles[1].probe.items.map(() => ({}))
+      tacticOverride = JSON.stringify(emptied)
+      const result = await readGameTactic(await input({ readRoleLists: true }))
+      expect(result.ok).toBe(true)
+      expect(result.draft).toBeDefined()
+      expect(result.problems.some((line) => line.includes('게임에만 있음') || line.includes('앱에만 있음'))).toBe(false)
+    } finally {
+      tacticOverride = null
+      plugin = '0.11.0'
+    }
+  })
+
   it('첫 선수를 게임에서 찾지 못하면(404) 다음 선수로 해 보고, 세 명까지만 해 본다', async () => {
     plugin = '0.14.0'
     try {
@@ -851,7 +869,7 @@ describe('게임에서 전술 가져오기(서비스): 문과 읽기 순서', ()
       const result = await readGameTactic(await input())
       expect(result.ok).toBe(false)
       expect(result.draft).toBeUndefined()
-      expect(result.unknownBits).toEqual(['비점유 시 역할 77'])
+      expect(result.unknownBits).toEqual(['공 미소유 시 역할 77'])
       expect(result.message).toContain('직접 만들어 주세요')
     } finally {
       plugin = '0.11.0'

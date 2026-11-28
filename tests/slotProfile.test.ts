@@ -337,10 +337,10 @@ describe('묶음 id와 비중 글', () => {
     expect(K.IP_SHARE_DEFAULT).toBe(0.6)
   })
 
-  it('shareLabel은 "점유 시 60 : 비점유 시 40"', () => {
-    expect(shareLabel(60)).toBe('점유 시 60 : 비점유 시 40')
-    expect(shareLabel(0)).toBe('점유 시 0 : 비점유 시 100')
-    expect(shareLabel(100)).toBe('점유 시 100 : 비점유 시 0')
-    expect(shareLabel(35)).toBe('점유 시 35 : 비점유 시 65')
+  it('shareLabel은 게임 한국어판의 국면 이름으로 "공 소유 시 60 : 공 미소유 시 40"이다', () => {
+    expect(shareLabel(60)).toBe('공 소유 시 60 : 공 미소유 시 40')
+    expect(shareLabel(0)).toBe('공 소유 시 0 : 공 미소유 시 100')
+    expect(shareLabel(100)).toBe('공 소유 시 100 : 공 미소유 시 0')
+    expect(shareLabel(35)).toBe('공 소유 시 35 : 공 미소유 시 65')
   })
 })
