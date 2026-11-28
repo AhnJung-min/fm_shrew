@@ -64,7 +64,7 @@ describe('새 창구 이름이 preload, tacticIpc.ts, 목업에 모두 있다', 
     const keys = [...Object.keys(mockTacticsApi(state)), ...Object.keys(mockTacticToolsApi(state)), ...Object.keys(mockRoleToolsApi(state))]
     expect(keys.sort()).toEqual([...METHODS].sort())
     // 미리보기의 api가 세 틀을 펼쳐 넣는다
-    for (const shell of ['mockTacticsApi', 'mockTacticToolsApi', 'mockRoleToolsApi']) expect(rendererApi).toContain(`...${shell}(state)`)
+    for (const shell of ['mockTacticsApi', 'mockTacticToolsApi', 'mockRoleToolsApi']) expect(rendererApi, shell).toMatch(new RegExp(`\\.\\.\\.${shell}\\(`))
   })
 })
 

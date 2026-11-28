@@ -2,9 +2,9 @@ import { describe, expect, it } from 'vitest'
 import { FM26_CATALOG } from '../src/shared/catalogFm26'
 import { buildDepth, FORMATION_BY_ID, FORMATIONS } from '../src/shared/depth'
 import { TACTIC_NAME_MAX, TACTIC_SLOTS, TACTICS_PER_SAVE } from '../src/shared/limits'
-import { LEGACY_CATALOG, withCustomRoles, type CustomRole, type RoleCatalog } from '../src/shared/roleCatalog'
-import { DEFAULT_ROLE, ROLES, type PositionKey } from '../src/shared/roles'
-import { shareLabel } from '../src/shared/slotProfile'
+import { LEGACY_CATALOG, prepareProfile, withCustomRoles, type CustomRole, type RoleCatalog } from '../src/shared/roleCatalog'
+import { DEFAULT_ROLE, prepareRole, ROLES, type PositionKey } from '../src/shared/roles'
+import { groupIdOf, shareLabel } from '../src/shared/slotProfile'
 import {
   addTactic,
   canonicalOrder,
@@ -75,6 +75,9 @@ const settingsOf = (patch: Partial<Settings> = {}): Settings => ({
   backupKeep: 3,
   ...patch
 })
+
+/** 사용자가 고친 역할 가중치의 예(센터백의 대인 마크 5, 태클 끔, 침착성 3 / 스트라이커의 골 결정력 1) */
+const EDITED_WEIGHTS = { cb: { marking: 5, tackling: 0, composure: 3 }, st: { finishing: 1 } }
 
 /** FM26 카탈로그의 자료가 비어 있는 동안, 옛 역할을 그대로 쓰되 번호만 fm26인 시험용 카탈로그 */
 const FAKE_FM26: RoleCatalog = { ...LEGACY_CATALOG, id: 'fm26' }
@@ -187,8 +190,15 @@ describe('프리셋과 옛 설정에서 전술 만들기', () => {
           const slotRoles = { [`${formation.id}:${index}`]: roleId }
           const slots = buildDepth([], [], formation, slotRoles, {})
           const tactic = legacyTactic(formation.id, slotRoles)
-          expect(positionsOf(tactic, 'ip'), `${formation.id}:${index}=${roleId}`).toEqual(slots.map((slot) => slot.position))
-          expect(tactic.slots.map((slot) => slot.ip.roleId), `${formation.id}:${index}=${roleId}`).toEqual(slots.map((slot) => slot.roleId))
+          const where = `${formation.id}:${index}=${roleId}`
+          expect(positionsOf(tactic, 'ip'), where).toEqual(slots.map((slot) => slot.position))
+          expect(tactic.slots.map((slot) => slot.ip.roleId), where).toEqual(slots.map((slot) => slot.roleId))
+          // 자리 묶음 id와 기준 분포 열쇠도 옛 것(`포지션:역할`, 역할 id)과 같다
+          const profiles = tactic.slots.map((_, i) => profileOf(tactic, i))
+          expect(profiles.map(groupIdOf), where).toEqual(slots.map((slot) => `${slot.position}:${slot.roleId}`))
+          expect(profiles.map((profile) => LEGACY_CATALOG.normKey(profile)), where).toEqual(slots.map((slot) => slot.roleId))
+          // 자리마다 준비한 가중치가 옛 prepareRole과 같다(사용자가 고친 가중치 포함)
+          expect(profiles.map((profile) => prepareProfile(LEGACY_CATALOG, profile, EDITED_WEIGHTS)), where).toEqual(slots.map((slot) => prepareRole(slot.roleId, EDITED_WEIGHTS)))
           compared++
         }
       }
