@@ -247,6 +247,15 @@ describe('FM26을 쓰면 읽을 때 한 번 이전하고 한 번 쓴다(N-05)', 
     expect(text()).toBe(written)
   })
 
+  it('이전 기록이 객체가 아니어도(손으로 고친 파일) 확인은 던지지 않고 아무것도 바꾸지 않는다', () => {
+    write({ catalog: 'fm26', settingsVersion: 2, migration: '손으로 쓴 글' })
+    const store = open()
+    const before = text()
+    expect(ackMigration({ settings: store })).toEqual({ ok: true, settings: store.get() })
+    expect(text()).toBe(before)
+    expect(store.get().migration).toBe('손으로 쓴 글')
+  })
+
   it('쓰지 못하면 확인을 기록하지 못했다고 실패로 알린다(경로는 담지 않는다)', () => {
     write(oldFile())
     const store = open()

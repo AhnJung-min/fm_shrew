@@ -60,7 +60,7 @@ export function saveTactics(deps: StoreDeps, saveKey: string | null, set: Tactic
 export function ackMigration(deps: StoreDeps): SimpleResult {
   const current = deps.settings.get()
   const patch: Partial<Settings> = {}
-  if (current.migration && current.migration.acknowledged !== true) patch.migration = { ...current.migration, acknowledged: true }
+  if (typeof current.migration === 'object' && current.migration !== null && current.migration.acknowledged !== true) patch.migration = { ...current.migration, acknowledged: true }
   if (current.settingsProblem) patch.settingsProblem = undefined
   if (Object.keys(patch).length === 0) return { ok: true, settings: current }
   try {
