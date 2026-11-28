@@ -177,6 +177,21 @@ describe('같은 입력은 늘 같은 결과이고, 선수 줄 순서에 기대�
     expect(step.value).toEqual(searchTactics(input({ current: custom })))
   })
 
+  it('추천 후보는 지금 전술과 자리·칸 객체를 나눠 쓰지 않는다(화면이 후보를 고쳐도 지금 전술이 바뀌지 않는다)', () => {
+    const current = presetTactic('4-2-3-1', catalog)
+    const out = searchTactics(input({ current }))
+    const recommended = out.ranked.filter((candidate) => !candidate.current)
+    expect(recommended.length).toBeGreaterThan(0)
+    for (const candidate of recommended) {
+      expect(candidate.tactic).not.toBe(current)
+      candidate.tactic.slots.forEach((slot, at) => {
+        expect(slot).not.toBe(current.slots[at])
+        expect(slot.ip.cell).not.toBe(current.slots[at].ip.cell)
+        expect(slot.oop.cell).not.toBe(current.slots[at].oop.cell)
+      })
+    }
+  })
+
   it('입력을 바꾸지 않는다', () => {
     const args = input()
     const before = JSON.stringify([args.current, args.presets, args.rows.map((row) => [row.idx, row.ratings])])
