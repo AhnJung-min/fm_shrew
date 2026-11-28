@@ -645,7 +645,7 @@ describe('게임에서 전술 가져오기(서비스): 문과 읽기 순서', ()
       const result = await readGameTactic(await input())
       expect(result.ok).toBe(false)
       expect(result.draft).toBeUndefined()
-      expect(result.unknownBits).toEqual(['비점유 시 역할 77'])
+      expect(result.unknownBits).toEqual(['공 미소유 시 역할 77'])
       expect(result.message).toContain('직접 만들어 주세요')
     } finally {
       plugin = '0.11.0'

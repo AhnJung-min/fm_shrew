@@ -171,7 +171,7 @@ export interface SlotGroup {
   profile: SlotProfile
   /**
    * "중앙 수비 (2자리)". 같은 점유 시 포지션에 그룹이 여럿이면 "최전방(타깃맨)"처럼 점유 시 역할을 붙이고,
-   * 점유 시 역할까지 같으면 "오른쪽 공격(윙어, 비점유 시 오른쪽 미드 윙어)"처럼 비점유 시 포지션과 역할도 붙인다
+   * 점유 시 역할까지 같으면 "오른쪽 공격(윙어, 공 미소유 시 오른쪽 미드 윙어)"처럼 비점유 시 포지션과 역할도 붙인다
    */
   label: string
   /** 그룹에 든 자리의 순번들(포메이션 순서) */
@@ -573,7 +573,7 @@ function buildGroups(analysed: SlotAnalysis[]): SlotGroup[] {
         thin: distinct.size < 2
       }
       const roleLabel = first.roleLabel
-      const offPhase = (groupsOfRole.get(`${position}:${roleId}`) ?? 1) > 1 ? `, 비점유 시 ${first.oopPositionLabel} ${first.oopRoleLabel}` : ''
+      const offPhase = (groupsOfRole.get(`${position}:${roleId}`) ?? 1) > 1 ? `, 공 미소유 시 ${first.oopPositionLabel} ${first.oopRoleLabel}` : ''
       const base = (groupsOfPosition.get(position) ?? 1) > 1 ? `${first.positionLabel}(${roleLabel}${offPhase})` : first.positionLabel
       return {
         id,
@@ -657,7 +657,7 @@ function needOf(args: {
   const penalty =
     starter.score - eff > 0.05
       ? mixedRatings
-        ? ` 포지션 숙련(점유 시 ${starter.rating}, 비점유 시 ${starter.oopRating})에 따라 적합도 ${starter.score}점에서 ${round1(starter.score - eff)}점 빼고 견주었습니다.`
+        ? ` 포지션 숙련(공 소유 시 ${starter.rating}, 공 미소유 시 ${starter.oopRating})에 따라 적합도 ${starter.score}점에서 ${round1(starter.score - eff)}점 빼고 견주었습니다.`
         : ` 포지션 숙련이 ${starter.rating}이라 적합도 ${starter.score}점에서 ${round1(starter.score - eff)}점 빼고 견주었습니다.`
       : ''
   const temporary = starter.temporary ? ` 숙련 ${starter.rating}이라 임시로 세웠습니다.` : ''

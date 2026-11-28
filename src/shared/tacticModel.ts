@@ -59,7 +59,7 @@ export interface TacticProblem {
 export const PRESET_IDS: readonly string[] = FORMATIONS.map((formation) => formation.id)
 
 const PHASES: readonly Phase[] = ['ip', 'oop']
-const PHASE_LABEL: Record<Phase, string> = { ip: '점유 시', oop: '비점유 시' }
+const PHASE_LABEL: Record<Phase, string> = { ip: '공 소유 시', oop: '공 미소유 시' }
 /** 줄의 차례: 위(공격)에서 아래(골키퍼)로 */
 const LINE_ORDER: readonly Line[] = ['ST', 'AM', 'M', 'DM', 'D', 'GK']
 /** 칸의 차례: 왼쪽에서 오른쪽으로 */
@@ -267,7 +267,7 @@ export function validateTactic(tactic: Tactic, catalog: RoleCatalog): TacticProb
   if (!SOURCES.has(tactic.source)) add('source', '전술이 어디서 왔는지 알 수 없습니다.')
   if (tactic.preset !== null && typeof tactic.preset !== 'string') add('preset', '전술의 시작 프리셋이 올바르지 않습니다.')
   const share = tactic.sharePct
-  if (share !== null && !(Number.isInteger(share) && share >= 0 && share <= SHARE_SCALE)) add('share', `점유 시 비중은 0에서 ${SHARE_SCALE} 사이의 정수여야 합니다.`)
+  if (share !== null && !(Number.isInteger(share) && share >= 0 && share <= SHARE_SCALE)) add('share', `공 소유 시 비중은 0에서 ${SHARE_SCALE} 사이의 정수여야 합니다.`)
   if (tactic.slots.length !== TACTIC_SLOTS) add('slotCount', `전술의 자리는 ${TACTIC_SLOTS}개여야 합니다. 지금은 ${tactic.slots.length}개입니다.`)
 
   for (const phase of PHASES) {
@@ -312,7 +312,7 @@ export function validateTactic(tactic: Tactic, catalog: RoleCatalog): TacticProb
     const ip = slot?.ip?.cell ? cellPosition(slot.ip.cell) : null
     const oop = slot?.oop?.cell ? cellPosition(slot.oop.cell) : null
     if (ip !== null && oop !== null && (ip === 'GK') !== (oop === 'GK')) {
-      add('goalkeeper', `${index + 1}번째 자리는 한쪽 국면에서만 골키퍼 칸입니다. 골키퍼 자리는 점유 시와 비점유 시 모두 골키퍼 칸이어야 합니다.`, { index })
+      add('goalkeeper', `${index + 1}번째 자리는 한쪽 국면에서만 골키퍼 칸입니다. 골키퍼 자리는 공 소유 시와 공 미소유 시 모두 골키퍼 칸이어야 합니다.`, { index })
     }
   })
   return problems

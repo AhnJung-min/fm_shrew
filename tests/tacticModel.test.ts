@@ -277,8 +277,8 @@ describe('프리셋과 옛 설정에서 전술 만들기', () => {
     expect(profileOf(broken, 0).oop.position).toBe('ST')
   })
 
-  it('shareLabel(60)은 "점유 시 60 : 비점유 시 40"', () => {
-    expect(shareLabel(60)).toBe('점유 시 60 : 비점유 시 40')
+  it('shareLabel(60)은 "공 소유 시 60 : 공 미소유 시 40"', () => {
+    expect(shareLabel(60)).toBe('공 소유 시 60 : 공 미소유 시 40')
   })
 })
 

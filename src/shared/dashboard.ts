@@ -658,7 +658,7 @@ function surplusReason(player: FirstTeamPlayer, scored: SurplusScore, basis: Fit
       stem(
         basis.oopRating === null
           ? `그 자리 포지션 숙련이 ${basis.rating}이라 ${basis.penaltyPoints.toFixed(1)}점 뺐`
-          : `그 자리 포지션 숙련(점유 시 ${basis.rating}, 비점유 시 ${basis.oopRating})에 따라 ${basis.penaltyPoints.toFixed(1)}점 뺐`,
+          : `그 자리 포지션 숙련(공 소유 시 ${basis.rating}, 공 미소유 시 ${basis.oopRating})에 따라 ${basis.penaltyPoints.toFixed(1)}점 뺐`,
         '고',
         '습니다'
       )

@@ -125,7 +125,7 @@ export function parseTacticAnswer(json: unknown): GameTacticAnswer | null {
 // ---------- 포지션 비트 → 칸 ----------
 
 const PHASES: readonly Phase[] = ['ip', 'oop']
-const PHASE_LABEL: Record<Phase, string> = { ip: '점유 시', oop: '비점유 시' }
+const PHASE_LABEL: Record<Phase, string> = { ip: '공 소유 시', oop: '공 미소유 시' }
 const DECIMAL = /^\d{1,20}$/
 /** 앱이 받지 않는 스위퍼 칸의 값(게임 열거형의 SweeperCentreNotInUse) */
 const SWEEPER = '2'
@@ -242,7 +242,7 @@ export function tacticFromGame(answer: GameTacticAnswer, catalog: RoleCatalog, r
   const byPhase = { ip: rowsByIndex(answer.ip.rows, 'ip', problems), oop: rowsByIndex(answer.oop.rows, 'oop', problems) }
   const indexes = [...byPhase.ip.keys()].sort((a, b) => a - b)
   const sameSet = indexes.length === byPhase.oop.size && indexes.every((index) => byPhase.oop.has(index))
-  if (!sameSet) problems.push('점유 시와 비점유 시의 자리 번호가 서로 맞지 않습니다.')
+  if (!sameSet) problems.push('공 소유 시와 공 미소유 시의 자리 번호가 서로 맞지 않습니다.')
   if (problems.length > 0) return { ok: false, problems, unknownBits }
 
   // 자리 하나에서 난 문제와 알림. 자리 번호는 마지막에 붙인다: 전술이 나오면 그 전술(저장 순서)의 번호로, 안 나오면 게임이 준 순서로.

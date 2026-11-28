@@ -259,7 +259,7 @@ describe('tacticFromGame: 견본 → 전술 초안', () => {
     const result = convert(json)
     expect(result.ok).toBe(false)
     expect(result.tactic).toBeUndefined()
-    expect(result.unknownBits).toEqual(['점유 시 역할 5', '비점유 시 역할 77'])
+    expect(result.unknownBits).toEqual(['공 소유 시 역할 5', '공 미소유 시 역할 77'])
     expect(result.problems.some((text) => text.includes('(값 5)'))).toBe(true)
     expect(result.problems.some((text) => text.includes('(값 77)'))).toBe(true)
   })
@@ -282,7 +282,7 @@ describe('tacticFromGame: 견본 → 전술 초안', () => {
     const result = convert(json)
     expect(result.ok).toBe(false)
     expect(result.tactic).toBeUndefined()
-    expect(result.unknownBits).toContain('비점유 시 역할 4096')
+    expect(result.unknownBits).toContain('공 미소유 시 역할 4096')
     // 두 국면의 답을 통째로 바꿔 보내도 문제 없이 통과하지 않는다
     const swapped = fresh()
     ;[swapped.ip, swapped.oop] = [swapped.oop, swapped.ip]
@@ -381,11 +381,11 @@ describe('tacticFromGame: 견본 → 전술 초안', () => {
     // 두 국면의 알림이 국면 표시와 함께 따로 적힌다(같은 글이 두 번 나오지 않는다)
     const notes = result.problems.filter((text) => text.includes('확인하지 못한 값'))
     expect(notes).toHaveLength(2)
-    expect(notes[0]).toMatch(/^1번째 자리의 점유 시 포지션: /)
-    expect(notes[1]).toMatch(/^1번째 자리의 비점유 시 포지션: /)
+    expect(notes[0]).toMatch(/^1번째 자리의 공 소유 시 포지션: /)
+    expect(notes[1]).toMatch(/^1번째 자리의 공 미소유 시 포지션: /)
     expect(new Set(notes).size).toBe(2)
     // 골키퍼 여부 문제는 초안의 11번째 자리(골키퍼)로 적힌다. 게임이 준 순서의 1번째 자리(순번 0)가 아니다
-    expect(result.problems).toContain('11번째 자리의 점유 시 포지션이 게임이 알려 준 골키퍼 여부와 맞지 않습니다.')
+    expect(result.problems).toContain('11번째 자리의 공 소유 시 포지션이 게임이 알려 준 골키퍼 여부와 맞지 않습니다.')
     // 자리 번호 차례로 나온다
     const numbers = result.problems.map((text) => Number(/^(\d+)번째 자리/.exec(text)?.[1]))
     expect(numbers.every((each) => Number.isInteger(each))).toBe(true)
@@ -416,9 +416,9 @@ describe('tacticFromGame: 견본 → 전술 초안', () => {
     const result = convert(json)
     expect(result.tactic).toBeUndefined()
     expect(result.problems).toEqual([
-      '3번째 자리의 점유 시 역할(값 5)을 앱이 모릅니다.',
-      '9번째 자리의 비점유 시 역할(값 77)을 앱이 모릅니다.',
-      expect.stringMatching(/^11번째 자리의 점유 시 포지션: 최전방 오른쪽/)
+      '3번째 자리의 공 소유 시 역할(값 5)을 앱이 모릅니다.',
+      '9번째 자리의 공 미소유 시 역할(값 77)을 앱이 모릅니다.',
+      expect.stringMatching(/^11번째 자리의 공 소유 시 포지션: 최전방 오른쪽/)
     ])
   })
 
@@ -479,7 +479,7 @@ describe('roleListReport: 자리별 역할 목록을 앱의 목록과 견준다'
     expect(report.compared).toBe(22)
     expect(report.different).toBe(1)
     expect(report.lines).toHaveLength(1)
-    expect(report.lines[0]).toContain('점유 시(DM.single)')
+    expect(report.lines[0]).toContain('공 소유 시(DM.single)')
     expect(report.lines[0]).toContain('게임에만 있음 [가상 역할 34359738368(값 34359738368)]')
     expect(report.lines[0]).toContain('앱에만 있음 [가상 역할 999]')
   })
