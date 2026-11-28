@@ -262,10 +262,32 @@ describe('C̄*: 기준 목록의 풀 합집합에서 C* 이상인 선수의 평�
     expect(Object.is(meanCaStarOf(world, new ProfileColumns(world, female), refs, startCa), sum / count)).toBe(true)
   })
 
-  it('합집합에 드는 선수가 하나도 없으면 undefined이고, 그때 기준 분포는 보정(shift) 0으로 나온다', () => {
+  it('합집합에 드는 선수가 하나도 없으면 undefined이고, 풀도 비어 기준 분포는 선수 0명에 보정(shift) 0으로 나온다', () => {
     const world = buildWorld([{ name: '시험 선수 1', team: 100, club: 0, ca: 150 }])
     const specs = FM26_CATALOG.references('ip').map((ref) => referenceSpec(FM26_CATALOG, ref, {}))
     expect(meanCaStarOf(world, new ProfileColumns(world, new Uint8Array(1)), specs, startCaOf(world))).toBeUndefined()
+    const alone = computeProfileNorms(world, specs.slice(0, 1), new Uint8Array(1), specs)[specs[0].key]
+    expect(alone.n).toBe(0)
+    expect(alone.shift).toBe(0)
+  })
+
+  it('풀에 선수가 있어도 C* 이상인 선수가 없어 C̄*가 undefined이면, 표본을 넓힌 기준 분포도 보정 없이(shift 0) 나온다', () => {
+    // 현재 능력이 모두 85~94라 C*(최저 100)에 못 미친다. 모든 선수가 모든 포지션을 뛰어서 풀은 비지 않는다
+    const people = Array.from({ length: 60 }, (_, i) => ({ name: `시험 선수 ${i + 1}`, team: i < 14 ? 100 : 200, club: i < 14 ? 0 : 1, ca: 85 + (i % 10) }))
+    const small = buildWorld(people)
+    small.positions.fill(20)
+    const female = new Uint8Array(small.count)
+    const specs = FM26_CATALOG.references('ip').map((ref) => referenceSpec(FM26_CATALOG, ref, {}))
+    const columns = new ProfileColumns(small, female)
+    const startCa = startCaOf(small)
+    expect(meanCaStarOf(small, columns, specs, startCa)).toBeUndefined()
+    const norm = computeProfileNorms(small, specs.slice(0, 1), female, specs)[specs[0].key]
+    expect(norm.n).toBe(60)
+    // 표본을 넓혔다(C*보다 낮은 선수까지 모았다). 그래도 C̄*가 없으니 평균은 보정하지 않는다
+    expect(norm.poolCa).toBeLessThan(norm.caRef)
+    expect(norm.shift).toBe(0)
+    // 같은 표본에 C̄*를 주면 보정이 생긴다: 위의 0이 우연이 아니다
+    expect(normOfSpec(small, columns, specs[0], startCa, 120, false).shift).not.toBe(0)
   })
 })
 
