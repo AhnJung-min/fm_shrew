@@ -6,9 +6,11 @@ import { SAVE_CHECK_OK } from '@shared/connect'
 import { NO_DATA, type DataStatus, type SaveFileInfo } from '@shared/game'
 import { POSITION_KEYS, positionOrder, positionsLabel } from '@shared/positions'
 import { footValues, formatPounds, hiddenAttributes, isGoalkeeper, visibleAttributes } from '@shared/playerView'
-import { normOf, type RoleNorms } from '@shared/norms'
-import { LEGACY_CATALOG } from '@shared/roleCatalog'
-import { prepareRole, ROLE_BY_ID, savedRoleScore } from '@shared/roles'
+import type { RoleNorm, RoleNorms } from '@shared/norms'
+import { effectiveRoleWeights, LEGACY_CATALOG, profileSpec, profileWeights, referenceSpec, type NormSpec, type ReferenceProfile, type RoleCatalog } from '@shared/roleCatalog'
+import { SHARE_SCALE } from '@shared/limits'
+import { DEFAULT_ROLE } from '@shared/roles'
+import type { Phase, RatingInput, SlotProfile, Weights } from '@shared/slotProfile'
 import {
   clubStature,
   recommend,
@@ -20,7 +22,8 @@ import {
   type TraitId,
   type Traits
 } from '@shared/recommend'
-import { analyseTactic, slotBench } from '@shared/tactic'
+import { analyseTactic, slotBench, type TacticAnalysis } from '@shared/tactic'
+import { blockingProblems, PRESET_IDS, presetTactic, profileOf, validateTactic, type Tactic } from '@shared/tacticModel'
 import {
   categoriesOf,
   checkEdit,
@@ -48,7 +51,8 @@ import { ATTRIBUTE_COUNT, POSITION_COUNT } from './save/reader'
 import { ageAt, findTeamByNames, NO_TEAM, readWorld, SEX_FEMALE, signedClubTeam, teamHasPlayers, type SaveWorld } from './save/world'
 import { clubChoices } from './clubChoices'
 import { playerResult, reportOf, skippedResult } from './editorReport'
-import { computeRoleNorms } from './roleNorms'
+import { meanCaStarOf, normOfSpec, startCaOf, type ProfileNormSpec } from './roleNorms'
+import { poolKeyOf, ProfileColumns, scorerOf, weightsKeyOf, type ProfileParts } from './profileColumns'
 import { checkSaveWorld } from './saveCheck'
 import { NameBook } from './names'
 import { calendar } from './save/contracts'
@@ -67,6 +71,14 @@ export const MIN_LOANS_IN_SAVE = 100
 /** 게임이 한 덩어리로 넘겨주는 선수 한 명의 크기: 번호 4 + 현재·잠재 능력 4 + 숙련도 15 + 능력치 54 */
 const PACKED_SIZE = 8 + POSITION_COUNT + ATTRIBUTE_COUNT
 
+/**
+ * 한 캐시에서 직접 구한 기준 분포가 이만큼 쌓이면, 그 뒤 새로 구하는 것부터 역할별 합 열을 쓴다. 열을 만드는 값(시험 세이브에서 0.3초쯤)이 한 번이고
+ * 열로 구하면 프로파일 하나가 직접 구하는 것의 1/6쯤이라 많이 구할수록 이득이다. 전술 하나(11개 이하)는 직접 구하는 것이 더 빠르다.
+ */
+const COLUMNS_AFTER = 40
+/** 구해 둔 기준 분포를 이만큼까지만 쥐고 있는다(넘으면 비우고 다시 구한다) */
+const NORM_ENTRIES_MAX = 20_000
+
 const ATTRIBUTE_INDEX = new Map<string, number>(SAVE_ATTRIBUTE_ORDER.map((id, i) => [id, i]))
 const POSITION_INDEX = new Map<string, number>(POSITION_KEYS.map((key, i) => [key, i]))
 const NO_SAVE = '먼저 시작 화면에서 세이브를 골라 적용해 주세요.'
@@ -74,6 +86,25 @@ const NO_SAVE = '먼저 시작 화면에서 세이브를 골라 적용해 주세
 export const NO_TEAM_MESSAGE = '이 세이브에서 내 팀을 아직 찾지 못했습니다. 시작 화면에서 내 구단을 고르거나, 게임을 켜고 이 세이브를 불러오세요.'
 /** 세이브 형식 점검에 걸렸을 때 점수 화면에 주는 안내(걸린 내용은 화면이 따로 보여 준다) */
 export const FORMAT_CHANGED_MESSAGE = '세이브 형식이 바뀐 것 같습니다. 틀린 점수를 보여 주지 않으려고 이 화면을 막았습니다.'
+
+/**
+ * 한 세계·한 값 번호 동안의 기준 분포 캐시. 구해 둔 항목의 열쇠는 (C̄*, 풀, 가중치 지문)이라 가중치를 고치면 열쇠가 바뀌어 낡은 값을 쓰지 않는다.
+ * 세이브를 다시 읽거나 값이 바뀌면(revision) 통째로 새로 만든다.
+ */
+interface NormScope {
+  world: SaveWorld
+  revision: number
+  /** 풀 목록과 역할별 합 열 */
+  columns: ProfileColumns
+  /** 기준 능력 C* */
+  startCa: number
+  /** 기준 목록의 지문 → C̄* */
+  means: Map<string, number | undefined>
+  /** `${C̄*}|${풀}|${가중치 지문}` → 기준 분포 */
+  entries: Map<string, RoleNorm>
+  /** 열을 쓰지 않고 직접 구한 기준 분포의 수(COLUMNS_AFTER를 넘으면 열로 바꾼다) */
+  direct: number
+}
 
 interface Loaded {
   path: string
@@ -97,6 +128,13 @@ export interface WorldDeps {
   /** 찾아낸 내 팀 번호를 기억해 둔다 */
   rememberTeam(fileName: string, teamId: number): void
   roleWeights(): Record<string, Record<string, number>>
+  /** 쓰는 역할 카탈로그(설정이 고른 카탈로그에 사용자 역할을 얹은 것). 부를 때마다 설정에서 읽는다. 없으면 옛 14역할이다 */
+  catalog?(): RoleCatalog
+  /**
+   * 주 전술. 스쿼드 결과의 기준 분포(FM26은 주 전술의 프로파일마다)가 이것을 따른다. 옛 14역할은 전술과 상관없이 역할 14개라 쓰지 않는다.
+   * 없거나 null이면(옛 설정과 옛 14역할이거나, FM26인데 주 전술을 모를 때) 기본 포메이션(프리셋 첫째)의 프리셋 전술을 쓴다
+   */
+  mainTactic?(): Tactic | null
   /**
    * 대시보드의 리그 주급 모델(ln 주급 = a + b·CA + 나이 더미). 소속 없는 선수의 주급을 어림하는 데 쓴다(4회차).
    * 이미 계산해 둔 것을 돌려주기만 한다(계산은 한 번). 아직 없으면 null이고 그때는 자유 계약 선수의 주급 부담을 보통(0.5)으로 본다
@@ -133,14 +171,14 @@ export class WorldService {
   private teamNote: { path: string; text: string } | null = null
 
   /**
-   * 세이브 안의 값(능력치·이름 정보)이 바뀔 때마다 늘린다. 이 값이 같으면 아래 캐시(여자 선수 표시, 역할 기준 분포)가 아직 맞다.
-   * 기준 분포는 선수 10만 명을 돌아 구하므로 (세이브 객체, 이 번호, 역할 가중치)가 같으면 다시 구하지 않는다.
+   * 세이브 안의 값(능력치·이름 정보)이 바뀔 때마다 늘린다. 이 값이 같으면 아래 캐시(여자 선수 표시, 프로파일 기준 분포)가 아직 맞다.
+   * 기준 분포는 선수 10만 명을 돌아 구하므로 (세이브 객체, 이 번호, 풀, 가중치)가 같으면 다시 구하지 않는다.
    */
   private revision = 0
   private femaleCache: { world: SaveWorld; revision: number; mask: Uint8Array } | null = null
   /** 팀 번호 → 구단 순번(임대 선수의 원 소속 구단을 찾는 데 쓴다). 임대 기록을 믿을 수 있는지도 함께 */
   private loanCache: { world: SaveWorld; teamClub: Map<number, number>; trusted: boolean } | null = null
-  private normCache: { world: SaveWorld; revision: number; weights: string; norms: RoleNorms } | null = null
+  private normScope: NormScope | null = null
   private statureCache: { world: SaveWorld; revision: number; byTeam: Map<number, number> } | null = null
 
   constructor(private readonly deps: WorldDeps) {
@@ -438,18 +476,120 @@ export class WorldService {
     return byTeam
   }
 
+  /** 쓰는 역할 카탈로그. 주지 않으면 옛 14역할 */
+  private catalog(): RoleCatalog {
+    return this.deps.catalog?.() ?? LEGACY_CATALOG
+  }
+
   /**
-   * 역할별 기준 분포(shared/norms.ts). 세이브 전체에서 한 번 구해 두고, 세이브·값·역할 가중치가 같으면 다시 구하지 않는다.
-   * 전술 분석(스쿼드·대시보드·영입 후보)이 모두 같은 값을 쓰도록 squad()가 함께 준다. 세이브를 적용하지 않았으면 null.
+   * 스쿼드 결과에 싣는 기준 분포(shared/norms.ts). 전술 분석(스쿼드·대시보드·영입 후보)이 모두 같은 값을 쓰도록 squad()가 함께 준다.
+   * 옛 14역할 카탈로그는 지금처럼 역할 14개(열쇠 = 역할 id)이고, FM26은 주 전술의 프로파일마다(열쇠 = 카탈로그의 normKey, 11개 이하)다.
+   * 참조 프로파일(자리 없는 선수, 역할만 고른 찾기)의 기준 분포는 referenceNorms가 필요할 때 따로 구한다.
+   * 세이브·값·풀·가중치가 같으면 다시 구하지 않는다. 세이브를 적용하지 않았으면 null.
    */
   roleNorms(): RoleNorms | null {
+    if (!this.loaded) return null
+    const catalog = this.catalog()
+    if (catalog.id === 'legacy14') return this.referenceNorms('ip')
+    return this.normsForTactic(this.deps.mainTactic?.() ?? presetTactic(PRESET_IDS[0], catalog))
+  }
+
+  /**
+   * 프로파일마다 기준 분포(열쇠 = 카탈로그의 normKey). 화면에 없는 프로파일(편집 중인 초안, 바꾼 직후의 역할)과 전술 추천이 쓴다.
+   * 카탈로그에 없는 역할이나 올바르지 않은 포지션·비중의 프로파일은 건너뛴다(결과에 열쇠가 없다). 세이브를 적용하지 않았으면 빈 객체.
+   */
+  normsFor(profiles: SlotProfile[]): RoleNorms {
     const world = this.loaded?.world
-    if (!world) return null
-    const weights = JSON.stringify(this.deps.roleWeights())
-    const kept = this.normCache
-    if (kept && kept.world === world && kept.revision === this.revision && kept.weights === weights) return kept.norms
-    const norms = computeRoleNorms(world, this.deps.roleWeights(), this.femaleMask(world))
-    this.normCache = { world, revision: this.revision, weights, norms }
+    if (!world || !Array.isArray(profiles)) return {}
+    const catalog = this.catalog()
+    const overrides = this.deps.roleWeights()
+    const specs: ProfileNormSpec[] = []
+    for (const profile of profiles) {
+      const spec = this.profileNormSpec(catalog, profile, overrides)
+      if (spec) specs.push(spec)
+    }
+    return this.normsOfSpecs(world, specs, this.referenceNormSpecs(catalog, overrides, 'ip'))
+  }
+
+  /** 전술 하나의 프로파일마다 기준 분포(자리마다 프로파일이 하나이고 같은 프로파일의 자리는 열쇠가 같다) */
+  normsForTactic(tactic: Tactic): RoleNorms {
+    return this.normsFor(Array.isArray(tactic?.slots) ? tactic.slots.map((_, index) => profileOf(tactic, index)) : [])
+  }
+
+  /**
+   * 참조 프로파일(역할 하나, 비중 100, 풀 = 그 역할을 고를 수 있는 포지션 전부)마다 기준 분포(열쇠 = 참조의 key).
+   * 국면을 주면 그 국면의 역할만이다: 자리 없는 선수의 "가장 맞는 역할"과 역할만 고른 찾기는 'ip'(옛 카탈로그는 14역할), 별점 대조는 'oop'도 쓴다.
+   * 국면을 주지 않으면 카탈로그의 참조 전부다(FM26은 79개라 구하는 데 오래 걸린다). 세이브를 적용하지 않았으면 빈 객체.
+   */
+  referenceNorms(phase?: Phase): RoleNorms {
+    const world = this.loaded?.world
+    if (!world) return {}
+    const catalog = this.catalog()
+    const overrides = this.deps.roleWeights()
+    return this.normsOfSpecs(world, this.referenceNormSpecs(catalog, overrides, phase), this.referenceNormSpecs(catalog, overrides, 'ip'))
+  }
+
+  /** 점수 계산에서 만든 캐시(기준 분포, 풀 목록, 합 열, 구단 체급)를 비운다. 대장 상수를 바꿔 다시 재는 시험이 쓴다 */
+  clearScoringCaches(): void {
+    this.normScope = null
+    this.statureCache = null
+  }
+
+  /** 참조 프로파일의 기준 분포 요청: 역할 하나(섞지 않는다)의 표 */
+  private referenceNormSpec(catalog: RoleCatalog, ref: ReferenceProfile, overrides: Record<string, Record<string, number>>): ProfileNormSpec {
+    const spec = referenceSpec(catalog, ref, overrides)
+    return { ...spec, parts: { ip: spec.weights, oop: spec.weights, sharePct: SHARE_SCALE } }
+  }
+
+  private referenceNormSpecs(catalog: RoleCatalog, overrides: Record<string, Record<string, number>>, phase: Phase | undefined): ProfileNormSpec[] {
+    return catalog.references(phase).map((ref) => this.referenceNormSpec(catalog, ref, overrides))
+  }
+
+  /** 프로파일의 기준 분포 요청(열쇠 = 카탈로그의 normKey, 풀, 두 국면 역할을 섞은 가중치). 화면이 보낸 값일 수 있어 올바르지 않으면 null */
+  private profileNormSpec(catalog: RoleCatalog, profile: SlotProfile, overrides: Record<string, Record<string, number>>): ProfileNormSpec | null {
+    if (!profile || typeof profile !== 'object') return null
+    const { ip, oop, sharePct } = profile
+    if (!ip || !oop || !Number.isInteger(sharePct) || sharePct < 0 || sharePct > SHARE_SCALE) return null
+    if (!Object.hasOwn(DEFAULT_ROLE, ip.position) || !Object.hasOwn(DEFAULT_ROLE, oop.position)) return null
+    if (!catalog.role(ip.roleId) || !catalog.role(oop.roleId)) return null
+    const spec = profileSpec(catalog, profile, overrides)
+    return { ...spec, parts: { ip: effectiveRoleWeights(catalog, ip.roleId, overrides), oop: effectiveRoleWeights(catalog, oop.roleId, overrides), sharePct } }
+  }
+
+  /** 이 세계·이 값 번호의 기준 분포 캐시 */
+  private normScopeOf(world: SaveWorld): NormScope {
+    const kept = this.normScope
+    if (kept && kept.world === world && kept.revision === this.revision) return kept
+    const scope: NormScope = { world, revision: this.revision, columns: new ProfileColumns(world, this.femaleMask(world)), startCa: startCaOf(world), means: new Map(), entries: new Map(), direct: 0 }
+    this.normScope = scope
+    return scope
+  }
+
+  /**
+   * 요청마다 기준 분포를 돌려준다(열쇠 = 요청의 key). 구해 둔 것은 그대로 쓰고 없는 것만 한 번에 구해 둔다.
+   * refs는 C̄*를 구할 기준 목록의 요청들이다(전술과 상관없이 세계마다 하나라 캐시한다).
+   */
+  private normsOfSpecs(world: SaveWorld, specs: readonly ProfileNormSpec[], refs: readonly NormSpec[]): RoleNorms {
+    const scope = this.normScopeOf(world)
+    const refsKey = refs.map((ref) => `${poolKeyOf(ref.pool)}#${weightsKeyOf(ref.weights)}`).join(';')
+    if (!scope.means.has(refsKey)) {
+      if (scope.means.size >= 20) scope.means.clear()
+      scope.means.set(refsKey, meanCaStarOf(world, scope.columns, refs, scope.startCa))
+    }
+    const mean = scope.means.get(refsKey)
+    const norms: RoleNorms = {}
+    for (const spec of specs) {
+      const entryKey = `${mean}|${poolKeyOf(spec.pool)}|${weightsKeyOf(spec.weights)}`
+      let norm = scope.entries.get(entryKey)
+      if (!norm) {
+        const fast = scope.direct >= COLUMNS_AFTER
+        norm = normOfSpec(world, scope.columns, spec, scope.startCa, mean, fast)
+        if (!fast) scope.direct++
+        if (scope.entries.size >= NORM_ENTRIES_MAX) scope.entries.clear()
+        scope.entries.set(entryKey, norm)
+      }
+      norms[spec.key] = norm
+    }
     return norms
   }
 
@@ -578,7 +718,10 @@ export class WorldService {
   }
 
   /**
-   * 고른 역할로 모든 선수의 점수를 매겨 유형별 영입 후보를 고른다.
+   * 고른 자리나 역할로 모든 선수의 점수를 매겨 유형별 영입 후보를 고른다.
+   * 전술의 한 자리(옛 꼴 { formation, slotRoles, index } 또는 새 꼴 { tactic, index })를 고르면 그 자리의 프로파일(두 국면의 역할을 비중으로 섞은 가중치)로 센다:
+   * 뛸 자격과 10 미만 곱셈 보정은 점유 시 포지션 숙련만 보고, 숙련 감점은 두 국면의 포지션이 다르면 두 숙련을 비중으로 섞는다. 새 꼴의 전술은 다시 검사한다.
+   * 역할만 고르면 그 역할의 참조 프로파일(역할 하나, 풀 = 고를 수 있는 포지션 전부, 숙련은 그 가운데 최대)로 센다.
    * 순서: 걸러내기(내 구단·여자·조건) → 유형 자격(shared/world.ts categoriesOf) → 자격 후보에만 추천 점수 → 같은 유형 안의 백분위 등급.
    */
   candidates(query: CandidateQuery): CandidateResult {
@@ -595,32 +738,68 @@ export class WorldService {
       return fail(NO_TEAM_MESSAGE, saveName)
     }
     const roleWeights = this.deps.roleWeights()
-    const norms = this.roleNorms() ?? {}
+    const catalog = this.catalog()
     const female = this.femaleMask(world)
-    // 전술의 한 자리를 기준으로 찾으면 그 자리의 역할·주전·두 번째 선수·보강 필요도를 쓴다(스쿼드 전술판과 같은 계산)
+    // 전술의 한 자리를 기준으로 찾으면 그 자리의 프로파일(두 국면의 역할과 비중)·주전·두 번째 선수·보강 필요도를 쓴다(스쿼드 전술판과 같은 계산)
     const table = this.squadOf(world)
-    // 옛 꼴(포메이션과 자리별 역할)은 지금 그대로다. 새 꼴(전술)은 쓰는 카탈로그를 본체가 알게 되기 전까지 옛 14역할 카탈로그로 분석한다
-    const analysis = query.slot
-      ? isTacticSlot(query.slot)
-        ? analyseTactic({ rows: table.rows, columns: table.columns, today: table.today, tactic: query.slot.tactic, catalog: LEGACY_CATALOG, roleWeights, norms })
-        : analyseTactic({ rows: table.rows, columns: table.columns, today: table.today, formation: query.slot.formation, slotRoles: query.slot.slotRoles, roleWeights, norms })
-      : null
-    const slotFound = analysis?.slots[query.slot?.index ?? -1] ?? null
-    const roleId = slotFound ? slotFound.slot.roleId : query.roleId
-    const role = ROLE_BY_ID[roleId]
-    if (!role) return fail('알 수 없는 역할입니다.', saveName)
-    const norm = normOf(norms, roleId)
+    // 화면이 보낸 요청이라 모양이 틀린 자리 요청(객체가 아님)은 자리를 고르지 않은 것으로 본다
+    const slotQuery = query.slot && typeof query.slot === 'object' ? query.slot : null
+    let analysis: TacticAnalysis | null = null
+    if (slotQuery && isTacticSlot(slotQuery)) {
+      // 새 꼴(전술)은 화면이 보낸 값이라 믿지 않고 다시 검사한다: 쓰는 카탈로그에서 막는 문제가 있으면 찾지 않는다
+      const problem = blockingProblems(validateTactic(slotQuery.tactic, catalog))[0]
+      if (problem) return fail(`이 전술로는 후보를 찾을 수 없습니다. ${problem.message}`, saveName)
+      analysis = analyseTactic({ rows: table.rows, columns: table.columns, today: table.today, tactic: slotQuery.tactic, catalog, roleWeights, norms: this.normsForTactic(slotQuery.tactic) })
+    } else if (slotQuery) {
+      // 옛 꼴(포메이션과 자리별 역할)은 옛 14역할 카탈로그에서만 받는다. 지금 그대로다
+      if (catalog.id !== 'legacy14') return fail('포메이션과 자리별 역할로 고른 자리는 옛 14역할 목록에서만 찾을 수 있습니다.', saveName)
+      analysis = analyseTactic({ rows: table.rows, columns: table.columns, today: table.today, formation: slotQuery.formation, slotRoles: slotQuery.slotRoles, roleWeights, norms: this.roleNorms() ?? {} })
+    }
+    const slotFound = analysis?.slots[slotQuery?.index ?? -1] ?? null
 
-    // 스쿼드 화면과 같은 값이 나오도록 게임 표시값(1~20)으로 계산한다(roles.ts의 savedRoleScore 하나)
-    const prepared = prepareRole(roleId, roleWeights)
-    const slots = (slotFound ? [slotFound.slot.position] : role.positions).map((key) => POSITION_INDEX.get(key)!).filter((index) => index !== undefined)
+    // 점수를 낼 대상. 전술의 한 자리면 그 자리 프로파일이다: 두 국면 역할의 가중치를 비중으로 섞은 표, 점유 시 포지션의 숙련으로 자격을 보고,
+    // 숙련 감점은 두 국면 포지션이 다르면 두 숙련을 비중으로 섞는다. 역할만 고르면 그 역할의 참조 프로파일(역할 하나, 비중 100, 풀 = 고를 수 있는 포지션 전부)이다
+    let weights: Weights
+    let parts: ProfileParts
+    let norm: RoleNorm
+    let goalkeeper: boolean
+    let ipSlots: number[]
+    /** 두 국면의 포지션이 다른 자리에서 비점유 시 포지션의 숙련 칸. 같으면 null(숙련 하나로 센다) */
+    let oopSlot: number | null = null
+    let sharePct = SHARE_SCALE
+    if (slotFound) {
+      const profile = slotFound.slot.profile
+      weights = profileWeights(catalog, profile, roleWeights)
+      parts = { ip: effectiveRoleWeights(catalog, profile.ip.roleId, roleWeights), oop: effectiveRoleWeights(catalog, profile.oop.roleId, roleWeights), sharePct: profile.sharePct }
+      norm = slotFound.norm
+      goalkeeper = catalog.role(slotFound.slot.roleId)?.goalkeeper ?? false
+      ipSlots = [POSITION_INDEX.get(profile.ip.position)!]
+      if (profile.oop.position !== profile.ip.position) {
+        oopSlot = POSITION_INDEX.get(profile.oop.position)!
+        sharePct = profile.sharePct
+      }
+    } else {
+      const reference = catalog.referenceOf(query.roleId)
+      if (!reference) return fail('알 수 없는 역할입니다.', saveName)
+      const spec = this.referenceNormSpec(catalog, reference, roleWeights)
+      weights = spec.weights
+      parts = spec.parts!
+      norm = this.normsOfSpecs(world, [spec], this.referenceNormSpecs(catalog, roleWeights, 'ip'))[spec.key]
+      goalkeeper = reference.goalkeeper
+      ipSlots = reference.positions.map((key) => POSITION_INDEX.get(key)!).filter((index) => index !== undefined)
+    }
+    const ratingAt = (k: number, slot: number): number => world.positions[k * POSITION_COUNT + slot]
     const ratingOf = (k: number): number => {
       let best = 0
-      for (const slot of slots) best = Math.max(best, world.positions[k * POSITION_COUNT + slot])
+      for (const slot of ipSlots) best = Math.max(best, world.positions[k * POSITION_COUNT + slot])
       return best
     }
     const eligible = (k: number): boolean => ratingOf(k) >= K.PLAYABLE_RATING
-    const scoreOf = (k: number): number | null => savedRoleScore(world.attributes, k * ATTRIBUTE_COUNT, prepared)
+    /** 숙련 감점에 쓰는 숙련(점유 시 숙련 rating을 받는다). 두 국면의 포지션이 다른 자리만 점유 시와 비점유 시 숙련을 비중으로 섞는다(같으면 숙련 하나라 옛 뜻 그대로다) */
+    const penaltyRatingOf = (k: number, rating: number): RatingInput => (oopSlot === null ? rating : { ip: rating, oop: ratingAt(k, oopSlot), sharePct })
+    // 스쿼드 화면과 같은 값이 나오도록 게임 표시값(1~20)으로 계산한다(roles.ts의 savedRoleScore와 끝자리까지 같다).
+    // 선수 10만 명을 도는 일이라, 가중치가 0~5의 정수이면 역할별 정수 합 열로 센다(능력치가 다 있지 않은 선수와 열로 셀 수 없는 가중치는 savedRoleScore로 간다)
+    const scoreOf = scorerOf(world, weights, this.normScopeOf(world).columns, parts)
 
     // 내 팀(1군)의 주급·몸값 수준과, 이 역할을 뛸 수 있는 선수들
     const mine: Array<{ k: number; score: number; eff: number }> = []
@@ -635,7 +814,7 @@ export class WorldService {
       if (eligible(k)) {
         const score = scoreOf(k)
         if (score === null) continue
-        mine.push({ k, score, eff: effectiveScore(score, ratingOf(k), null, norm.sigma) })
+        mine.push({ k, score, eff: effectiveScore(score, penaltyRatingOf(k, ratingOf(k)), null, norm.sigma) })
       }
     }
     mine.sort((a, b) => b.eff - a.eff)
@@ -665,7 +844,6 @@ export class WorldService {
       groupSlots: group?.slots.length,
       expectedWage: wageCoefs ? (ca, age) => expectedWage(wageCoefs, ca, age) : null
     }
-    const goalkeeper = role.positions.includes('GK')
     const traitAt = (id: TraitId): number => ATTRIBUTE_INDEX.get(id)!
     const traitIds = Object.keys(K.TRAIT_WEIGHTS) as TraitId[]
     const inputOf = (k: number, score: number, age: number | null): RecommendInput => {
@@ -680,6 +858,8 @@ export class WorldService {
         goalkeeper,
         roleScore: score,
         roleRating: ratingOf(k),
+        // 두 국면의 포지션이 다른 자리만 비점유 시 숙련과 비중을 준다(적합도에서 빼는 숙련 감점에만 쓴다. 10 미만 곱셈 보정은 점유 시 숙련만 본다)
+        ...(oopSlot === null ? {} : { oopRating: ratingAt(k, oopSlot), sharePct }),
         age,
         ca: world.ca[k],
         pa: world.pa[k],
@@ -730,7 +910,7 @@ export class WorldService {
       const score = scoreOf(k)
       if (score === null) continue
       // 다른 구단과 계약을 마친 무소속 선수는 소속 있음으로 본다(자유 계약 유형에서 뺀다. 5회차)
-      const categories = categoriesOf({ score, age, ca: world.ca[k], pa: world.pa[k], hasClub: team !== NO_TEAM || signedTeam !== null, rating: ratingOf(k) }, bench, norm, goalkeeper, window)
+      const categories = categoriesOf({ score, age, ca: world.ca[k], pa: world.pa[k], hasClub: team !== NO_TEAM || signedTeam !== null, rating: penaltyRatingOf(k, ratingOf(k)) }, bench, norm, goalkeeper, window)
       const qualified = categories.length > 0
       const inTab = query.category === 'all' ? qualified : categories.includes(query.category)
       const nameHit = !search || name.toLowerCase().includes(search)

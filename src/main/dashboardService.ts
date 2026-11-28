@@ -16,9 +16,12 @@ import {
   type WageModelInfo,
   type WagePoint
 } from '@shared/dashboard'
+import type { RoleNorms } from '@shared/norms'
 import { positionsLabel } from '@shared/positions'
+import { LEGACY_CATALOG, type RoleCatalog } from '@shared/roleCatalog'
 import type { SeasonResult } from '@shared/season'
 import { analyseTactic } from '@shared/tactic'
+import { legacyTactic, type Tactic } from '@shared/tacticModel'
 import type { Settings } from '@shared/types'
 import { NameBook } from './names'
 import { calendar } from './save/contracts'
@@ -33,10 +36,34 @@ const RECOMMEND_SHOWN = 3
 /** 같은 리그 순위표가 이 팀 수 이상이어야 "내 리그"의 주급으로 기준을 세운다 */
 const MIN_LEAGUE_TEAMS = 8
 
+/**
+ * 대시보드가 쓰는 설정. 옛 꼴(포메이션과 자리별 역할, 옛 14역할 카탈로그)이거나, 주 전술과 그 전술이 쓰는 카탈로그다.
+ * 대시보드와 영입 후보는 주 전술을 쓴다(A-03): 본체는 resolveMainTactic(설정, 세이브 열쇠, 카탈로그)이 고른 전술을 준다.
+ */
+export type DashboardSettings = Pick<Settings, 'formation' | 'slotRoles' | 'roleWeights'> | { tactic: Tactic; catalog: RoleCatalog; roleWeights: Settings['roleWeights'] }
+
+/** 이 계산이 쓰는 전술과 카탈로그와 가중치(옛 꼴이면 옛 설정으로 만든 옛 전술과 옛 14역할 카탈로그) */
+interface ResolvedSettings {
+  tactic: Tactic
+  catalog: RoleCatalog
+  roleWeights: Settings['roleWeights']
+}
+
+function resolveSettings(settings: DashboardSettings): ResolvedSettings {
+  if ('tactic' in settings && settings.tactic) return { tactic: settings.tactic, catalog: settings.catalog, roleWeights: settings.roleWeights }
+  const old = settings as Pick<Settings, 'formation' | 'slotRoles' | 'roleWeights'>
+  return { tactic: legacyTactic(old.formation, old.slotRoles ?? {}), catalog: LEGACY_CATALOG, roleWeights: old.roleWeights }
+}
+
+/** 카탈로그 가운데 사용자가 만든 역할의 이름과 가중치(바뀌면 대시보드를 다시 계산하는 열쇠에 넣는다) */
+function customRolesKey(catalog: RoleCatalog): string {
+  return JSON.stringify(catalog.roles.filter((role) => role.id.startsWith('user.')).map((role) => [role.id, role.phase, role.positions, catalog.baseWeights(role.id)]))
+}
+
 export interface DashboardDeps {
   world: WorldService
   season: SeasonService
-  settings(): Pick<Settings, 'formation' | 'slotRoles' | 'roleWeights'>
+  settings(): DashboardSettings
   /** 게임에 물어 알게 된 이름(팀 이름)을 적어 둔 폴더 */
   namesDir: string
 }
@@ -115,9 +142,9 @@ export class DashboardService {
     const blocked = this.deps.world.blocked()
     if (blocked) return Promise.resolve(fail(blocked))
     if (world.teamId === undefined) return Promise.resolve(fail(NO_TEAM_MESSAGE))
-    const settings = this.deps.settings()
-    // 게임의 지금 값을 받으면 능력치가 바뀌므로, 받은 시각이 달라지면 다시 계산한다
-    const key = JSON.stringify([this.deps.world.status().liveAt, settings.formation, settings.slotRoles, settings.roleWeights])
+    const settings = resolveSettings(this.deps.settings())
+    // 게임의 지금 값을 받으면 능력치가 바뀌므로, 받은 시각이 달라지면 다시 계산한다. 전술(JSON)과 카탈로그가 바뀌어도 다시 계산한다
+    const key = JSON.stringify([this.deps.world.status().liveAt, settings.tactic, settings.catalog.id, customRolesKey(settings.catalog), settings.roleWeights])
     if (this.cached && this.cached.world === world && this.cached.key === key) return this.cached.data
     const data = this.build(world, settings)
     const entry: Cached = { world, key, data }
@@ -129,7 +156,7 @@ export class DashboardService {
     return data
   }
 
-  private async build(world: SaveWorld, settings: ReturnType<DashboardDeps['settings']>): Promise<DashboardData> {
+  private async build(world: SaveWorld, settings: ResolvedSettings): Promise<DashboardData> {
     const teamId = world.teamId!
     const path = this.deps.world.path!
     const status = this.deps.world.status()
@@ -226,16 +253,12 @@ export class DashboardService {
       loans = { in: incoming.sort(byCa), out: outgoing.sort(byCa) }
     }
 
-    // 전술 분석(스쿼드 전술판과 같은 계산). 역할별 기준 분포(roleNorms)와 함께
-    const analysis = analyseTactic({
-      rows: squad.rows,
-      columns: squad.columns,
-      today,
-      formation: settings.formation,
-      slotRoles: settings.slotRoles,
-      roleWeights: settings.roleWeights,
-      norms: squad.roleNorms
-    })
+    // 전술 분석(스쿼드 전술판과 같은 계산). 기준 분포는 옛 14역할이면 스쿼드 결과의 역할 14개 그대로이고,
+    // FM26이면 이 전술의 프로파일마다에 자리 없는 선수의 "가장 맞는 역할"을 재는 참조 프로파일(점유 시 역할 40개)을 더한 것이다
+    const { tactic, catalog, roleWeights } = settings
+    const norms: RoleNorms | undefined =
+      catalog.id === 'legacy14' ? squad.roleNorms : { ...this.deps.world.referenceNorms('ip'), ...this.deps.world.normsForTactic(tactic) }
+    const analysis = analyseTactic({ rows: squad.rows, columns: squad.columns, today, tactic, catalog, roleWeights, norms })
 
     const ages = ageStructure(players)
     const contracts = contractWindows(players, today)
@@ -247,12 +270,13 @@ export class DashboardService {
     const model = this.wageModel(world, table, loansTrusted)
 
     // 정리 후보
-    let surplus: DashboardData['surplus'] = { ok: false, message: '전술을 분석하지 못해 정리 후보를 가리지 못했습니다.', formation: settings.formation, rows: [], prospects: [] }
+    let surplus: DashboardData['surplus'] = { ok: false, message: '전술을 분석하지 못해 정리 후보를 가리지 못했습니다.', formation: tactic.preset ?? tactic.id, rows: [], prospects: [] }
     if (analysis) {
       surplus = {
         ok: true,
         formation: analysis.formation.label,
-        ...surplusReport({ players, rows: squad.rows, columns: squad.columns, analysis, roleWeights: settings.roleWeights, norms: squad.roleNorms, wageModel: model, loanedIn })
+        // 분석을 만든 카탈로그를 꼭 같이 넘긴다(다르면 던진다)
+        ...surplusReport({ players, rows: squad.rows, columns: squad.columns, analysis, roleWeights, catalog, norms, wageModel: model, loanedIn })
       }
     }
 
@@ -263,7 +287,8 @@ export class DashboardService {
 
     // 영입 추천: 가장 보강이 급한 자리의 즉시 전력 후보(영입 후보 화면의 첫 화면과 같은 조건)
     const need = analysis?.byNeed[0] ?? null
-    const slot = analysis && need ? recommendSlotOf(analysis.formation.id, need) : null
+    // 영입 카드가 영입 후보로 넘어가는 자리 참조에 전술 번호를 싣는다(analysis.tactic.id. 안 주면 옛 전술의 번호가 된다)
+    const slot = analysis && need ? recommendSlotOf(analysis.formation.id, need, analysis.tactic.id) : null
     let recommend: DashboardData['recommend'] = { ok: false, message: '전술을 분석하지 못해 영입 후보를 고르지 못했습니다.', slot: null, rows: [], matched: 0 }
     if (analysis && need && slot) {
       const found = this.deps.world.candidates({
@@ -274,7 +299,7 @@ export class DashboardService {
         includeUnknownClub: false,
         search: '',
         expiringWithinMonths: null,
-        slot: { formation: analysis.formation.id, slotRoles: settings.slotRoles, index: need.slot.index }
+        slot: { tactic: analysis.tactic, index: need.slot.index }
       })
       // 현실성이 낮지 않은 후보 가운데 총점 상위 3명. 3명이 안 되면 나머지(현실성 낮음)로 채우고 표지를 단다(5회차). 정렬은 총점 그대로다
       const realistic = found.rows.filter((row) => !row.recommend.realism.low)

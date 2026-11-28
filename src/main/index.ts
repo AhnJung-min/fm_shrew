@@ -2,7 +2,10 @@ import { existsSync, mkdirSync, writeFileSync } from 'node:fs'
 import { basename, join } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { app, BrowserWindow, dialog, ipcMain, Menu, nativeImage, net, protocol, session, shell, Tray } from 'electron'
-import { dropMainOwned, NOT_READY, normsFailed } from '@shared/tacticApi'
+import { activeCatalog } from '@shared/catalogs'
+import { TACTIC_SLOTS, TACTICS_PER_SAVE } from '@shared/limits'
+import { dropMainOwned, normsFailed } from '@shared/tacticApi'
+import { resolveMainTactic, saveKeyOf } from '@shared/tacticModel'
 import type { AppStatus, Settings } from '@shared/types'
 import type { CandidateQuery, EditorEdit } from '@shared/world'
 import { BackupManager } from './backup'
@@ -21,7 +24,7 @@ import { TalkController } from './talk/controller'
 import { KeyStore } from './talk/keyStore'
 import { trayIconFor } from './trayIcon'
 import { SaveWatcher } from './watcher'
-import { WorldService } from './worldService'
+import { NO_TEAM_MESSAGE, WorldService } from './worldService'
 
 // 검증용 환경 변수: 데이터 폴더와 세이브 폴더를 바꾸고, 화면을 PNG로 찍은 뒤 종료한다
 const SMOKE_OUT = process.env.FMB_SMOKE_OUT
@@ -157,6 +160,9 @@ function createTray(): void {
   tray.on('click', showWindow)
 }
 
+/** 화면이 기준 분포(worldNorms)를 한 번에 물을 수 있는 프로파일 수(세이브마다 둘 수 있는 전술 수 × 전술의 자리 수) */
+const NORMS_PROFILES_MAX = TACTICS_PER_SAVE * TACTIC_SLOTS
+
 /** 역할 가중치 묶음 파일의 대화상자 설정. 파일 경로는 화면이 정하지 않고 본체의 대화상자로만 받는다(N-03) */
 const BUNDLE_FILTERS = [{ name: '역할 가중치 묶음(JSON)', extensions: ['json'] }]
 
@@ -270,12 +276,21 @@ function registerIpc(): void {
   })
 
   // 2단계 새 창구(전술 저장, 기준 분포, 게임 전술 가져오기, 전술 추천, 사용자 역할과 가중치 묶음, 별점 대조, 이전 알림 확인).
-  // 서비스는 아직 "준비되지 않았습니다"를 돌려주는 빈 틀이다. 기준 분포는 본체의 계산이 준비되면 world에 이어 붙인다
+  // 기준 분포는 본체의 world.normsFor가 구한다. 그 밖의 서비스는 아직 채우지 않은 곳이 있다
   registerTacticIpc(ipcMain, {
     settings,
     world,
     link,
-    norms: () => normsFailed(NOT_READY),
+    norms: (profiles) => {
+      if (!world.world) return normsFailed('먼저 시작 화면에서 세이브를 골라 적용해 주세요.')
+      const blocked = world.blocked()
+      if (blocked) return normsFailed(blocked)
+      // 내 팀을 모르면 기준 능력(C*)이 가장 낮은 값으로 떨어져, 팀이 정해진 뒤와 눈금이 다른 기준 분포가 나온다. 스쿼드와 후보 찾기처럼 막는다
+      if (world.world.teamId === undefined) return normsFailed(NO_TEAM_MESSAGE)
+      // 화면이 한 번에 묻는 것은 전술 몇 개의 프로파일이다(전술 하나가 11개). 그 이상은 화면의 잘못이라 계산하지 않는다
+      if (profiles.length > NORMS_PROFILES_MAX) return normsFailed('한 번에 구할 수 있는 자리 수를 넘었습니다.')
+      return { ok: true, norms: world.normsFor(profiles) }
+    },
     pickSavePath,
     pickOpenPath,
     dataDir: app.getPath('userData')
@@ -359,6 +374,9 @@ app.whenReady().then(async () => {
       }
     },
     roleWeights: () => settings.get().roleWeights,
+    // 쓰는 역할 카탈로그와 주 전술(스쿼드 결과의 기준 분포가 따른다). 부를 때마다 설정에서 읽는다
+    catalog: () => activeCatalog(settings.get()),
+    mainTactic: () => resolveMainTactic(settings.get(), saveKeyOf(world.path), activeCatalog(settings.get())),
     // 아래에서 만드는 대시보드가 계산해 둔 리그 주급 모델(자유 계약 선수의 주급 어림). 부를 때 이미 만들어져 있다
     wageModel: () => dashboard.currentWageModel(),
     namesDir: join(dataDir, 'names')
@@ -368,7 +386,17 @@ app.whenReady().then(async () => {
     current: () => (world.path && world.world ? { path: world.path, world: world.world } : null),
     namesDir: join(dataDir, 'names')
   })
-  dashboard = new DashboardService({ world, season, settings: () => settings.get(), namesDir: join(dataDir, 'names') })
+  dashboard = new DashboardService({
+    world,
+    season,
+    // 대시보드와 영입 후보는 주 전술을 쓴다(A-03). 옛 카탈로그면 옛 설정(포메이션과 자리별 역할)에서 만든 전술이다
+    settings: () => {
+      const current = settings.get()
+      const catalog = activeCatalog(current)
+      return { tactic: resolveMainTactic(current, saveKeyOf(world.path), catalog), catalog, roleWeights: current.roleWeights }
+    },
+    namesDir: join(dataDir, 'names')
+  })
   link = new GameLink(
     world,
     () => settings.get().saveDir,
