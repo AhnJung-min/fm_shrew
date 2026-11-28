@@ -5,6 +5,7 @@ import { describe, expect, it } from 'vitest'
 import { SIGNATURE } from '../src/main/save/container'
 import { checkGameVersion, gameReadGate, normalizeVersion, roleGameId, SUPPORTED_VERSIONS } from '../src/shared/compat'
 import { NEEDED_PLUGIN, TACTIC_PLUGIN } from '../src/shared/game'
+import { FULL_PLUGIN } from '../src/shared/pluginGates'
 import { DEFAULT_ROLE } from '../src/shared/roles'
 
 const row = SUPPORTED_VERSIONS[0]
@@ -98,6 +99,8 @@ describe('지원 표의 모양', () => {
   it('기능마다 필요한 플러그인 버전은 0.14.0이다', () => {
     expect(row.plugin).toEqual({ tactic: '0.14.0', stars: '0.14.0' })
     expect(TACTIC_PLUGIN).toBe('0.14.0')
+    // 앱의 기능이 모두 켜지는 플러그인 버전(안내 글이 따르는 값)이 지원 표의 기능 버전과 같다: 둘이 따로 어긋나지 않는다
+    expect(FULL_PLUGIN).toBe(TACTIC_PLUGIN)
   })
 })
 

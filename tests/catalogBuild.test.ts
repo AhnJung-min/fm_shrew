@@ -471,14 +471,14 @@ describe.skipIf(!SOURCE && !WRITE)('원본으로 만들기(FMB_CATALOG_SOURCE)',
     expect(text, '자료 파일이 원본에서 만든 것과 다릅니다. `npm run catalog:build`로 다시 만들고 바뀐 곳을 확인한다').toBe(readFileSync(DATA_FILE, 'utf8'))
   })
 
-  it.skipIf(!SOURCE)('1군 별점 표와 어긋나는 포지션이 없다', () => {
+  // 원본 폴더에 그 파일이 없으면 통과가 아니라 건너뜀으로 보이게 한다(원본을 주고 돌린 초록 결과가 이 대조가 돌았다는 뜻이 되게)
+  it.skipIf(!SOURCE || !existsSync(join(dir, 'role-stars.json')))('1군 별점 표(role-stars.json)와 어긋나는 포지션이 없다', () => {
     const { source, stars } = readSource()
-    if (!stars) return
-    expect(checkStarTables(buildFm26Data(source), stars)).toEqual([])
+    expect(stars, 'role-stars.json을 읽지 못했다').not.toBeNull()
+    expect(checkStarTables(buildFm26Data(source), stars!)).toEqual([])
   })
 
-  it.skipIf(!SOURCE)('게임에서 읽은 포지션별 역할 표(role-by-position.json)와 어긋나는 포지션이 없다', () => {
-    if (!existsSync(join(dir, 'role-by-position.json'))) return
+  it.skipIf(!SOURCE || !existsSync(join(dir, 'role-by-position.json')))('게임에서 읽은 포지션별 역할 표(role-by-position.json)와 어긋나는 포지션이 없다', () => {
     expect(checkPositionTables(buildFm26Data(readSource().source), parsePositionTable(read('role-by-position.json')))).toEqual([])
   })
 
