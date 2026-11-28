@@ -9,8 +9,7 @@
  * 후보: 기준 하나, 능력치 54개마다 한 단계 올린 것 하나씩, 점유 시 포지션 숙련만 한 단계 올린 것, (두 국면의 포지션이 다를 때) 비점유 시 포지션 숙련만 한 단계 올린 것.
  *
  * 시간: 이 파일은 비중 5개 × 탭 5개를 모두 돈다(6,000번 남짓의 후보 찾기). 60초를 넘으면 비중 50·70은 '전체' 탭만 도는 것으로 줄이고 여기에 적는다(지금은 줄이지 않았다).
- * 쓰는 카탈로그는 FM26 그대로이고, 칸 종류의 역할 목록 검사만 열어 둔다(choicesAt이 포지션에서 고를 수 있는 역할 전부를 준다):
- * 칸 종류마다 목록이 달라 모든 역할을 한 전술에 놓으려면 검사를 열어야 하고, 단조성은 목록과 상관없이 가중치와 숙련만 보기 때문이다.
+ * 쓰는 카탈로그는 FM26 그대로다. 역할마다 그 역할을 올바르게(전술 검사를 막힘 없이 통과해) 놓을 수 있는 첫 프리셋 자리에 놓고, 다른 국면의 역할은 그 칸의 기본 역할로 둔다.
  */
 import { rmSync } from 'node:fs'
 import { afterAll, describe, expect, it } from 'vitest'
@@ -19,7 +18,8 @@ import { NO_TEAM, type SaveWorld } from '../src/main/save/world'
 import { FM26_CATALOG } from '../src/shared/catalogFm26'
 import { FORMATIONS } from '../src/shared/depth'
 import type { PositionKey } from '../src/shared/roles'
-import type { RoleCatalog, RoleChoice } from '../src/shared/roleCatalog'
+import type { CatalogRole } from '../src/shared/roleCatalog'
+import type { Phase } from '../src/shared/slotProfile'
 import { blockingProblems, cellPosition, presetTactic, slotKindOf, validateTactic, withShare, type Cell, type Tactic, type TacticSet } from '../src/shared/tacticModel'
 import { SAVE_ATTRIBUTE_ORDER, type CandidateCategory } from '../src/shared/world'
 import { ask, buildWorld, POSITION_AT, serviceOf, type PersonSpec } from './helpers/phaseWorld'
@@ -35,13 +35,6 @@ const CASES = [
   { age: 24, club: false, seed: 33 }
 ]
 
-/** FM26 카탈로그에서 칸 종류의 역할 목록 검사만 연 것: 포지션에서 고를 수 있는 역할 전부를 준다(근거 unknown이라 막는 검사에 걸리지 않는다) */
-const OPEN: RoleCatalog = {
-  ...FM26_CATALOG,
-  choicesAt: (position, phase): RoleChoice[] =>
-    FM26_CATALOG.roles.filter((role) => role.selectable && role.phase === phase && role.positions.includes(position)).map((role) => ({ roleId: role.id, evidence: 'unknown' }))
-}
-
 interface Profile {
   label: string
   /** 점유 시·비점유 시 포지션 */
@@ -53,35 +46,36 @@ interface Profile {
   roleId: string
 }
 
-/** 그 포지션이 든 첫 프리셋과 자리 순번 */
-function presetSlotOf(position: PositionKey): { preset: string; index: number } {
+/** 그 역할을 올바르게 놓을 수 있는 첫 프리셋 자리(전술 검사가 막는 문제 없이 통과하는 자리)와 그 전술 */
+function placementOf(role: CatalogRole): { tactic: Tactic; index: number; position: PositionKey } {
+  const phase = role.phase as Phase
   for (const formation of FORMATIONS) {
-    const index = formation.rows.flat().indexOf(position)
-    if (index >= 0) return { preset: formation.id, index }
+    const base = presetTactic(formation.id, FM26_CATALOG, `p-${role.id}`)
+    const positions = formation.rows.flat()
+    for (let index = 0; index < positions.length; index++) {
+      if (!role.positions.includes(positions[index])) continue
+      const slots = base.slots.map((slot, at) => (at === index ? { ...slot, [phase]: { ...slot[phase], roleId: role.id } } : slot))
+      const tactic: Tactic = { ...base, slots }
+      if (blockingProblems(validateTactic(tactic, FM26_CATALOG)).length === 0) return { tactic, index, position: positions[index] }
+    }
   }
-  throw new Error(`프리셋에 없는 포지션: ${position}`)
+  throw new Error(`올바르게 놓을 수 있는 자리가 없는 역할: ${role.id}`)
 }
 
 /** 모든 프로파일 사례 */
 function profiles(): Profile[] {
   const list: Profile[] = []
   for (const role of FM26_CATALOG.roles.filter((each) => each.selectable)) {
-    const position = role.positions[0]
-    const { preset, index } = presetSlotOf(position)
-    const base = presetTactic(preset, OPEN, `p-${role.id}`)
-    // 고른 역할이 아닌 국면의 역할은 그 칸의 기본 역할로 채운다
-    const ipRole = role.phase === 'ip' ? role.id : OPEN.defaultRole(position, 'ip', slotKindOf(base, index, 'ip'))
-    const oopRole = role.phase === 'oop' ? role.id : OPEN.defaultRole(position, 'oop', slotKindOf(base, index, 'oop'))
-    const slots = base.slots.map((slot, at) => (at === index ? { ip: { ...slot.ip, roleId: ipRole }, oop: { ...slot.oop, roleId: oopRole } } : slot))
-    list.push({ label: `${role.phase === 'ip' ? '공 소유 시' : '공 미소유 시'} ${role.id}`, ipPosition: position, oopPosition: position, tactic: { ...base, slots }, index, roleId: ipRole })
+    const { tactic, index, position } = placementOf(role)
+    list.push({ label: `${role.phase === 'ip' ? '공 소유 시' : '공 미소유 시'} ${role.id}`, ipPosition: position, oopPosition: position, tactic, index, roleId: tactic.slots[index].ip.roleId })
   }
   // 두 국면의 포지션이 다른 셋: 공 미소유 시 칸을 바꾸고 그 칸의 기본 역할을 쓴다
   const cross = (label: string, preset: string, index: number, oopCell: Cell): Profile => {
-    const base = presetTactic(preset, OPEN, `cross-${label}`)
+    const base = presetTactic(preset, FM26_CATALOG, `cross-${label}`)
     const moved: Tactic = { ...base, slots: base.slots.map((slot, at) => (at === index ? { ip: slot.ip, oop: { ...slot.oop, cell: oopCell } } : slot)) }
     const ipPosition = cellPosition(moved.slots[index].ip.cell)!
     const oopPosition = cellPosition(oopCell)!
-    const oopRole = OPEN.defaultRole(oopPosition, 'oop', slotKindOf(moved, index, 'oop'))
+    const oopRole = FM26_CATALOG.defaultRole(oopPosition, 'oop', slotKindOf(moved, index, 'oop'))
     const tactic: Tactic = { ...moved, slots: moved.slots.map((slot, at) => (at === index ? { ip: slot.ip, oop: { ...slot.oop, roleId: oopRole } } : slot)) }
     return { label, ipPosition, oopPosition, tactic, index, roleId: tactic.slots[index].ip.roleId }
   }
@@ -146,7 +140,7 @@ describe('FM26 단조성(두 국면): 능력치 하나, 점유 시 숙련, 비�
     expect(ALL).toHaveLength(40 + 39 + 3)
     for (const profile of ALL) {
       for (const share of SHARES) {
-        const problems = blockingProblems(validateTactic({ ...profile.tactic, sharePct: share }, OPEN))
+        const problems = blockingProblems(validateTactic({ ...profile.tactic, sharePct: share }, FM26_CATALOG))
         expect(problems.map((problem) => problem.message), `${profile.label} ${share}`).toEqual([])
       }
     }
@@ -167,7 +161,7 @@ describe('FM26 단조성(두 국면): 능력치 하나, 점유 시 숙련, 비�
           const cross = profile.ipPosition !== profile.oopPosition
           const trainedNames = ['후보-숙련', ...(cross ? ['후보-비점유숙련'] : [])]
           const world = worldFor(profile, profileIndex, spec)
-          const made = serviceOf(world, { catalog: OPEN, mainTactic: profile.tactic })
+          const made = serviceOf(world, { catalog: FM26_CATALOG, mainTactic: profile.tactic })
           namesDirs.push(made.namesDir)
           for (const share of SHARES) {
             const tactic = withShare(set(profile.tactic), profile.tactic.id, share).tactics[0]
@@ -207,7 +201,7 @@ describe('FM26 단조성(두 국면): 능력치 하나, 점유 시 숙련, 비�
     const at = SAVE_ATTRIBUTE_ORDER.indexOf('injuryProneness')
     const k = world.names.indexOf('후보-injuryProneness')
     world.attributes[k * ATTRIBUTE_COUNT + at] += 10
-    const made = serviceOf(world, { catalog: OPEN, mainTactic: profile.tactic })
+    const made = serviceOf(world, { catalog: FM26_CATALOG, mainTactic: profile.tactic })
     namesDirs.push(made.namesDir)
     const result = made.ws.candidates(ask(profile.roleId, { category: 'all', onlyEligible: false, search: '후보-', slot: { tactic: profile.tactic, index: profile.index } }))
     expect(result.rows.find((row) => row.name === '후보-injuryProneness')!.recommend.total).toBeLessThan(result.rows.find((row) => row.name === '후보-기준')!.recommend.total)
@@ -216,7 +210,7 @@ describe('FM26 단조성(두 국면): 능력치 하나, 점유 시 숙련, 비�
   it('숙련을 올린 후보는 두 국면의 포지션이 다른 자리에서 점유 시 숙련만, 비점유 시 숙련만 올라도 감점이 줄어 비교용 적합도가 오른다', () => {
     const profile = ALL.find((each) => each.ipPosition !== each.oopPosition)!
     const world = worldFor(profile, 80, CASES[1])
-    const made = serviceOf(world, { catalog: OPEN, mainTactic: profile.tactic })
+    const made = serviceOf(world, { catalog: FM26_CATALOG, mainTactic: profile.tactic })
     namesDirs.push(made.namesDir)
     const result = made.ws.candidates(ask(profile.roleId, { category: 'all', onlyEligible: false, search: '후보-', slot: { tactic: profile.tactic, index: profile.index } }))
     const base = result.rows.find((row) => row.name === '후보-기준')!

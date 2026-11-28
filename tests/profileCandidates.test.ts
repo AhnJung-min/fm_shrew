@@ -20,7 +20,7 @@ import { savedRoleScore } from '../src/shared/roles'
 import { mixedPenaltySigma } from '../src/shared/slotProfile'
 import { analyseTactic } from '../src/shared/tactic'
 import { legacyTactic, presetTactic, profileOf, type Tactic } from '../src/shared/tacticModel'
-import { SAVE_ATTRIBUTE_ORDER, type CandidateCategory, type CandidateQuery } from '../src/shared/world'
+import { categoriesOf, SAVE_ATTRIBUTE_ORDER, type CandidateCategory, type CandidateQuery } from '../src/shared/world'
 import { alternativeRoleVariants } from './helpers/exactSnapshot'
 import { ask, buildWorld, POSITION_AT, serviceOf, type PersonSpec } from './helpers/phaseWorld'
 import { groupAsk, SYNTHETIC_TODAY, syntheticService, syntheticWorld } from './helpers/syntheticWorld'
@@ -177,6 +177,28 @@ describe('FM26: 자리 프로파일로 찾는다(공 소유 시 오른쪽 공격
     }
     // 공 소유 시 20·공 미소유 시 1인 선수는 0.4 × 공 미소유 시 숙련 1의 감점만큼 깎인다(공 소유 시 숙련 20은 감점 0)
     expect(rowOf(result, '후보 다')!.recommend.fit.positionSigma).toBe((60 * 0 + 40 * posPenaltySigma(1)) / 100)
+  })
+
+  it('기준 분포는 그 자리 프로파일의 것이고(쓰는 카탈로그의 열쇠), 비교 기준은 내 팀의 가장 약한 주전이다', () => {
+    const result = ws.candidates(query())
+    expect(result.norm).toEqual(ws.normsFor([profile])[FM26_CATALOG.normKey(profile)])
+    expect(result.norm!.n).toBeGreaterThan(0)
+    expect(result.bench.starter).not.toBeNull()
+    expect(result.bench.starter!.name).toMatch(/^우리 /)
+    expect(result.group).toEqual({ label: '오른쪽 공격', slots: 1 })
+    expect(result.need).toBeGreaterThanOrEqual(0)
+  })
+
+  it('유형(즉시 전력·로테이션·유망주) 판정도 같은 섞은 감점으로 한다: 점유 시 숙련만 보면 달라지는 선수가 있다', () => {
+    const result = ws.candidates(query({ onlyEligible: false }))
+    let different = 0
+    for (const [name, ip, oop] of CANDIDATES) {
+      const row = rowOf(result, name)!
+      const player = { score: row.score, age: row.age, ca: row.ca, pa: row.pa, hasClub: true }
+      expect(row.categories, name).toEqual(categoriesOf({ ...player, rating: { ip, oop, sharePct: 60 } }, result.bench, result.norm!, false))
+      if (JSON.stringify(row.categories) !== JSON.stringify(categoriesOf({ ...player, rating: ip }, result.bench, result.norm!, false))) different++
+    }
+    expect(different).toBeGreaterThan(0)
   })
 
   it('10 미만 곱셈 보정(lowGate)은 점유 시 숙련만 본다: 공 소유 시 20·공 미소유 시 1이면 보정 없음, 공 소유 시 8이면 공 미소유 시 20이어도 보정이 걸린다', () => {
