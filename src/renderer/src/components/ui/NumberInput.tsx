@@ -72,8 +72,9 @@ export function NumberInput(props: {
       onKeyDown={(event) => {
         if (event.key === 'ArrowUp' || event.key === 'ArrowDown') {
           event.preventDefault()
+          // 지금 칸에 적힌 값에서 시작한다(칸을 비웠으면 빈 칸에서, 알아볼 수 없는 글이면 마지막 값에서)
           const current = parseNumber(text, min, max)
-          const next = stepNumber(typeof current === 'number' ? current : value, event.key, min, max)
+          const next = stepNumber(current === 'invalid' ? value : current, event.key, min, max)
           commit(next)
           setText(String(next))
         } else if (event.key === 'Enter') {
