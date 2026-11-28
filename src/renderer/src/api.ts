@@ -6,6 +6,7 @@ import { mockCandidates, mockClub, mockDashboard, mockEditorList, mockEditorPlay
 import { mockRoleToolsApi } from './lib/mock/roleTools'
 import { mockTacticsApi } from './lib/mock/tactics'
 import { mockTacticToolsApi } from './lib/mock/tacticTools'
+import { sceneParam } from './lib/preview'
 import { WON_RATE_TEXT } from '@shared/playerView'
 
 declare global {
@@ -19,14 +20,18 @@ declare global {
  * 실제 앱에서는 preload가 넣어 준 window.api를 쓴다.
  * 주소에 ?empty를 붙이면 세이브를 적용하기 전, ?off를 붙이면 게임이 꺼진 상태,
  * ?old를 붙이면 게임에 옛 플러그인이 올라가 있는 상태, ?noteam을 붙이면 내 구단을 아직 모르는 상태, ?badformat을 붙이면 세이브 형식 점검에 걸린 상태를 본다.
+ * 설정의 시작 값은 ?theme=black, ?density=comfortable, ?scale=1.1 또는 1.25로 바꾼다. ?tick=초를 붙이면 그 간격으로 게임에서 값을 다시 받은 것처럼
+ * link:changed에 새 liveAt을 보낸다(앱이 3분마다 하는 다시 받기 흉내). ?seen(이번 실행에서 연결된 적이 있다)은 lib/linkState.ts가 읽는다.
  */
 function createMockApi(): Api & ExtraApi {
+  const scale = Number(sceneParam('scale'))
   let settings: Settings = {
     saveDir: 'C:\\Users\\me\\Documents\\Sports Interactive\\Football Manager 26\\games',
     saveTeams: {},
     activeSave: '',
-    density: 'compact',
-    theme: 'blue',
+    density: sceneParam('density') === 'comfortable' ? 'comfortable' : 'compact',
+    theme: sceneParam('theme') === 'black' ? 'black' : 'blue',
+    ...(scale === 1.1 || scale === 1.25 ? { uiScale: scale } : {}),
     formation: '4-2-3-1',
     slotRoles: {},
     roleWeights: {},
@@ -95,6 +100,14 @@ function createMockApi(): Api & ExtraApi {
     teamNote: ''
   })
   const tell = (busy = false): void => listeners.forEach((listener) => listener(linkStatus(busy)))
+  // ?tick=초: 앱이 3분마다 게임에서 값을 다시 받는 것을 흉내 낸다(읽는 중으로 알린 뒤 새 liveAt으로 알림). 화면이 그때마다 자료를 다시 청해도 보던 자리가 그대로인지 본다
+  const tickSeconds = Number(sceneParam('tick'))
+  if (tickSeconds > 0) {
+    setInterval(() => {
+      tell(true)
+      setTimeout(() => tell(), 300)
+    }, tickSeconds * 1000)
+  }
   /** 전술·역할 도구의 목업이 설정을 읽고 바꾸는 길 */
   const state = {
     getSettings: (): Settings => settings,
