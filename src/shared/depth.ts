@@ -1,25 +1,12 @@
+import type { Formation } from './formations'
 import { K } from './ledger'
 import { FALLBACK_NORM, normOf, zOf, type RoleNorms } from './norms'
 import { parsePositions, posPenaltySigma, ratingAt, RATING_UNKNOWN_ASSUMED } from './positions'
 import { attributesOf, DEFAULT_ROLE, effectiveWeights, ROLE_BY_ID, scoreRole, type AttributeValue, type PositionKey, type RoleScore } from './roles'
 import type { ColumnInfo, PlayerRow } from './types'
 
-export interface Formation {
-  id: string
-  label: string
-  /** 위(공격)에서 아래(골키퍼)로, 각 줄은 왼쪽에서 오른쪽으로 */
-  rows: PositionKey[][]
-}
-
-export const FORMATIONS: Formation[] = [
-  { id: '4-2-3-1', label: '4-2-3-1', rows: [['ST'], ['AML', 'AMC', 'AMR'], ['DM', 'DM'], ['DL', 'DC', 'DC', 'DR'], ['GK']] },
-  { id: '4-3-3', label: '4-3-3', rows: [['ST'], ['AML', 'AMR'], ['MC', 'MC'], ['DM'], ['DL', 'DC', 'DC', 'DR'], ['GK']] },
-  { id: '4-4-2', label: '4-4-2', rows: [['ST', 'ST'], ['ML', 'MC', 'MC', 'MR'], ['DL', 'DC', 'DC', 'DR'], ['GK']] },
-  { id: '3-5-2', label: '3-5-2', rows: [['ST', 'ST'], ['MC', 'MC'], ['WBL', 'DM', 'WBR'], ['DC', 'DC', 'DC'], ['GK']] },
-  { id: '3-4-3', label: '3-4-3', rows: [['AML', 'ST', 'AMR'], ['MC', 'MC'], ['WBL', 'WBR'], ['DC', 'DC', 'DC'], ['GK']] }
-]
-
-export const FORMATION_BY_ID: Record<string, Formation> = Object.fromEntries(FORMATIONS.map((f) => [f.id, f]))
+// 포메이션 정의는 formations.ts로 옮겼다(전술 모델과 서로 불러오지 않으려고). 이름은 그대로 다시 내보낸다
+export { FORMATION_BY_ID, FORMATIONS, type Formation } from './formations'
 
 export interface DepthPlayer {
   idx: number

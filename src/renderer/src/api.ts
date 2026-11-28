@@ -3,6 +3,9 @@ import { CLUB_PLUGIN, type SaveFileInfo } from '@shared/game'
 import type { SaveRecords } from '@shared/records'
 import type { Api, BackupEntry, Settings } from '@shared/types'
 import { mockCandidates, mockClub, mockDashboard, mockEditorList, mockEditorPlayer, mockProfile, mockSeason, mockSquad } from './lib/mockWorld'
+import { mockRoleToolsApi } from './lib/mock/roleTools'
+import { mockTacticsApi } from './lib/mock/tactics'
+import { mockTacticToolsApi } from './lib/mock/tacticTools'
 import { WON_RATE_TEXT } from '@shared/playerView'
 
 declare global {
@@ -92,8 +95,20 @@ function createMockApi(): Api & ExtraApi {
     teamNote: ''
   })
   const tell = (busy = false): void => listeners.forEach((listener) => listener(linkStatus(busy)))
+  /** 전술·역할 도구의 목업이 설정을 읽고 바꾸는 길 */
+  const state = {
+    getSettings: (): Settings => settings,
+    setSettings: (next: Settings): void => {
+      settings = next
+    }
+  }
 
   return {
+    // 2단계 새 창구의 목업(각 단위가 자기 파일을 채운다)
+    ...mockTacticsApi(state),
+    ...mockTacticToolsApi(state),
+    ...mockRoleToolsApi(state),
+
     getStatus: async () => ({
       saveDir: { dir: settings.saveDir, exists: true },
       dataDir: 'C:\\Users\\me\\AppData\\Roaming\\fm-bojwagwan',

@@ -1,7 +1,8 @@
 import { existsSync, mkdirSync, writeFileSync } from 'node:fs'
 import { basename, join } from 'node:path'
 import { pathToFileURL } from 'node:url'
-import { app, BrowserWindow, ipcMain, Menu, nativeImage, net, protocol, session, shell, Tray } from 'electron'
+import { app, BrowserWindow, dialog, ipcMain, Menu, nativeImage, net, protocol, session, shell, Tray } from 'electron'
+import { dropMainOwned, NOT_READY, normsFailed } from '@shared/tacticApi'
 import type { AppStatus, Settings } from '@shared/types'
 import type { CandidateQuery, EditorEdit } from '@shared/world'
 import { BackupManager } from './backup'
@@ -15,6 +16,7 @@ import { RecordKeeper } from './records/keeper'
 import { RecordStore } from './records/store'
 import { SeasonService } from './seasonService'
 import { SettingsStore } from './settings'
+import { registerTacticIpc } from './tacticIpc'
 import { TalkController } from './talk/controller'
 import { KeyStore } from './talk/keyStore'
 import { trayIconFor } from './trayIcon'
@@ -155,12 +157,31 @@ function createTray(): void {
   tray.on('click', showWindow)
 }
 
+/** 역할 가중치 묶음 파일의 대화상자 설정. 파일 경로는 화면이 정하지 않고 본체의 대화상자로만 받는다(N-03) */
+const BUNDLE_FILTERS = [{ name: '역할 가중치 묶음(JSON)', extensions: ['json'] }]
+
+/** 저장 대화상자. 취소하면 null */
+async function pickSavePath(defaultName: string): Promise<string | null> {
+  const options = { defaultPath: join(app.getPath('documents'), defaultName), filters: BUNDLE_FILTERS }
+  const result = mainWindow ? await dialog.showSaveDialog(mainWindow, options) : await dialog.showSaveDialog(options)
+  return result.canceled || !result.filePath ? null : result.filePath
+}
+
+/** 열기 대화상자(파일 하나). 취소하면 null */
+async function pickOpenPath(): Promise<string | null> {
+  const options = { defaultPath: app.getPath('documents'), filters: BUNDLE_FILTERS, properties: ['openFile' as const] }
+  const result = mainWindow ? await dialog.showOpenDialog(mainWindow, options) : await dialog.showOpenDialog(options)
+  return result.canceled || result.filePaths.length === 0 ? null : result.filePaths[0]
+}
+
 function registerIpc(): void {
   ipcMain.handle('status:get', () => getStatus())
   ipcMain.handle('settings:get', () => settings.get())
   ipcMain.handle('settings:set', async (_event, patch: Partial<Settings>) => {
     const before = settings.get()
-    const next = settings.set(patch)
+    // 전술 묶음, 사용자 역할, 이전 기록처럼 본체만 쓰는 칸은 화면이 보낸 patch에서 버린다(오래된 설정 객체를 통째로 보내도 전술이 사라지지 않게).
+    // 화면은 그 칸을 전용 창구(tacticsSave, customRolesSave, migrationAck)로만 쓴다
+    const next = settings.set(dropMainOwned(patch))
     if (next.saveDir !== before.saveDir) await saveWatcher.start(next.saveDir)
     // 화면 색을 바꾸면 알림 영역 아이콘도 그 색으로 바꾼다
     if (next.theme !== before.theme) tray?.setImage(nativeImage.createFromDataURL(trayIconFor(next.theme)))
@@ -175,7 +196,8 @@ function registerIpc(): void {
   // 게임 연결과 세이브 적용
   ipcMain.handle('link:status', () => link.status())
   ipcMain.handle('link:saves', () => link.saves())
-  ipcMain.handle('link:apply', async (_event, path: string) => {
+  // 두 번째 값(allowUnknownVersion)은 받기만 한다. 모르는 게임 판의 세이브를 확인하는 처리는 게임 읽기 단위가 이 자리에 넣는다
+  ipcMain.handle('link:apply', async (_event, path: string, _options?: { allowUnknownVersion?: boolean }) => {
     const result = await link.apply(String(path))
     if (result.ok) settings.set({ activeSave: String(path) })
     return result
@@ -245,6 +267,18 @@ function registerIpc(): void {
   ipcMain.handle('talk:clearKey', () => {
     keys.clear()
     return talk.status()
+  })
+
+  // 2단계 새 창구(전술 저장, 기준 분포, 게임 전술 가져오기, 전술 추천, 사용자 역할과 가중치 묶음, 별점 대조, 이전 알림 확인).
+  // 서비스는 아직 "준비되지 않았습니다"를 돌려주는 빈 틀이다. 기준 분포는 본체의 계산이 준비되면 world에 이어 붙인다
+  registerTacticIpc(ipcMain, {
+    settings,
+    world,
+    link,
+    norms: () => normsFailed(NOT_READY),
+    pickSavePath,
+    pickOpenPath,
+    dataDir: app.getPath('userData')
   })
 }
 
