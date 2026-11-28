@@ -11,7 +11,7 @@ const api: Api & ExtraApi = {
 
   linkStatus: () => ipcRenderer.invoke('link:status'),
   listSaves: () => ipcRenderer.invoke('link:saves'),
-  applySave: (path) => ipcRenderer.invoke('link:apply', path),
+  applySave: (path, options) => ipcRenderer.invoke('link:apply', path, options),
   refreshLive: (rescan) => ipcRenderer.invoke('link:refresh', rescan),
   onLinkChanged: (cb) => {
     const listener = (_event: unknown, status: LinkStatus): void => cb(status)
@@ -44,6 +44,18 @@ const api: Api & ExtraApi = {
   backupDelete: (id) => ipcRenderer.invoke('backup:delete', id),
   recordsList: () => ipcRenderer.invoke('records:list'),
   recordsRemove: (id) => ipcRenderer.invoke('records:remove', id),
+
+  // 2단계 새 창구. 채널 이름은 shared/tacticApi.ts의 TACTIC_CHANNELS와 같아야 한다(tests/phase2Contract.test.ts가 본다)
+  tacticsSave: (saveKey, set) => ipcRenderer.invoke('tactics:save', saveKey, set),
+  worldNorms: (profiles) => ipcRenderer.invoke('world:norms', profiles),
+  tacticImport: (options) => ipcRenderer.invoke('tactics:import', options),
+  tacticRecommend: (tactic) => ipcRenderer.invoke('tactics:recommend', tactic),
+  customRolesSave: (roles) => ipcRenderer.invoke('roles:saveCustom', roles),
+  roleBundleExport: () => ipcRenderer.invoke('roles:export'),
+  roleBundlePreview: () => ipcRenderer.invoke('roles:preview'),
+  roleBundleApply: (token, mode) => ipcRenderer.invoke('roles:apply', token, mode),
+  roleStarCheck: () => ipcRenderer.invoke('roles:stars'),
+  migrationAck: () => ipcRenderer.invoke('settings:ackMigration'),
   onBackupChanged: (cb) => {
     const listener = (): void => cb()
     ipcRenderer.on('backup:changed', listener)

@@ -3,8 +3,21 @@ import type { ClubSnapshot } from './club'
 import type { DashboardData } from './dashboard'
 import type { ApplyResult, LinkStatus, SaveFileInfo } from './game'
 import type { SaveRecords } from './records'
+import type { CatalogId, CustomRole } from './roleCatalog'
 import type { SeasonResult } from './season'
+import type { SlotProfile } from './slotProfile'
 import type { TalkEffort, TalkStats, TalkStatus } from './talk'
+import type {
+  MigrationRecord,
+  NormsResult,
+  RoleBundlePreview,
+  RoleStarReport,
+  SimpleResult,
+  TacticImportResult,
+  TacticRecommendResult,
+  TacticSaveResult
+} from './tacticApi'
+import type { Tactic, TacticSet } from './tacticModel'
 import type { CandidateQuery, CandidateResult, EditorApplyResult, EditorEdit, EditorListItem, EditorPlayer, MarketResult, PlayerProfile } from './world'
 
 /** key·support는 "주요 능력치만" 볼 때 능력치 열을 핵심과 도움으로 묶는 화면용 묶음(keyAttributes.ts) */
@@ -104,6 +117,25 @@ export interface Settings {
   backupEnabled: boolean
   /** 세이브마다 보관할 사본 개수. 넘으면 오래된 것부터 지운다 */
   backupKeep: number
+
+  // ---------- 2단계(FM26 역할 체계)에서 더한 칸. 모두 선택이고, 옛 칸(formation, slotRoles, roleWeights)은 그대로 둔다 ----------
+  /**
+   * 세이브 파일 이름 → 전술 묶음(전술 1~3개와 주 전술). 본체만 쓴다: 화면이 보낸 settings:set patch에서는 버리고,
+   * 전용 창구(tacticsSave)로만 쓴다(MAIN_OWNED_KEYS)
+   */
+  tactics?: Record<string, TacticSet>
+  /** 세이브별 묶음이 없을 때 쓰는 기본 전술 묶음. 세이브별 묶음은 처음 고칠 때 이것을 복사해 만든다. 본체만 쓴다 */
+  tacticsDefault?: TacticSet
+  /** 쓰는 역할 카탈로그. 없으면 기본(catalogs.ts의 DEFAULT_CATALOG). 'legacy14'로 두면 옛 14역할 계산으로 돈다 */
+  catalog?: CatalogId
+  /** 사용자가 만든 역할. 본체만 쓴다(전용 창구 customRolesSave) */
+  customRoles?: CustomRole[]
+  /** 설정 이전(옛 설정 → 새 전술) 기록과 알림. 본체만 쓴다 */
+  migration?: MigrationRecord
+  /** 설정 파일의 판. 이 값이 이전 단계보다 낮으면 이전한다. 본체만 쓴다 */
+  settingsVersion?: number
+  /** 설정 파일이 깨져 있었을 때의 기록(깨진 파일은 따로 남기고 기본값으로 시작했다). 본체만 쓴다 */
+  settingsProblem?: { at: string; file: string; message: string }
 }
 
 /** 세이브 사본 하나 */
@@ -149,8 +181,11 @@ export interface Api {
   linkStatus(): Promise<LinkStatus>
   /** 세이브 폴더의 세이브 파일들, 최근에 저장한 것부터 */
   listSaves(): Promise<SaveFileInfo[]>
-  /** 세이브를 골라 적용한다. 그 세이브의 자료로 모든 화면이 돈다. 몇 초 걸린다 */
-  applySave(path: string): Promise<ApplyResult>
+  /**
+   * 세이브를 골라 적용한다. 그 세이브의 자료로 모든 화면이 돈다. 몇 초 걸린다.
+   * allowUnknownVersion은 지원하는 목록에 없는 게임 판의 세이브를 확인한 뒤에도 적용하겠다는 뜻이다(본체의 처리는 게임 읽기 단위가 넣는다)
+   */
+  applySave(path: string, options?: { allowUnknownVersion?: boolean }): Promise<ApplyResult>
   /** 켜져 있는 게임에서 지금 값을 다시 받는다 */
   refreshLive(rescan: boolean): Promise<void>
   /** 게임 연결이나 자료가 바뀌었을 때 */
@@ -200,4 +235,24 @@ export interface Api {
   recordsList(): Promise<SaveRecords[]>
   /** 세이브 하나의 기록 폴더를 휴지통으로 보낸다 */
   recordsRemove(id: string): Promise<{ ok: boolean; message?: string }>
+
+  // ---------- 2단계(FM26 역할 체계)의 창구. 채널 이름은 tacticApi.ts의 TACTIC_CHANNELS ----------
+  /** 전술 묶음을 저장한다. saveKey가 null이면 모든 세이브의 기본 묶음(tacticsDefault). 본체가 검사한 뒤에만 쓴다 */
+  tacticsSave(saveKey: string | null, set: TacticSet): Promise<TacticSaveResult>
+  /** 화면에 없는 프로파일(편집 중인 초안, 바꾼 직후의 역할)의 기준 분포 */
+  worldNorms(profiles: SlotProfile[]): Promise<NormsResult>
+  /** 켜져 있는 게임의 지금 전술을 읽어 전술 초안으로 돌려준다(저장하지 않는다) */
+  tacticImport(options?: { readRoleLists?: boolean }): Promise<TacticImportResult>
+  /** 내 선수단에 맞는 전술을 찾아 순위로 돌려준다 */
+  tacticRecommend(tactic: Tactic): Promise<TacticRecommendResult>
+  customRolesSave(roles: CustomRole[]): Promise<SimpleResult>
+  /** 역할 가중치 묶음을 파일로 내보낸다(저장 위치는 본체의 대화상자가 묻는다) */
+  roleBundleExport(): Promise<SimpleResult>
+  /** 가져올 가중치 묶음 파일을 골라 바뀔 것을 미리 본다(파일 위치는 본체의 대화상자가 묻는다) */
+  roleBundlePreview(): Promise<RoleBundlePreview>
+  roleBundleApply(token: string, mode: 'merge' | 'replace'): Promise<SimpleResult>
+  /** 앱의 역할 적합도와 게임의 역할 별점을 견준 표(점수에는 넣지 않는다) */
+  roleStarCheck(): Promise<RoleStarReport>
+  /** 설정 이전 알림을 확인했다고 알린다 */
+  migrationAck(): Promise<SimpleResult>
 }
