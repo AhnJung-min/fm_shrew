@@ -223,6 +223,8 @@ function rowsByIndex(rows: GameSlotRow[], phase: Phase, problems: string[]): Map
  * 포지션 비트는 칸으로, 역할 비트는 임무 비트를 지운 뒤 (국면, 역할 번호)로 카탈로그의 역할로 푼다. 자리는 저장할 때의 놓는 순서(canonicalOrder)로 놓는다.
  * 짝이 안 맞거나 풀 수 없는 값(모르는 포지션·역할 비트)이 있으면 그 자리를 문제로 적고 ok를 거짓으로 둔다(전술은 만들지 않는다).
  * 다 풀었으면 마지막에 validateTactic을 돌려 그 문제도 모은다(그 경우에는 전술도 함께 준다).
+ * 문제 글의 "N번째 자리"는 전술을 줄 때는 그 전술(저장 순서)의 자리 번호이고(저장 검사와 역할 목록 견주기의 글도 같다),
+ * 전술이 없을 때는 게임이 준 자리 순서(순번이 작은 것부터)의 번호다.
  */
 export function tacticFromGame(answer: GameTacticAnswer, catalog: RoleCatalog, row: SupportedVersion, id: string): TacticFromGame {
   const problems: string[] = []
@@ -243,49 +245,62 @@ export function tacticFromGame(answer: GameTacticAnswer, catalog: RoleCatalog, r
   if (!sameSet) problems.push('점유 시와 비점유 시의 자리 번호가 서로 맞지 않습니다.')
   if (problems.length > 0) return { ok: false, problems, unknownBits }
 
+  // 자리 하나에서 난 문제와 알림. 자리 번호는 마지막에 붙인다: 전술이 나오면 그 전술(저장 순서)의 번호로, 안 나오면 게임이 준 순서로.
+  // 그래야 이 목록과 뒤에 붙는 저장 검사(validateTactic)의 문제, 편집기가 보이는 자리 순서가 같은 번호를 쓴다
+  const slotMessages: Array<{ at: number; phase: Phase; text: string }> = []
   const slots: TacticSlot[] = []
   indexes.forEach((index, at) => {
-    const where = `${at + 1}번째 자리`
     const spots = PHASES.map((phase) => {
       const given = byPhase[phase].get(index)!
-      const label = `${where}의 ${PHASE_LABEL[phase]}`
+      const report = (text: string): void => void slotMessages.push({ at, phase, text })
       const read = cellOfPosition(given.position, row)
       let cell: Cell | null = null
       if ('cell' in read) {
         cell = read.cell
-        if (read.note) problems.push(`${where}: ${read.note}`)
+        if (read.note) report(`포지션: ${read.note}`)
       } else {
-        problems.push(`${label} 포지션: ${read.problem}`)
+        report(`포지션: ${read.problem}`)
         if (read.unknown) markUnknown(read.unknown)
       }
       let roleId: string | null = null
       const gameId = given.role === null ? null : roleGameId(given.role, row)
       if (gameId === null) {
-        problems.push(`${label} 역할 값이 오지 않았거나 읽을 수 없는 글자입니다.`)
+        report('역할 값이 오지 않았거나 읽을 수 없는 글자입니다.')
       } else {
         const role = catalog.roleByGameId(phase, gameId)
         if (role) roleId = role.id
         else {
-          problems.push(`${label} 역할(값 ${gameId})을 앱이 모릅니다.`)
+          report(`역할(값 ${gameId})을 앱이 모릅니다.`)
           markUnknown(`${PHASE_LABEL[phase]} 역할 ${gameId}`)
         }
       }
       // 게임이 골키퍼 여부를 알려 주면 포지션이 그것과 맞아야 한다
       const keeper = given.goalkeeper
       if (cell && (keeper === 'True' || keeper === 'False') && (keeper === 'True') !== (cell.line === 'GK')) {
-        problems.push(`${label} 포지션이 게임이 알려 준 골키퍼 여부와 맞지 않습니다.`)
+        report('포지션이 게임이 알려 준 골키퍼 여부와 맞지 않습니다.')
       }
       return { cell, roleId }
     })
     const [ip, oop] = spots
     if (ip.cell && ip.roleId && oop.cell && oop.roleId) slots.push({ ip: { cell: ip.cell, roleId: ip.roleId }, oop: { cell: oop.cell, roleId: oop.roleId } })
   })
-  // 풀지 못한 자리가 있으면 전술을 만들지 않는다(없는 값을 지어내 채우지 않는다)
-  if (slots.length !== indexes.length) return { ok: false, problems, unknownBits }
+  /** 자리 문제를 problems에 적는다. place(at)은 그 자리의 번호(0부터). 자리 번호 차례로, 같은 자리 안에서는 난 차례로 적는다 */
+  const writeSlotMessages = (place: (at: number) => number): void => {
+    slotMessages
+      .map((message, order) => ({ message, order }))
+      .sort((a, b) => place(a.message.at) - place(b.message.at) || a.order - b.order)
+      .forEach(({ message }) => problems.push(`${place(message.at) + 1}번째 자리의 ${PHASE_LABEL[message.phase]} ${message.text}`))
+  }
+  // 풀지 못한 자리가 있으면 전술을 만들지 않는다(없는 값을 지어내 채우지 않는다). 전술이 없으니 번호는 게임이 준 자리 순서다
+  if (slots.length !== indexes.length) {
+    writeSlotMessages((at) => at)
+    return { ok: false, problems, unknownBits }
+  }
 
   const given = answer.ip.name || answer.oop.name || answer.ip.formation || answer.oop.formation
   const name = Array.from(given.trim()).slice(0, TACTIC_NAME_MAX).join('') || '게임에서 가져온 전술'
   const tactic = canonicalOrder({ id, name, preset: null, slots, sharePct: null, source: 'game', catalog: catalog.id })
+  writeSlotMessages((at) => tactic.slots.indexOf(slots[at]))
   for (const found of validateTactic(tactic, catalog)) problems.push(found.message)
   return { ok: problems.length === 0, tactic, problems, unknownBits }
 }

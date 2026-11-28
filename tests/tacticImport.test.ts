@@ -366,6 +366,62 @@ describe('tacticFromGame: 견본 → 전술 초안', () => {
     expect(cellText(result.tactic!.slots.find((slot) => slot.oop.roleId === 'oop.4398046511104')!.ip.cell)).toBe('ST/CR')
   })
 
+  it('알림과 문제의 자리 번호는 초안의 자리 순서와 같고(저장 검사의 문제와 같은 번호), 국면마다 따로 적힌다', () => {
+    const json = fresh()
+    // 게임 순번 10(최전방)의 두 국면 포지션을 최전방 왼쪽 비트로 주고, 게임 순번 0(골키퍼)에는 골키퍼 여부가 어긋난 값을 준다
+    json.ip.items[10].Position = '65536'
+    json.oop.items[10].Position = '65536'
+    json.ip.items[0].IsGoalkeeper = 'False'
+    const result = convert(json)
+    expect(result.tactic).toBeDefined()
+    const slots = result.tactic!.slots
+    // 초안에서 최전방 자리는 1번째, 골키퍼는 11번째다(저장 순서: 점유 시 칸의 위 → 아래). 게임이 준 순서(순번 10, 순번 0)와 다르다
+    expect(cellText(slots[0].ip.cell)).toBe('ST/CL')
+    expect(cellText(slots[10].ip.cell)).toBe('GK/C')
+    // 두 국면의 알림이 국면 표시와 함께 따로 적힌다(같은 글이 두 번 나오지 않는다)
+    const notes = result.problems.filter((text) => text.includes('확인하지 못한 값'))
+    expect(notes).toHaveLength(2)
+    expect(notes[0]).toMatch(/^1번째 자리의 점유 시 포지션: /)
+    expect(notes[1]).toMatch(/^1번째 자리의 비점유 시 포지션: /)
+    expect(new Set(notes).size).toBe(2)
+    // 골키퍼 여부 문제는 초안의 11번째 자리(골키퍼)로 적힌다. 게임이 준 순서의 1번째 자리(순번 0)가 아니다
+    expect(result.problems).toContain('11번째 자리의 점유 시 포지션이 게임이 알려 준 골키퍼 여부와 맞지 않습니다.')
+    // 자리 번호 차례로 나온다
+    const numbers = result.problems.map((text) => Number(/^(\d+)번째 자리/.exec(text)?.[1]))
+    expect(numbers.every((each) => Number.isInteger(each))).toBe(true)
+    expect(numbers).toEqual([...numbers].sort((a, b) => a - b))
+  })
+
+  it('저장 검사의 문제와 풀이의 알림이 같은 자리를 같은 번호로 가리킨다', () => {
+    const json = fresh()
+    // 게임 순번 3의 두 국면 포지션을 순번 2와 같은 칸(수비 중앙 오른쪽)으로 겹치고, 순번 10에는 최전방 오른쪽 비트를 준다
+    json.ip.items[3].Position = String(16 + 2097152)
+    json.ip.items[10].Position = '32768'
+    const result = convert(json)
+    expect(result.tactic).toBeDefined()
+    const slots = result.tactic!.slots
+    const numberOf = (text: string): number => Number(/^(\d+)번째 자리/.exec(text)?.[1])
+    const overlap = result.problems.find((text) => text.includes('같은 칸'))!
+    const note = result.problems.find((text) => text.includes('최전방 오른쪽'))!
+    // 문제 글의 번호로 초안의 자리를 찾으면 그 문제가 말하는 자리다
+    expect(cellText(slots[numberOf(note) - 1].ip.cell)).toBe('ST/CR')
+    expect(cellText(slots[numberOf(overlap) - 1].ip.cell)).toBe('D/CR')
+  })
+
+  it('초안을 만들 수 없을 때는 게임이 준 자리 순서로 번호를 붙인다(저장 순서가 없다)', () => {
+    const json = fresh()
+    json.ip.items[2].PositionRole = '5' // 게임 순번 2 → 3번째
+    json.oop.items[8].PositionRole = '77' // 게임 순번 8 → 9번째
+    json.ip.items[10].Position = '32768' // 알림도 같은 순서로 적힌다(순번 10 → 11번째)
+    const result = convert(json)
+    expect(result.tactic).toBeUndefined()
+    expect(result.problems).toEqual([
+      '3번째 자리의 점유 시 역할(값 5)을 앱이 모릅니다.',
+      '9번째 자리의 비점유 시 역할(값 77)을 앱이 모릅니다.',
+      expect.stringMatching(/^11번째 자리의 점유 시 포지션: 최전방 오른쪽/)
+    ])
+  })
+
   it('같은 칸에 자리가 둘이면 전술과 함께 저장 검사의 문제를 준다', () => {
     const json = fresh()
     json.ip.items[3].Position = '16'
