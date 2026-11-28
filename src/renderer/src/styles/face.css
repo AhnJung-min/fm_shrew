@@ -1,0 +1,45 @@
+/* ---------- 선수 얼굴(사진이 없으면 머리글자) ---------- */
+
+.face {
+  flex: none;
+  display: inline-grid;
+  place-items: center;
+  width: var(--face, 48px);
+  height: var(--face, 48px);
+  border: 2px solid var(--line-strong);
+  border-radius: 50%;
+  background: var(--raised);
+  color: var(--accent);
+  overflow: hidden;
+}
+.face b {
+  font-size: calc(var(--face, 48px) * 0.42);
+  font-weight: 800;
+  line-height: 1;
+}
+.face img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: center top;
+}
+.face.small {
+  border-width: 1px;
+}
+.drawer-head .face {
+  margin-top: 2px;
+}
+.editor-player-face {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+/* 구단 엠블럼을 이름 앞에 붙일 때 */
+.with-logo {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}

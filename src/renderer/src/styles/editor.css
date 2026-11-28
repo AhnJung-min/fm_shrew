@@ -1,0 +1,164 @@
+/* ---------- 에디터 ---------- */
+
+.editor {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: 320px minmax(0, 1fr);
+}
+
+.editor-list {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  padding: 14px 12px 0 16px;
+  border-right: 1px solid var(--line);
+}
+.editor-list .search-box .field {
+  width: 100%;
+}
+.editor-list-note {
+  margin: 12px 4px 8px;
+  font-size: 13px;
+  font-weight: 600;
+}
+.editor-players {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding-bottom: 12px;
+}
+.editor-players > p {
+  padding: 8px 2px;
+  font-size: 13px;
+}
+.editor-player {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  width: 100%;
+  padding: 10px 12px;
+  border: 0;
+  border-radius: var(--radius-m);
+  background: transparent;
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+}
+.editor-player:hover {
+  background: var(--hover);
+}
+.editor-player[aria-current='true'] {
+  background: var(--accent-soft);
+  box-shadow: inset 3px 0 0 var(--accent);
+}
+.editor-player strong {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 600;
+}
+.editor-player span.muted {
+  font-size: 13px;
+}
+
+.editor-form {
+  min-height: 0;
+  overflow: auto;
+  padding: 16px 24px 32px;
+}
+.editor-who {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+}
+.editor-who h2 {
+  font-size: 24px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+.editor-group {
+  margin-top: 18px;
+  padding: 16px 18px 18px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-m);
+  background: var(--surface);
+}
+.editor-group h3 {
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--text);
+}
+.editor-group > p.faint {
+  margin-top: 4px;
+  font-size: 13px;
+}
+.edit-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
+  gap: 6px 24px;
+  margin-top: 12px;
+}
+.edit-cell {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  height: 38px;
+  font-size: 14px;
+  color: var(--text-2);
+}
+.edit-cell input {
+  width: 68px;
+  height: 34px;
+  padding: 0 8px;
+  text-align: right;
+  font-size: 15px;
+}
+/* 숫자 칸의 위아래 화살표가 값을 가려서 감춘다(키보드 위아래 키와 직접 입력은 그대로 된다) */
+.edit-cell input::-webkit-inner-spin-button,
+.edit-cell input::-webkit-outer-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+/* 1~20 능력치 칸: 표와 같은 단계 색 */
+.edit-cell.banded.a1 input {
+  background: var(--a1-bg);
+  color: var(--a1-ink);
+}
+.edit-cell.banded.a2 input {
+  background: var(--a2-bg);
+  color: var(--a2-ink);
+}
+.edit-cell.banded.a3 input {
+  background: var(--a3-bg);
+  color: var(--a3-ink);
+  font-weight: 650;
+}
+.edit-cell.banded.a4 input {
+  background: var(--a4-bg);
+  color: var(--a4-ink);
+  font-weight: 800;
+}
+/* 바뀐 값: 색만이 아니라 굵기와 테두리로도 드러낸다 */
+.edit-cell.changed {
+  color: var(--text);
+  font-weight: 600;
+}
+.edit-cell.changed input,
+.edit-cell.changed.banded input {
+  border: 2px solid var(--gold);
+  font-weight: 800;
+}
+
+@media (max-width: 860px) {
+  .editor {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: 220px minmax(0, 1fr);
+  }
+  .editor-list {
+    border-right: 0;
+    border-bottom: 1px solid var(--line);
+  }
+}
+

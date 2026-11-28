@@ -1,0 +1,174 @@
+/* ---------- 에디터의 숫자 칸 ---------- */
+
+.pl-input {
+  width: 56px;
+  height: 30px;
+  padding: 0 6px;
+  border: 1px solid var(--line-strong);
+  border-radius: 6px;
+  background: var(--bg);
+  color: var(--text);
+  text-align: center;
+  font-size: 15px;
+  font-variant-numeric: tabular-nums;
+  -moz-appearance: textfield;
+  appearance: textfield;
+}
+.pl-input::-webkit-inner-spin-button,
+.pl-input::-webkit-outer-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+.pl-input.a1 {
+  background: var(--a1-bg);
+  color: var(--a1-ink);
+  font-weight: 500;
+}
+.pl-input.a2 {
+  background: var(--a2-bg);
+  color: var(--a2-ink);
+  font-weight: 500;
+}
+.pl-input.a3 {
+  background: var(--a3-bg);
+  color: var(--a3-ink);
+  font-weight: 650;
+}
+.pl-input.a4 {
+  background: var(--a4-bg);
+  color: var(--a4-ink);
+  font-weight: 800;
+}
+.pl-input.changed {
+  border: 2px solid var(--gold);
+  font-weight: 800;
+}
+.pl-input.big {
+  width: 100%;
+  height: 64px;
+  border-radius: var(--radius-s);
+  font-size: var(--fs-score);
+  font-weight: 800;
+  text-align: left;
+  padding: 0 10px;
+}
+.pl-input:disabled {
+  opacity: 0.85;
+  cursor: not-allowed;
+}
+
+/* ---------- 에디터 카드 ---------- */
+
+.ed-card {
+  display: grid;
+  gap: 18px;
+  max-width: 1040px;
+  margin: 0 auto;
+}
+.ed-hero {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+.ed-portrait {
+  border-width: 3px;
+  background: var(--raised);
+}
+.ed-name {
+  flex: 1;
+  min-width: 0;
+}
+.ed-name h2 {
+  font-size: 32px;
+  font-weight: 800;
+  line-height: 1.2;
+  letter-spacing: -0.025em;
+}
+.ed-top,
+.ed-bottom {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 18px;
+  align-items: start;
+}
+.ed-panel {
+  min-width: 0;
+  padding: 18px 20px 20px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-m);
+  background: var(--surface);
+}
+.ed-more {
+  margin-top: 12px;
+  color: var(--text-2);
+  font-size: 13.5px;
+}
+.ed-more summary {
+  cursor: pointer;
+  margin-bottom: 10px;
+}
+.ed-feet {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 28px;
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px solid var(--line);
+}
+.ed-feet h4 {
+  margin: 0;
+  font-size: 14px;
+}
+.ed-feet label {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--text-2);
+  font-size: 13.5px;
+}
+.ed-feet label.changed {
+  color: var(--text);
+}
+.ed-feet label > span {
+  display: grid;
+}
+.ed-card .radar {
+  margin-top: 4px;
+}
+
+/* 패널이 좁으면 능력치 세 줄을 위아래로 쌓는다 */
+@container (max-width: 420px) {
+  .pl-cols {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .posmap {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .posmap-pitch {
+    max-width: 240px;
+    margin: 0 auto;
+  }
+  .pl-ability,
+  .ed-ability {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+@container (max-width: 760px) {
+  .ed-top,
+  .ed-bottom {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+@container (max-width: 540px) {
+  .pl-cols.editing {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+@media (max-width: 860px) {
+  .drawer.player-drawer {
+    width: auto;
+  }
+}
+

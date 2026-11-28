@@ -1,0 +1,109 @@
+/* ---------- 시작 화면: 게임 연결과 세이브 고르기 ---------- */
+
+.start {
+  display: grid;
+  gap: 14px;
+  max-width: 860px;
+}
+.start-line {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.start .panel-body > .faint {
+  margin-top: 6px;
+  font-size: 12.5px;
+}
+.save-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 4px;
+}
+.save-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 44px;
+  padding: 0 14px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-s);
+  cursor: pointer;
+}
+.save-row:hover {
+  background: var(--hover);
+}
+.save-row.on {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  box-shadow: inset 3px 0 0 var(--accent);
+}
+.save-row .save-name {
+  font-weight: 600;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.save-row .muted {
+  flex: none;
+  font-size: 13px;
+}
+.club-picker {
+  display: grid;
+  gap: 10px;
+}
+.club-picker .search-box .field {
+  width: 100%;
+}
+.club-list {
+  max-height: 340px;
+  overflow-y: auto;
+}
+.ed-report {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+}
+.ed-report > div {
+  flex: 1;
+  min-width: 0;
+}
+.ed-report p {
+  margin: 0;
+}
+.ed-report ul {
+  margin: 6px 0;
+  padding-left: 18px;
+}
+.ed-report .btn {
+  flex: none;
+}
+.problem-list {
+  margin: 6px 0 14px;
+  padding-left: 18px;
+}
+.problem-list li {
+  margin: 4px 0;
+}
+
+.start-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 14px;
+}
+.start .facts {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: 6px 16px;
+}
+.start .facts dt {
+  color: var(--text-2);
+}
+.start .facts dd {
+  margin: 0;
+}
+

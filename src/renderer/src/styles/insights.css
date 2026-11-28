@@ -1,0 +1,182 @@
+/* ---------- 선수단 진단 ---------- */
+
+.tactics-side {
+  min-width: 0;
+}
+.tactics-side-title {
+  margin: 0 0 10px;
+  font-size: 16px;
+  font-weight: 700;
+}
+
+.insights-strip {
+  max-height: 300px;
+  overflow: auto;
+  padding: 12px 28px;
+  border-bottom: 1px solid var(--line);
+}
+
+.insights {
+  display: grid;
+  gap: 12px;
+}
+.insights.strip {
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+}
+.insights.side {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.insight {
+  min-width: 0;
+  padding: 12px 14px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-m);
+  background: var(--surface);
+}
+/* 살펴볼 카드는 테두리를 주의색으로(색 줄 대신 전체 테두리). 글자 "살펴볼 것"이 함께 뜻을 알린다 */
+.insight.attention {
+  border-color: var(--warn);
+}
+.insight.missing {
+  border-style: dashed;
+}
+/* 알릴 것이 없는 카드: 한 줄 */
+.insight.quiet {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: baseline;
+  gap: 4px 12px;
+  flex-wrap: wrap;
+  padding: 6px 14px;
+  border-color: var(--line);
+}
+.insight.quiet .insight-finding {
+  margin: 0;
+  color: var(--text-2);
+  font-size: 13.5px;
+}
+.insight.quiet h3 {
+  font-size: 14px;
+}
+.insight header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+.insight h3 {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 700;
+}
+.insight-tone {
+  flex: none;
+  color: var(--warn);
+  font-size: var(--fs-micro);
+  font-weight: 600;
+}
+.insight.missing .insight-tone {
+  color: var(--text-3);
+}
+.insight-finding {
+  margin: 0 0 8px;
+  color: var(--text);
+  font-size: 14px;
+  line-height: 1.5;
+}
+.insight.missing .insight-finding {
+  color: var(--text-2);
+}
+
+.insight-bars {
+  display: grid;
+  gap: 5px;
+  margin: 0 0 8px;
+  padding: 0;
+  list-style: none;
+  font-size: 13px;
+}
+.insight-bars li {
+  display: grid;
+  grid-template-columns: 72px minmax(0, 1fr) 40px;
+  align-items: center;
+  gap: 8px;
+}
+.insight-bar-label {
+  color: var(--text-2);
+}
+.insight-bar-track {
+  height: 10px;
+  border-radius: 5px;
+  background: var(--raised);
+  overflow: hidden;
+}
+.insight-bar-track span {
+  display: block;
+  height: 100%;
+  border-radius: 5px;
+  background: var(--accent);
+}
+.insight-bar-count {
+  text-align: right;
+}
+
+.insight-lines-title {
+  margin: 0 0 2px;
+  color: var(--text-3);
+  font-size: var(--fs-micro);
+}
+.insight-lines {
+  display: grid;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.insight-line {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0;
+  width: 100%;
+  min-width: 0;
+  padding: 4px 8px;
+  border: 0;
+  border-radius: var(--radius-s);
+  background: transparent;
+  color: var(--text);
+  text-align: left;
+}
+button.insight-line {
+  cursor: pointer;
+}
+button.insight-line:hover {
+  background: var(--hover);
+}
+.insight-name {
+  max-width: 100%;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-size: 14px;
+  font-weight: 650;
+}
+.insight-detail {
+  max-width: 100%;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  color: var(--text-2);
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+}
+.insight-more,
+.insight-note {
+  margin: 6px 0 0;
+  padding: 0 8px;
+  color: var(--text-3);
+  font-size: var(--fs-micro);
+}
+
