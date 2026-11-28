@@ -1034,6 +1034,18 @@ describe('게임에서 전술 가져오기(창구): 읽기 전에 보는 조건'
       }
     })
 
+    it('전술이 온 경우에도 같은 알림이 성공 글 끝에 한 번 붙는다(실패 글과 같은 말이 두 경우에 다 맞는다)', async () => {
+      missing = new Set()
+      const result = await importTactic(deps(connected, { roster: [], rosterIds: [] }))
+      // 첫 선수에게서 답이 오면 더 묻지 않는다
+      expect(asks()).toEqual(ask(uidsOf(0, 1)))
+      expect(result.ok).toBe(true)
+      expect(result.draft).toBeDefined()
+      expect(result.message).toContain('게임의 지금 전술')
+      expect(result.message.endsWith('다른 팀의 전술이 왔거나 선수를 찾지 못했을 수 있습니다.'), result.message).toBe(true)
+      expect(result.message.split(NOTE), result.message).toHaveLength(2)
+    })
+
     it('게임에 묻기 전에 끝나면(옛 14역할 목록) 아무에게도 묻지 않았으니 알림도 붙지 않는다', async () => {
       const result = await importTactic(deps(connected, { catalog: 'legacy14' }))
       expect(result.message).toContain('옛 14역할')
