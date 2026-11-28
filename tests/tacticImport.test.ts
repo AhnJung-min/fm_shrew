@@ -8,7 +8,7 @@ import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { FM26_CATALOG } from '../src/shared/catalogFm26'
 import { roleGameId, SUPPORTED_VERSIONS } from '../src/shared/compat'
-import { LEGACY_CATALOG, withCustomRoles } from '../src/shared/roleCatalog'
+import { LEGACY_CATALOG, withCustomRoles, type RoleCatalog } from '../src/shared/roleCatalog'
 import { cellOfPosition, parseTacticAnswer, roleListReport, tacticFromGame, type GameTacticAnswer } from '../src/shared/tacticImport'
 import { validateTactic } from '../src/shared/tacticModel'
 import { fakeCatalogFromTactic } from './helpers/fakeGameCatalog'
@@ -457,6 +457,53 @@ describe('tacticFromGame: 견본 → 전술 초안', () => {
       expect(result.tactic).toBeUndefined()
       expect(result.problems[0]).toContain('풀 수 없습니다')
     }
+  })
+})
+
+describe('tacticFromGame: 앱의 칸 종류 목록이 게임에서 확인 전이어도 가져온 전술은 거절되지 않는다', () => {
+  /** 견본의 수비형 미드(게임 순번 6)의 점유 시 역할(ip.16)을 앱의 그 칸 목록에서 빼고 목록의 근거를 바꾼 카탈로그: 게임이 고른 역할이 앱의 목록에 없는 경우 */
+  const lacking = (evidence: 'game' | 'inferred' | 'unknown'): RoleCatalog => ({
+    ...catalog,
+    choicesAt: (position, phase, kind) =>
+      catalog
+        .choicesAt(position, phase, kind)
+        .filter((choice) => !(phase === 'ip' && position === 'DM' && choice.roleId === 'ip.16'))
+        .map((choice) => ({ ...choice, evidence }))
+  })
+  /** 저장 순서로 본 그 자리의 번호(1부터) */
+  const slotNumber = CANONICAL.indexOf(6) + 1
+
+  it('앱의 목록이 확인 전(근거 inferred·unknown)이면 알림만 문제 목록에 담고, 전술 초안은 그대로 나오고 ok도 참이다', () => {
+    const baseline = convert().tactic
+    expect(baseline!.slots[CANONICAL.indexOf(6)].ip.roleId).toBe('ip.16')
+    for (const evidence of ['inferred', 'unknown'] as const) {
+      const result = convert(fresh(), lacking(evidence))
+      expect(result.tactic, evidence).toEqual(baseline)
+      expect(result.ok, evidence).toBe(true)
+      expect(result.unknownBits, evidence).toEqual([])
+      expect(result.problems, evidence).toHaveLength(1)
+      expect(result.problems[0].startsWith('게임에서 확인 전인 자리입니다: '), evidence).toBe(true)
+      expect(result.problems[0], evidence).toContain(`${slotNumber}번째 자리의 공 소유 시 역할`)
+    }
+  })
+
+  it('앱의 목록이 게임에서 확인한 것(근거 game)이면 오류로 알리고 ok는 거짓이지만, 전술 초안은 그대로 나온다', () => {
+    const result = convert(fresh(), lacking('game'))
+    expect(result.ok).toBe(false)
+    expect(result.tactic).toEqual(convert().tactic)
+    expect(result.problems).toHaveLength(1)
+    expect(result.problems[0]).toContain('공 소유 시 역할로')
+    expect(result.problems[0]).toContain('고를 수 없습니다')
+  })
+
+  it('읽으면서 만난 문제(확인하지 못한 최전방 비트)가 있으면 알림이 함께 있어도 ok는 거짓이다', () => {
+    const json = fresh()
+    json.ip.items[10].Position = '32768'
+    const result = convert(json, lacking('inferred'))
+    expect(result.tactic).toBeDefined()
+    expect(result.ok).toBe(false)
+    expect(result.problems.some((text) => text.includes('확인하지 못한 값'))).toBe(true)
+    expect(result.problems.some((text) => text.startsWith('게임에서 확인 전인 자리입니다: '))).toBe(true)
   })
 })
 

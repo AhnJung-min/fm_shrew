@@ -1,7 +1,7 @@
 import { FORMATION_BY_ID, FORMATIONS, type Formation } from './formations'
 import { withJosa } from './korean'
 import { SHARE_SCALE, TACTIC_NAME_MAX, TACTIC_SLOTS, TACTICS_PER_SAVE } from './limits'
-import type { CatalogId, RoleCatalog, SlotKind } from './roleCatalog'
+import type { CatalogId, RoleCatalog, RoleChoice, SlotKind } from './roleCatalog'
 import { DEFAULT_ROLE, ROLE_BY_ID, type PositionKey } from './roles'
 import { defaultSharePct, type Phase, type SlotProfile } from './slotProfile'
 import type { Settings } from './types'
@@ -53,6 +53,21 @@ export interface TacticProblem {
   /** 문제가 있는 자리의 순번 */
   index?: number
   phase?: Phase
+  /**
+   * 'error'는 저장을 막는 문제이고, 'note'는 알리기만 하고 막지 않는 알림이다(게임에서 확인하지 못한 칸의 역할 목록 때문에 생긴 것).
+   * 없으면 'error'다. 막을지 정하는 곳은 isBlocking·blockingProblems로 가른다(알림 때문에 저장이나 가져오기가 막히면 안 된다).
+   */
+  level?: 'error' | 'note'
+}
+
+/** 이 문제가 저장과 유효 여부를 막는가. 'note'만 막지 않고, level이 없는 문제는 오류다 */
+export function isBlocking(problem: TacticProblem): boolean {
+  return problem.level !== 'note'
+}
+
+/** 문제들 가운데 막는 것(오류)만. 알림(note)은 뺀다 */
+export function blockingProblems(problems: readonly TacticProblem[]): TacticProblem[] {
+  return problems.filter(isBlocking)
 }
 
 /** 프리셋 5개의 id: '4-2-3-1', '4-3-3', '4-4-2', '3-5-2', '3-4-3'. 자리 순서와 포지션은 옛 FORMATIONS 그대로다 */
@@ -244,20 +259,33 @@ export function layoutRows(tactic: Tactic, phase: Phase): number[][] {
 // ---------- 검사 ----------
 
 const SOURCES: ReadonlySet<string> = new Set(['legacy', 'preset', 'game', 'user'])
-/** 이 문제가 있으면 분석을 돌릴 수 없는 코드(자리 모양, 칸, 골키퍼, 겹침, 모르는 역할). 나머지(역할 국면, 고를 수 없는 역할 등)는 점수를 계산할 수는 있다 */
+/** 이 문제가 있으면 분석을 돌릴 수 없는 코드(자리 모양, 칸, 골키퍼, 겹침, 모르는 역할). 나머지(역할 국면, 고를 수 없는 역할, 확인 전 알림 등)는 점수를 계산할 수는 있다 */
 const UNUSABLE_CODES: ReadonlySet<string> = new Set(['shape', 'slotCount', 'cell', 'overlap', 'goalkeeper', 'roleMissing'])
+
+/**
+ * 칸 종류·국면의 목록을 게임에서 확인했는가: 사용자 역할(근거 user, 모든 칸에 더해진다)을 뺀 항목이 있고 모두 근거가 game이다.
+ * 게임 목록에서 읽은 칸이 아니면(짐작 inferred, 이름으로 짠 초안 unknown, 목록이 없어 포지션 전체로 물러선 것) 확인 전이다.
+ */
+function confirmedInGame(choices: readonly RoleChoice[]): boolean {
+  const own = choices.filter((choice) => choice.evidence !== 'user')
+  return own.length > 0 && own.every((choice) => choice.evidence === 'game')
+}
 
 /**
  * 전술 하나를 검사한다. 문제가 없으면 빈 목록. 화면이 보낸 자료를 본체가 다시 검사할 때도 쓰므로 모양이 틀린 입력에도 죽지 않는다.
  * 거절하는 것: 자리 수가 11이 아님, 올바르지 않은 칸, 국면마다 골키퍼 칸이 정확히 하나가 아님, 골키퍼 칸에 놓인 자리가 두 국면에서 다름(한 자리는 한 선수라서),
- * 같은 칸에 자리 둘, 카탈로그에 없는 역할, 그 국면에 쓸 수 없는 역할, 골키퍼 역할과 골키퍼 칸이 어긋남, 그 칸 종류·국면에서 고를 수 없는 역할,
+ * 같은 칸에 자리 둘, 카탈로그에 없는 역할, 그 국면에 쓸 수 없는 역할, 골키퍼 역할과 골키퍼 칸이 어긋남, 그 포지션에서 고를 수 없는 역할(역할의 포지션 집합에 없음),
+ * 그 칸 종류·국면의 목록에 없는 역할(그 목록을 게임에서 확인했을 때, 즉 근거가 game일 때만),
  * 비중이 0~100 정수가 아님, 이름이 비었거나 너무 김, 카탈로그가 다름.
+ * 칸 종류의 목록이 게임에서 확인 전(근거 inferred·unknown)이면 그 목록 밖의 역할은 막지 않고 알림(level 'note', 코드 roleUnconfirmed)만 남긴다:
+ * 포지션별 역할 집합은 게임에서 읽어 확실하지만 칸 종류(줄 모양)에 따라 빠지는 역할은 아직 다 확인하지 못했고, 게임에서 가져온 전술이 앱의 확인 전 목록 때문에 거절되면 안 된다.
+ * 알림은 문제 목록에 함께 담기므로 막을지 정하는 곳은 blockingProblems(또는 isBlocking)로 오류만 본다.
  */
 export function validateTactic(tactic: Tactic, catalog: RoleCatalog): TacticProblem[] {
   if (!tactic || typeof tactic !== 'object' || !Array.isArray(tactic.slots)) return [{ code: 'shape', message: '전술 자료가 올바르지 않습니다.' }]
   const problems: TacticProblem[] = []
-  const add = (code: string, message: string, where: { index?: number; phase?: Phase } = {}): void => {
-    problems.push({ code, message, ...where })
+  const add = (code: string, message: string, where: { index?: number; phase?: Phase } = {}, level?: 'note'): void => {
+    problems.push({ code, message, ...where, ...(level ? { level } : {}) })
   }
 
   if (typeof tactic.id !== 'string' || tactic.id.length === 0) add('id', '전술 번호가 비어 있습니다.')
@@ -299,8 +327,24 @@ export function validateTactic(tactic: Tactic, catalog: RoleCatalog): TacticProb
         add('goalkeeperRole', position === 'GK' ? '골키퍼 칸에는 골키퍼 역할만 놓을 수 있습니다.' : '골키퍼 역할은 골키퍼 칸에만 놓을 수 있습니다.', { index, phase })
         return
       }
-      if (!catalog.choicesAt(position, phase, slotKindOf(tactic, index, phase)).some((choice) => choice.roleId === spot.roleId)) {
-        add('roleChoice', `이 칸에서는 ${label} 역할로 ${withJosa(role.label, '을/를')} 고를 수 없습니다.`, { index, phase })
+      // 그 포지션에서 고를 수 없는 역할은 막는다(확실한 규칙): 역할의 포지션 집합(FM26은 게임에서 읽은 포지션별 역할 표와 같다)에 이 칸의 포지션이 없다
+      const cannotChoose = `이 칸에서는 ${label} 역할로 ${withJosa(role.label, '을/를')} 고를 수 없습니다.`
+      if (!role.positions.includes(position)) {
+        add('roleChoice', cannotChoose, { index, phase })
+        return
+      }
+      // 포지션에는 맞지만 이 칸 종류·국면의 목록에는 없는 역할: 그 목록을 게임에서 확인했을 때만 막고, 확인 전이면 알리기만 한다
+      const choices = catalog.choicesAt(position, phase, slotKindOf(tactic, index, phase))
+      if (!choices.some((choice) => choice.roleId === spot.roleId)) {
+        if (confirmedInGame(choices)) add('roleChoice', cannotChoose, { index, phase })
+        else {
+          add(
+            'roleUnconfirmed',
+            `게임에서 확인 전인 자리입니다: ${index + 1}번째 자리의 ${label} 역할 ${withJosa(role.label, '은/는')} 앱이 아는 이 칸의 목록에 없지만, 그 목록을 아직 게임에서 확인하지 못해 막지 않습니다.`,
+            { index, phase },
+            'note'
+          )
+        }
       }
     })
     if (keepers !== 1) add('goalkeeper', `${label}에는 골키퍼 칸이 정확히 하나 있어야 합니다. 지금은 ${keepers}개입니다.`, { phase })
@@ -318,7 +362,11 @@ export function validateTactic(tactic: Tactic, catalog: RoleCatalog): TacticProb
   return problems
 }
 
-/** 전술 묶음을 검사한다: 전술 1~3개, 번호가 겹치지 않음, 주 전술이 묶음 안에 있음, 카탈로그가 같음, 전술마다 validateTactic. 모양이 틀린 입력에도 죽지 않는다 */
+/**
+ * 전술 묶음을 검사한다: 전술 1~3개, 번호가 겹치지 않음, 주 전술이 묶음 안에 있음, 카탈로그가 같음, 전술마다 validateTactic. 모양이 틀린 입력에도 죽지 않는다.
+ * 묶음이 유효한지(저장할 수 있는지)를 정하는 검사라서 막는 문제(오류)만 돌려준다: 비어 있으면 저장할 수 있다.
+ * 게임에서 확인 전인 칸의 알림(level 'note')은 전술마다 validateTactic으로 본다.
+ */
 export function validateTacticSet(set: TacticSet, catalog: RoleCatalog): TacticProblem[] {
   if (!set || typeof set !== 'object' || !Array.isArray(set.tactics)) return [{ code: 'shape', message: '전술 묶음 자료가 올바르지 않습니다.' }]
   const problems: TacticProblem[] = []
@@ -331,7 +379,7 @@ export function validateTacticSet(set: TacticSet, catalog: RoleCatalog): TacticP
   if (!ids.includes(set.mainId)) problems.push({ code: 'mainId', message: '주 전술이 전술 목록에 없습니다.' })
   for (const tactic of set.tactics) {
     const where = tactic && typeof tactic.name === 'string' && tactic.name.length > 0 ? `“${tactic.name}” ` : ''
-    for (const problem of validateTactic(tactic, catalog)) problems.push({ ...problem, message: `${where}${problem.message}` })
+    for (const problem of blockingProblems(validateTactic(tactic, catalog))) problems.push({ ...problem, message: `${where}${problem.message}` })
   }
   return problems
 }

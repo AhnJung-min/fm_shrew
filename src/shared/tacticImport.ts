@@ -4,7 +4,7 @@ import { TACTIC_NAME_MAX, TACTIC_SLOTS } from './limits'
 import type { RoleCatalog } from './roleCatalog'
 import type { PositionKey } from './roles'
 import type { Phase } from './slotProfile'
-import { canonicalOrder, cellPosition, slotKindOf, validateTactic, type Cell, type Line, type Tactic, type TacticSlot } from './tacticModel'
+import { blockingProblems, canonicalOrder, cellPosition, slotKindOf, validateTactic, type Cell, type Line, type Tactic, type TacticSlot } from './tacticModel'
 
 /**
  * 게임 전술 가져오기(A-01)의 앱 쪽 해독. 플러그인 /tactic의 답(점유 시와 비점유 시의 자리 11개, 포지션·역할 비트)을 앱의 전술 초안으로 바꾼다.
@@ -189,7 +189,10 @@ export function cellOfPosition(text: string | null, row: SupportedVersion): Cell
 // ---------- 전술 초안 만들기 ----------
 
 export interface TacticFromGame {
-  /** 문제가 하나도 없으면 참 */
+  /**
+   * 풀면서 만난 문제와 저장을 막는 검사 문제(오류)가 하나도 없으면 참. 검사의 알림(게임에서 확인 전인 칸의 역할 목록)은 problems에 담기지만 ok를 거짓으로 만들지 않는다:
+   * 게임이 고른 역할이 앱의 확인 전 목록에 없다는 것은 앱 쪽 사정이라 사용자가 고칠 것이 없고, 그런 이유로 가져온 전술이 거절되면 안 된다
+   */
   ok: boolean
   /** 자리 11개를 모두 풀었을 때만 있다(문제가 있어도 있을 수 있다. 저장하려면 편집기의 검사를 통과해야 한다) */
   tactic?: Tactic
@@ -222,7 +225,7 @@ function rowsByIndex(rows: GameSlotRow[], phase: Phase, problems: string[]): Map
  * 게임 전술 응답을 쓰는 카탈로그의 전술 초안으로 바꾼다. 점유 시와 비점유 시의 줄은 자리 순번(Index)으로 짝짓고(순서가 섞여 와도 된다),
  * 포지션 비트는 칸으로, 역할 비트는 임무 비트를 지운 뒤 (국면, 역할 번호)로 카탈로그의 역할로 푼다. 자리는 저장할 때의 놓는 순서(canonicalOrder)로 놓는다.
  * 짝이 안 맞거나 풀 수 없는 값(모르는 포지션·역할 비트)이 있으면 그 자리를 문제로 적고 ok를 거짓으로 둔다(전술은 만들지 않는다).
- * 다 풀었으면 마지막에 validateTactic을 돌려 그 문제도 모은다(그 경우에는 전술도 함께 준다).
+ * 다 풀었으면 마지막에 validateTactic을 돌려 그 문제와 알림도 problems에 모은다(그 경우에는 전술도 함께 준다. 알림만 남았으면 전술은 그대로 나오고 ok도 참이다).
  * 문제 글의 "N번째 자리"는 전술을 줄 때는 그 전술(저장 순서)의 자리 번호이고(저장 검사와 역할 목록 견주기의 글도 같다),
  * 전술이 없을 때는 게임이 준 자리 순서(순번이 작은 것부터)의 번호다.
  */
@@ -301,8 +304,10 @@ export function tacticFromGame(answer: GameTacticAnswer, catalog: RoleCatalog, r
   const name = Array.from(given.trim()).slice(0, TACTIC_NAME_MAX).join('') || '게임에서 가져온 전술'
   const tactic = canonicalOrder({ id, name, preset: null, slots, sharePct: null, source: 'game', catalog: catalog.id })
   writeSlotMessages((at) => tactic.slots.indexOf(slots[at]))
-  for (const found of validateTactic(tactic, catalog)) problems.push(found.message)
-  return { ok: problems.length === 0, tactic, problems, unknownBits }
+  const readProblems = problems.length
+  const checked = validateTactic(tactic, catalog)
+  for (const found of checked) problems.push(found.message)
+  return { ok: readProblems === 0 && blockingProblems(checked).length === 0, tactic, problems, unknownBits }
 }
 
 // ---------- 자리별 역할 목록 견주기(roles=1로 읽었을 때) ----------
