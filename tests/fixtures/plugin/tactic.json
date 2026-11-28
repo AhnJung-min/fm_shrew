@@ -1,0 +1,1075 @@
+{
+ "ip": {
+  "id": 90000001,
+  "notes": {
+   "InPossession": "ok",
+   "Boolean": "ok"
+  },
+  "fields": {
+   "Age": "27",
+   "Team.Tactic.Name": "가상 4-3-3 전술",
+   "Team.Tactic.FormationName": "가상 4-1-2-3"
+  },
+  "list": "가상 자리 목록",
+  "count": 11,
+  "items": [
+   {
+    "Position": "1",
+    "PositionRole": "4096",
+    "Index": "0",
+    "IsGoalkeeper": "True"
+   },
+   {
+    "Position": "4",
+    "PositionRole": "4503599627370496",
+    "Index": "1",
+    "IsGoalkeeper": "False"
+   },
+   {
+    "Position": "2097168",
+    "PositionRole": "16777216",
+    "Index": "2",
+    "IsGoalkeeper": "False"
+   },
+   {
+    "Position": "1048592",
+    "PositionRole": "2",
+    "Index": "3",
+    "IsGoalkeeper": "False"
+   },
+   {
+    "Position": "8",
+    "PositionRole": "17592186044416",
+    "Index": "4",
+    "IsGoalkeeper": "False"
+   },
+   {
+    "Position": "2098176",
+    "PositionRole": "72057594037927936",
+    "Index": "5",
+    "IsGoalkeeper": "False"
+   },
+   {
+    "Position": "128",
+    "PositionRole": "16",
+    "Index": "6",
+    "IsGoalkeeper": "False"
+   },
+   {
+    "Position": "2048",
+    "PositionRole": "134217728",
+    "Index": "7",
+    "IsGoalkeeper": "False"
+   },
+   {
+    "Position": "1049600",
+    "PositionRole": "131072",
+    "Index": "8",
+    "IsGoalkeeper": "False"
+   },
+   {
+    "Position": "4096",
+    "PositionRole": "134217728",
+    "Index": "9",
+    "IsGoalkeeper": "False"
+   },
+   {
+    "Position": "16384",
+    "PositionRole": "1024",
+    "Index": "10",
+    "IsGoalkeeper": "False"
+   }
+  ]
+ },
+ "oop": {
+  "id": 90000001,
+  "notes": {
+   "InPossession": "ok",
+   "Boolean": "ok"
+  },
+  "fields": {
+   "Age": "27",
+   "Team.Tactic.Name": "가상 4-3-3 전술",
+   "Team.Tactic.FormationName": "가상 4-1-2-3"
+  },
+  "list": "가상 자리 목록",
+  "count": 11,
+  "items": [
+   {
+    "Position": "1",
+    "PositionRole": "2",
+    "Index": "0",
+    "IsGoalkeeper": "True"
+   },
+   {
+    "Position": "4",
+    "PositionRole": "2048",
+    "Index": "1",
+    "IsGoalkeeper": "False"
+   },
+   {
+    "Position": "2097168",
+    "PositionRole": "8",
+    "Index": "2",
+    "IsGoalkeeper": "False"
+   },
+   {
+    "Position": "1048592",
+    "PositionRole": "8",
+    "Index": "3",
+    "IsGoalkeeper": "False"
+   },
+   {
+    "Position": "8",
+    "PositionRole": "512",
+    "Index": "4",
+    "IsGoalkeeper": "False"
+   },
+   {
+    "Position": "2098176",
+    "PositionRole": "1048576",
+    "Index": "5",
+    "IsGoalkeeper": "False"
+   },
+   {
+    "Position": "128",
+    "PositionRole": "65536",
+    "Index": "6",
+    "IsGoalkeeper": "False"
+   },
+   {
+    "Position": "2048",
+    "PositionRole": "549755813888",
+    "Index": "7",
+    "IsGoalkeeper": "False"
+   },
+   {
+    "Position": "1049600",
+    "PositionRole": "134217728",
+    "Index": "8",
+    "IsGoalkeeper": "False"
+   },
+   {
+    "Position": "4096",
+    "PositionRole": "549755813888",
+    "Index": "9",
+    "IsGoalkeeper": "False"
+   },
+   {
+    "Position": "16384",
+    "PositionRole": "4398046511104",
+    "Index": "10",
+    "IsGoalkeeper": "False"
+   }
+  ]
+ },
+ "roles": [
+  {
+   "index": 0,
+   "phase": "ip",
+   "probe": {
+    "id": 90000001,
+    "notes": {
+     "TeamSelectionIndex": "ok",
+     "InPossession": "ok",
+     "Boolean": "ok"
+    },
+    "fields": {
+     "Age": "27",
+     "Team.Tactic.PositionValue": "1",
+     "Team.Tactic.PositionRole": "4096"
+    },
+    "list": "가상 역할 목록",
+    "count": 3,
+    "items": [
+     {
+      "RowData.DisplayValue.Role": "1",
+      "RowData.DisplayValue.TacticsRoleName": "가상 역할 1",
+      "RowData.DisplayValue.Selected": "False"
+     },
+     {
+      "RowData.DisplayValue.Role": "4096",
+      "RowData.DisplayValue.TacticsRoleName": "가상 역할 4096",
+      "RowData.DisplayValue.Selected": "True"
+     },
+     {
+      "RowData.DisplayValue.Role": "9007199254740992",
+      "RowData.DisplayValue.TacticsRoleName": "가상 역할 9007199254740992",
+      "RowData.DisplayValue.Selected": "False"
+     }
+    ]
+   }
+  },
+  {
+   "index": 0,
+   "phase": "oop",
+   "probe": {
+    "id": 90000001,
+    "notes": {
+     "TeamSelectionIndex": "ok",
+     "InPossession": "ok",
+     "Boolean": "ok"
+    },
+    "fields": {
+     "Age": "27",
+     "Team.Tactic.PositionValue": "1",
+     "Team.Tactic.PositionRole": "2"
+    },
+    "list": "가상 역할 목록",
+    "count": 3,
+    "items": [
+     {
+      "RowData.DisplayValue.Role": "1",
+      "RowData.DisplayValue.TacticsRoleName": "가상 역할 1",
+      "RowData.DisplayValue.Selected": "False"
+     },
+     {
+      "RowData.DisplayValue.Role": "2",
+      "RowData.DisplayValue.TacticsRoleName": "가상 역할 2",
+      "RowData.DisplayValue.Selected": "True"
+     },
+     {
+      "RowData.DisplayValue.Role": "4",
+      "RowData.DisplayValue.TacticsRoleName": "가상 역할 4",
+      "RowData.DisplayValue.Selected": "False"
+     }
+    ]
+   }
+  },
+  {
+   "index": 1,
+   "phase": "ip",
+   "probe": {
+    "id": 90000001,
+    "notes": {
+     "TeamSelectionIndex": "ok",
+     "InPossession": "ok",
+     "Boolean": "ok"
+    },
+    "fields": {
+     "Age": "27",
+     "Team.Tactic.PositionValue": "4",
+     "Team.Tactic.PositionRole": "4503599627370496"
+    },
+    "list": "가상 역할 목록",
+    "count": 5,
+    "items": [
+     {
+      "RowData.DisplayValue.Role": "4",
+      "RowData.DisplayValue.TacticsRoleName": "가상 역할 4",
+      "RowData.DisplayValue.Selected": "False"
+     },
+     {
+      "RowData.DisplayValue.Role": "8",
+      "RowData.DisplayValue.TacticsRoleName": "가상 역할 8",
+      "RowData.DisplayValue.Selected": "False"
+     },
+     {
+      "RowData.DisplayValue.Role": "17592186044416",
+      "RowData.DisplayValue.TacticsRoleName": "가상 역할 17592186044416",
+      "RowData.DisplayValue.Selected": "False"
+     },
+     {
+      "RowData.DisplayValue.Role": "4503599627370496",
+      "RowData.DisplayValue.TacticsRoleName": "가상 역할 4503599627370496",
+      "RowData.DisplayValue.Selected": "True"
+     },
+     {
+      "RowData.DisplayValue.Role": "36028797018963968",
+      "RowData.DisplayValue.TacticsRoleName": "가상 역할 36028797018963968",
+      "RowData.DisplayValue.Selected": "False"
+     }
+    ]
+   }
+  },
+  {
+   "index": 1,
+   "phase": "oop",
+   "probe": {
+    "id": 90000001,
+    "notes": {
+     "TeamSelectionIndex": "ok",
+     "InPossession": "ok",
+     "Boolean": "ok"
+    },
+    "fields": {
+     "Age": "27",
+     "Team.Tactic.PositionValue": "4",
+     "Team.Tactic.PositionRole": "2048"
+    },
+    "list": "가상 역할 목록",
+    "count": 3,
+    "items": [
+     {
+      "RowData.DisplayValue.Role": "512",
+      "RowData.DisplayValue.TacticsRoleName": "가상 역할 512",
+      "RowData.DisplayValue.Selected": "False"
+     },
+     {
+      "RowData.DisplayValue.Role": "1024",
+      "RowData.DisplayValue.TacticsRoleName": "가상 역할 1024",
+      "RowData.DisplayValue.Selected": "False"
+     },
+     {
+      "RowData.DisplayValue.Role": "2048",
+      "RowData.DisplayValue.TacticsRoleName": "가상 역할 2048",
+      "RowData.DisplayValue.Selected": "True"
+     }
+    ]
+   }
+  },
+  {
+   "index": 2,
+   "phase": "ip",
+   "probe": {
+    "id": 90000001,
+    "notes": {
+     "TeamSelectionIndex": "ok",
+     "InPossession": "ok",
+     "Boolean": "ok"
+    },
+    "fields": {
+     "Age": "27",
+     "Team.Tactic.PositionValue": "2097168",
+     "Team.Tactic.PositionRole": "16777216"
+    },
+    "list": "가상 역할 목록",
+    "count": 4,
+    "items": [
+     {
+      "RowData.DisplayValue.Role": "2",
+      "RowData.DisplayValue.TacticsRoleName": "가상 역할 2",
+      "RowData.DisplayValue.Selected": "False"
+     },
+     {
+      "RowData.DisplayValue.Role": "16384",
+      "RowData.DisplayValue.TacticsRoleName": "가상 역할 16384",
+      "RowData.DisplayValue.Selected": "False"
+     },
+     {
+      "RowData.DisplayValue.Role": "16777216",
+      "RowData.DisplayValue.TacticsRoleName": "가상 역할 16777216",
+      "RowData.DisplayValue.Selected": "True"
+     },
+     {
+      "RowData.DisplayValue.Role": "536870912",
+      "RowData.DisplayValue.TacticsRoleName": "가상 역할 536870912",
+      "RowData.DisplayValue.Selected": "False"
+     }
+    ]
+   }
+  },
+  {
+   "index": 2,
+   "phase": "oop",
+   "probe": {
+    "id": 90000001,
+    "notes": {
+     "TeamSelectionIndex": "ok",
+     "InPossession": "ok",
+     "Boolean": "ok"
+    },
+    "fields": {
+     "Age": "27",
+     "Team.Tactic.PositionValue": "2097168",
+     "Team.Tactic.PositionRole": "8"
+    },
+    "list": "가상 역할 목록",
+    "count": 3,
+    "items": [
+     {
+      "RowData.DisplayValue.Role": "8",
+      "RowData.DisplayValue.TacticsRoleName": "가상 역할 8",
+      "RowData.DisplayValue.Selected": "True"
+     },
+     {
+      "RowData.DisplayValue.Role": "16",
+      "RowData.DisplayValue.TacticsRoleName": "가상 역할 16",
+      "RowData.DisplayValue.Selected": "False"
+     },
+     {
+      "RowData.DisplayValue.Role": "32",
+      "RowData.DisplayValue.TacticsRoleName": "가상 역할 32",
+      "RowData.DisplayValue.Selected": "False"
+     }
+    ]
+   }
+  },
+  {
+   "index": 3,
+   "phase": "ip",
+   "probe": {
+    "id": 90000001,
+    "notes": {
+     "TeamSelectionIndex": "ok",
+     "InPossession": "ok",
+     "Boolean": "ok"
+    },
+    "fields": {
+     "Age": "27",
+     "Team.Tactic.PositionValue": "1048592",
+     "Team.Tactic.PositionRole": "2"
+    },
+    "list": "가상 역할 목록",
+    "count": 4,
+    "items": [
+     {
+      "RowData.DisplayValue.Role": "2",
+      "RowData.DisplayValue.TacticsRoleName": "가상 역할 2",
+      "RowData.DisplayValue.Selected": "True"
+     },
+     {
+      "RowData.DisplayValue.Role": "16384",
+      "RowData.DisplayValue.TacticsRoleName": "가상 역할 16384",
+      "RowData.DisplayValue.Selected": "False"
+     },
+     {
+      "RowData.DisplayValue.Role": "16777216",
+      "RowData.DisplayValue.TacticsRoleName": "가상 역할 16777216",
+      "RowData.DisplayValue.Selected": "False"
+     },
+     {
+      "RowData.DisplayValue.Role": "536870912",
+      "RowData.DisplayValue.TacticsRoleName": "가상 역할 536870912",
+      "RowData.DisplayValue.Selected": "False"
+     }
+    ]
+   }
+  },
+  {
+   "index": 3,
+   "phase": "oop",
+   "probe": {
+    "id": 90000001,
+    "notes": {
+     "TeamSelectionIndex": "ok",
+     "InPossession": "ok",
+     "Boolean": "ok"
+    },
+    "fields": {
+     "Age": "27",
+     "Team.Tactic.PositionValue": "1048592",
+     "Team.Tactic.PositionRole": "8"
+    },
+    "list": "가상 역할 목록",
+    "count": 3,
+    "items": [
+     {
+      "RowData.DisplayValue.Role": "8",
+      "RowData.DisplayValue.TacticsRoleName": "가상 역할 8",
+      "RowData.DisplayValue.Selected": "True"
+     },
+     {
+      "RowData.DisplayValue.Role": "16",
+      "RowData.DisplayValue.TacticsRoleName": "가상 역할 16",
+      "RowData.DisplayValue.Selected": "False"
+     },
+     {
+      "RowData.DisplayValue.Role": "32",
+      "RowData.DisplayValue.TacticsRoleName": "가상 역할 32",
+      "RowData.DisplayValue.Selected": "False"
+     }
+    ]
+   }
+  },
+  {
+   "index": 4,
+   "phase": "ip",
+   "probe": {
+    "id": 90000001,
+    "notes": {
+     "TeamSelectionIndex": "ok",
+     "InPossession": "ok",
+     "Boolean": "ok"
+    },
+    "fields": {
+     "Age": "27",
+     "Team.Tactic.PositionValue": "8",
+     "Team.Tactic.PositionRole": "17592186044416"
+    },
+    "list": "가상 역할 목록",
+    "count": 5,
+    "items": [
+     {
+      "RowData.DisplayValue.Role": "4",
+      "RowData.DisplayValue.TacticsRoleName": "가상 역할 4",
+      "RowData.DisplayValue.Selected": "False"
+     },
+     {
+      "RowData.DisplayValue.Role": "8",
+      "RowData.DisplayValue.TacticsRoleName": "가상 역할 8",
+      "RowData.DisplayValue.Selected": "False"
+     },
+     {
+      "RowData.DisplayValue.Role": "17592186044416",
+      "RowData.DisplayValue.TacticsRoleName": "가상 역할 17592186044416",
+      "RowData.DisplayValue.Selected": "True"
+     },
+     {
+      "RowData.DisplayValue.Role": "4503599627370496",
+      "RowData.DisplayValue.TacticsRoleName": "가상 역할 4503599627370496",
+      "RowData.DisplayValue.Selected": "False"
+     },
+     {
+      "RowData.DisplayValue.Role": "36028797018963968",
+      "RowData.DisplayValue.TacticsRoleName": "가상 역할 36028797018963968",
+      "RowData.DisplayValue.Selected": "False"
+     }
+    ]
+   }
+  },
+  {
+   "index": 4,
+   "phase": "oop",
+   "probe": {
+    "id": 90000001,
+    "notes": {
+     "TeamSelectionIndex": "ok",
+     "InPossession": "ok",
+     "Boolean": "ok"
+    },
+    "fields": {
+     "Age": "27",
+     "Team.Tactic.PositionValue": "8",
+     "Team.Tactic.PositionRole": "512"
+    },
+    "list": "가상 역할 목록",
+    "count": 3,
+    "items": [
+     {
+      "RowData.DisplayValue.Role": "512",
+      "RowData.DisplayValue.TacticsRoleName": "가상 역할 512",
+      "RowData.DisplayValue.Selected": "True"
+     },
+     {
+      "RowData.DisplayValue.Role": "1024",
+      "RowData.DisplayValue.TacticsRoleName": "가상 역할 1024",
+      "RowData.DisplayValue.Selected": "False"
+     },
+     {
+      "RowData.DisplayValue.Role": "2048",
+      "RowData.DisplayValue.TacticsRoleName": "가상 역할 2048",
+      "RowData.DisplayValue.Selected": "False"
+     }
+    ]
+   }
+  },
+  {
+   "index": 5,
+   "phase": "ip",
+   "probe": {
+    "id": 90000001,
+    "notes": {
+     "TeamSelectionIndex": "ok",
+     "InPossession": "ok",
+     "Boolean": "ok"
+    },
+    "fields": {
+     "Age": "27",
+     "Team.Tactic.PositionValue": "2098176",
+     "Team.Tactic.PositionRole": "72057594037927936"
+    },
+    "list": "가상 역할 목록",
+    "count": 6,
+    "items": [
+     {
+      "RowData.DisplayValue.Role": "32",
+      "RowData.DisplayValue.TacticsRoleName": "가상 역할 32",
+      "RowData.DisplayValue.Selected": "False"
+     },
+     {
+      "RowData.DisplayValue.Role": "512",
+      "RowData.DisplayValue.TacticsRoleName": "가상 역할 512",
+      "RowData.DisplayValue.Selected": "False"
+     },
+     {
+      "RowData.DisplayValue.Role": "131072",
+      "RowData.DisplayValue.TacticsRoleName": "가상 역할 131072",
+      "RowData.DisplayValue.Selected": "False"
+     },
+     {
+      "RowData.DisplayValue.Role": "281474976710656",
+      "RowData.DisplayValue.TacticsRoleName": "가상 역할 281474976710656",
+      "RowData.DisplayValue.Selected": "False"
+     },
+     {
+      "RowData.DisplayValue.Role": "72057594037927936",
+      "RowData.DisplayValue.TacticsRoleName": "가상 역할 72057594037927936",
+      "RowData.DisplayValue.Selected": "True"
+     },
+     {
+      "RowData.DisplayValue.Role": "144115188075855872",
+      "RowData.DisplayValue.TacticsRoleName": "가상 역할 144115188075855872",
+      "RowData.DisplayValue.Selected": "False"
+     }
+    ]
+   }
+  },
+  {
+   "index": 5,
+   "phase": "oop",
+   "probe": {
+    "id": 90000001,
+    "notes": {
+     "TeamSelectionIndex": "ok",
+     "InPossession": "ok",
+     "Boolean": "ok"
+    },
+    "fields": {
+     "Age": "27",
+     "Team.Tactic.PositionValue": "2098176",
+     "Team.Tactic.PositionRole": "1048576"
+    },
+    "list": "가상 역할 목록",
+    "count": 4,
+    "items": [
+     {
+      "RowData.DisplayValue.Role": "1048576",
+      "RowData.DisplayValue.TacticsRoleName": "가상 역할 1048576",
+      "RowData.DisplayValue.Selected": "True"
+     },
+     {
+      "RowData.DisplayValue.Role": "134217728",
+      "RowData.DisplayValue.TacticsRoleName": "가상 역할 134217728",
+      "RowData.DisplayValue.Selected": "False"
+     },
+     {
+      "RowData.DisplayValue.Role": "268435456",
+      "RowData.DisplayValue.TacticsRoleName": "가상 역할 268435456",
+      "RowData.DisplayValue.Selected": "False"
+     },
+     {
+      "RowData.DisplayValue.Role": "536870912",
+      "RowData.DisplayValue.TacticsRoleName": "가상 역할 536870912",
+      "RowData.DisplayValue.Selected": "False"
+     }
+    ]
+   }
+  },
+  {
+   "index": 6,
+   "phase": "ip",
+   "probe": {
+    "id": 90000001,
+    "notes": {
+     "TeamSelectionIndex": "ok",
+     "InPossession": "ok",
+     "Boolean": "ok"
+    },
+    "fields": {
+     "Age": "27",
+     "Team.Tactic.PositionValue": "128",
+     "Team.Tactic.PositionRole": "16"
+    },
+    "list": "가상 역할 목록",
+    "count": 3,
+    "items": [
+     {
+      "RowData.DisplayValue.Role": "16",
+      "RowData.DisplayValue.TacticsRoleName": "가상 역할 16",
+      "RowData.DisplayValue.Selected": "True"
+     },
+     {
+      "RowData.DisplayValue.Role": "32768",
+      "RowData.DisplayValue.TacticsRoleName": "가상 역할 32768",
+      "RowData.DisplayValue.Selected": "False"
+     },
+     {
+      "RowData.DisplayValue.Role": "34359738368",
+      "RowData.DisplayValue.TacticsRoleName": "가상 역할 34359738368",
+      "RowData.DisplayValue.Selected": "False"
+     }
+    ]
+   }
+  },
+  {
+   "index": 6,
+   "phase": "oop",
+   "probe": {
+    "id": 90000001,
+    "notes": {
+     "TeamSelectionIndex": "ok",
+     "InPossession": "ok",
+     "Boolean": "ok"
+    },
+    "fields": {
+     "Age": "27",
+     "Team.Tactic.PositionValue": "128",
+     "Team.Tactic.PositionRole": "65536"
+    },
+    "list": "가상 역할 목록",
+    "count": 3,
+    "items": [
+     {
+      "RowData.DisplayValue.Role": "32768",
+      "RowData.DisplayValue.TacticsRoleName": "가상 역할 32768",
+      "RowData.DisplayValue.Selected": "False"
+     },
+     {
+      "RowData.DisplayValue.Role": "65536",
+      "RowData.DisplayValue.TacticsRoleName": "가상 역할 65536",
+      "RowData.DisplayValue.Selected": "True"
+     },
+     {
+      "RowData.DisplayValue.Role": "262144",
+      "RowData.DisplayValue.TacticsRoleName": "가상 역할 262144",
+      "RowData.DisplayValue.Selected": "False"
+     }
+    ]
+   }
+  },
+  {
+   "index": 7,
+   "phase": "ip",
+   "probe": {
+    "id": 90000001,
+    "notes": {
+     "TeamSelectionIndex": "ok",
+     "InPossession": "ok",
+     "Boolean": "ok"
+    },
+    "fields": {
+     "Age": "27",
+     "Team.Tactic.PositionValue": "2048",
+     "Team.Tactic.PositionRole": "134217728"
+    },
+    "list": "가상 역할 목록",
+    "count": 5,
+    "items": [
+     {
+      "RowData.DisplayValue.Role": "128",
+      "RowData.DisplayValue.TacticsRoleName": "가상 역할 128",
+      "RowData.DisplayValue.Selected": "False"
+     },
+     {
+      "RowData.DisplayValue.Role": "134217728",
+      "RowData.DisplayValue.TacticsRoleName": "가상 역할 134217728",
+      "RowData.DisplayValue.Selected": "True"
+     },
+     {
+      "RowData.DisplayValue.Role": "8796093022208",
+      "RowData.DisplayValue.TacticsRoleName": "가상 역할 8796093022208",
+      "RowData.DisplayValue.Selected": "False"
+     },
+     {
+      "RowData.DisplayValue.Role": "35184372088832",
+      "RowData.DisplayValue.TacticsRoleName": "가상 역할 35184372088832",
+      "RowData.DisplayValue.Selected": "False"
+     },
+     {
+      "RowData.DisplayValue.Role": "562949953421312",
+      "RowData.DisplayValue.TacticsRoleName": "가상 역할 562949953421312",
+      "RowData.DisplayValue.Selected": "False"
+     }
+    ]
+   }
+  },
+  {
+   "index": 7,
+   "phase": "oop",
+   "probe": {
+    "id": 90000001,
+    "notes": {
+     "TeamSelectionIndex": "ok",
+     "InPossession": "ok",
+     "Boolean": "ok"
+    },
+    "fields": {
+     "Age": "27",
+     "Team.Tactic.PositionValue": "2048",
+     "Team.Tactic.PositionRole": "549755813888"
+    },
+    "list": "가상 역할 목록",
+    "count": 4,
+    "items": [
+     {
+      "RowData.DisplayValue.Role": "274877906944",
+      "RowData.DisplayValue.TacticsRoleName": "가상 역할 274877906944",
+      "RowData.DisplayValue.Selected": "False"
+     },
+     {
+      "RowData.DisplayValue.Role": "549755813888",
+      "RowData.DisplayValue.TacticsRoleName": "가상 역할 549755813888",
+      "RowData.DisplayValue.Selected": "True"
+     },
+     {
+      "RowData.DisplayValue.Role": "1099511627776",
+      "RowData.DisplayValue.TacticsRoleName": "가상 역할 1099511627776",
+      "RowData.DisplayValue.Selected": "False"
+     },
+     {
+      "RowData.DisplayValue.Role": "2199023255552",
+      "RowData.DisplayValue.TacticsRoleName": "가상 역할 2199023255552",
+      "RowData.DisplayValue.Selected": "False"
+     }
+    ]
+   }
+  },
+  {
+   "index": 8,
+   "phase": "ip",
+   "probe": {
+    "id": 90000001,
+    "notes": {
+     "TeamSelectionIndex": "ok",
+     "InPossession": "ok",
+     "Boolean": "ok"
+    },
+    "fields": {
+     "Age": "27",
+     "Team.Tactic.PositionValue": "1049600",
+     "Team.Tactic.PositionRole": "131072"
+    },
+    "list": "가상 역할 목록",
+    "count": 6,
+    "items": [
+     {
+      "RowData.DisplayValue.Role": "32",
+      "RowData.DisplayValue.TacticsRoleName": "가상 역할 32",
+      "RowData.DisplayValue.Selected": "False"
+     },
+     {
+      "RowData.DisplayValue.Role": "512",
+      "RowData.DisplayValue.TacticsRoleName": "가상 역할 512",
+      "RowData.DisplayValue.Selected": "False"
+     },
+     {
+      "RowData.DisplayValue.Role": "131072",
+      "RowData.DisplayValue.TacticsRoleName": "가상 역할 131072",
+      "RowData.DisplayValue.Selected": "True"
+     },
+     {
+      "RowData.DisplayValue.Role": "281474976710656",
+      "RowData.DisplayValue.TacticsRoleName": "가상 역할 281474976710656",
+      "RowData.DisplayValue.Selected": "False"
+     },
+     {
+      "RowData.DisplayValue.Role": "72057594037927936",
+      "RowData.DisplayValue.TacticsRoleName": "가상 역할 72057594037927936",
+      "RowData.DisplayValue.Selected": "False"
+     },
+     {
+      "RowData.DisplayValue.Role": "144115188075855872",
+      "RowData.DisplayValue.TacticsRoleName": "가상 역할 144115188075855872",
+      "RowData.DisplayValue.Selected": "False"
+     }
+    ]
+   }
+  },
+  {
+   "index": 8,
+   "phase": "oop",
+   "probe": {
+    "id": 90000001,
+    "notes": {
+     "TeamSelectionIndex": "ok",
+     "InPossession": "ok",
+     "Boolean": "ok"
+    },
+    "fields": {
+     "Age": "27",
+     "Team.Tactic.PositionValue": "1049600",
+     "Team.Tactic.PositionRole": "134217728"
+    },
+    "list": "가상 역할 목록",
+    "count": 4,
+    "items": [
+     {
+      "RowData.DisplayValue.Role": "1048576",
+      "RowData.DisplayValue.TacticsRoleName": "가상 역할 1048576",
+      "RowData.DisplayValue.Selected": "False"
+     },
+     {
+      "RowData.DisplayValue.Role": "134217728",
+      "RowData.DisplayValue.TacticsRoleName": "가상 역할 134217728",
+      "RowData.DisplayValue.Selected": "True"
+     },
+     {
+      "RowData.DisplayValue.Role": "268435456",
+      "RowData.DisplayValue.TacticsRoleName": "가상 역할 268435456",
+      "RowData.DisplayValue.Selected": "False"
+     },
+     {
+      "RowData.DisplayValue.Role": "536870912",
+      "RowData.DisplayValue.TacticsRoleName": "가상 역할 536870912",
+      "RowData.DisplayValue.Selected": "False"
+     }
+    ]
+   }
+  },
+  {
+   "index": 9,
+   "phase": "ip",
+   "probe": {
+    "id": 90000001,
+    "notes": {
+     "TeamSelectionIndex": "ok",
+     "InPossession": "ok",
+     "Boolean": "ok"
+    },
+    "fields": {
+     "Age": "27",
+     "Team.Tactic.PositionValue": "4096",
+     "Team.Tactic.PositionRole": "134217728"
+    },
+    "list": "가상 역할 목록",
+    "count": 5,
+    "items": [
+     {
+      "RowData.DisplayValue.Role": "128",
+      "RowData.DisplayValue.TacticsRoleName": "가상 역할 128",
+      "RowData.DisplayValue.Selected": "False"
+     },
+     {
+      "RowData.DisplayValue.Role": "134217728",
+      "RowData.DisplayValue.TacticsRoleName": "가상 역할 134217728",
+      "RowData.DisplayValue.Selected": "True"
+     },
+     {
+      "RowData.DisplayValue.Role": "8796093022208",
+      "RowData.DisplayValue.TacticsRoleName": "가상 역할 8796093022208",
+      "RowData.DisplayValue.Selected": "False"
+     },
+     {
+      "RowData.DisplayValue.Role": "35184372088832",
+      "RowData.DisplayValue.TacticsRoleName": "가상 역할 35184372088832",
+      "RowData.DisplayValue.Selected": "False"
+     },
+     {
+      "RowData.DisplayValue.Role": "562949953421312",
+      "RowData.DisplayValue.TacticsRoleName": "가상 역할 562949953421312",
+      "RowData.DisplayValue.Selected": "False"
+     }
+    ]
+   }
+  },
+  {
+   "index": 9,
+   "phase": "oop",
+   "probe": {
+    "id": 90000001,
+    "notes": {
+     "TeamSelectionIndex": "ok",
+     "InPossession": "ok",
+     "Boolean": "ok"
+    },
+    "fields": {
+     "Age": "27",
+     "Team.Tactic.PositionValue": "4096",
+     "Team.Tactic.PositionRole": "549755813888"
+    },
+    "list": "가상 역할 목록",
+    "count": 4,
+    "items": [
+     {
+      "RowData.DisplayValue.Role": "274877906944",
+      "RowData.DisplayValue.TacticsRoleName": "가상 역할 274877906944",
+      "RowData.DisplayValue.Selected": "False"
+     },
+     {
+      "RowData.DisplayValue.Role": "549755813888",
+      "RowData.DisplayValue.TacticsRoleName": "가상 역할 549755813888",
+      "RowData.DisplayValue.Selected": "True"
+     },
+     {
+      "RowData.DisplayValue.Role": "1099511627776",
+      "RowData.DisplayValue.TacticsRoleName": "가상 역할 1099511627776",
+      "RowData.DisplayValue.Selected": "False"
+     },
+     {
+      "RowData.DisplayValue.Role": "2199023255552",
+      "RowData.DisplayValue.TacticsRoleName": "가상 역할 2199023255552",
+      "RowData.DisplayValue.Selected": "False"
+     }
+    ]
+   }
+  },
+  {
+   "index": 10,
+   "phase": "ip",
+   "probe": {
+    "id": 90000001,
+    "notes": {
+     "TeamSelectionIndex": "ok",
+     "InPossession": "ok",
+     "Boolean": "ok"
+    },
+    "fields": {
+     "Age": "27",
+     "Team.Tactic.PositionValue": "16384",
+     "Team.Tactic.PositionRole": "1024"
+    },
+    "list": "가상 역할 목록",
+    "count": 6,
+    "items": [
+     {
+      "RowData.DisplayValue.Role": "1024",
+      "RowData.DisplayValue.TacticsRoleName": "가상 역할 1024",
+      "RowData.DisplayValue.Selected": "True"
+     },
+     {
+      "RowData.DisplayValue.Role": "2048",
+      "RowData.DisplayValue.TacticsRoleName": "가상 역할 2048",
+      "RowData.DisplayValue.Selected": "False"
+     },
+     {
+      "RowData.DisplayValue.Role": "262144",
+      "RowData.DisplayValue.TacticsRoleName": "가상 역할 262144",
+      "RowData.DisplayValue.Selected": "False"
+     },
+     {
+      "RowData.DisplayValue.Role": "524288",
+      "RowData.DisplayValue.TacticsRoleName": "가상 역할 524288",
+      "RowData.DisplayValue.Selected": "False"
+     },
+     {
+      "RowData.DisplayValue.Role": "2147483648",
+      "RowData.DisplayValue.TacticsRoleName": "가상 역할 2147483648",
+      "RowData.DisplayValue.Selected": "False"
+     },
+     {
+      "RowData.DisplayValue.Role": "1099511627776",
+      "RowData.DisplayValue.TacticsRoleName": "가상 역할 1099511627776",
+      "RowData.DisplayValue.Selected": "False"
+     }
+    ]
+   }
+  },
+  {
+   "index": 10,
+   "phase": "oop",
+   "probe": {
+    "id": 90000001,
+    "notes": {
+     "TeamSelectionIndex": "ok",
+     "InPossession": "ok",
+     "Boolean": "ok"
+    },
+    "fields": {
+     "Age": "27",
+     "Team.Tactic.PositionValue": "16384",
+     "Team.Tactic.PositionRole": "4398046511104"
+    },
+    "list": "가상 역할 목록",
+    "count": 3,
+    "items": [
+     {
+      "RowData.DisplayValue.Role": "4398046511104",
+      "RowData.DisplayValue.TacticsRoleName": "가상 역할 4398046511104",
+      "RowData.DisplayValue.Selected": "True"
+     },
+     {
+      "RowData.DisplayValue.Role": "8796093022208",
+      "RowData.DisplayValue.TacticsRoleName": "가상 역할 8796093022208",
+      "RowData.DisplayValue.Selected": "False"
+     },
+     {
+      "RowData.DisplayValue.Role": "17592186044416",
+      "RowData.DisplayValue.TacticsRoleName": "가상 역할 17592186044416",
+      "RowData.DisplayValue.Selected": "False"
+     }
+    ]
+   }
+  }
+ ]
+}

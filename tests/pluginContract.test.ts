@@ -4,6 +4,8 @@
  * 플러그인(C#)을 올릴 때 응답 모양이 바뀌면 이 검사가 앱 쪽에서 먼저 알려 준다.
  *
  * 녹화본은 club, health, people, roles, roster다. state는 녹화본이 없어 bridge.ts가 읽는 모양대로 직접 만들었다.
+ * 0.14.0의 새 창구(/tactic, /rolestars, /state의 게임 버전)는 아직 켜진 게임에서 녹화하지 않았다. 견본(state-0.14, tactic, rolestars)은
+ * 게임에서 읽어 둔 비트와 역할 번호의 꼴에 지어낸 이름과 번호를 입힌 것이고, 사용자가 게임에서 새 창구를 확인한 뒤 실제 응답 녹화본으로 바꾼다(docs/checklist.md).
  * 모든 이름(선수, 구단, 경기장, 리그, 나라, 감독)과 고유 번호는 지어낸 값이다.
  */
 import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
@@ -11,14 +13,20 @@ import { createServer, type Server } from 'node:http'
 import type { AddressInfo } from 'node:net'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { afterAll, beforeAll, describe, expect, it } from 'vitest'
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 import { ClubService, firstTeam } from '../src/main/clubService'
 import { POSITION_COUNT } from '../src/main/save/reader'
 import type { SaveWorld } from '../src/main/save/world'
-import { gameClub, gameHealth, gameNames, gamePeople, gameState, HEALTH_BATCH, PEOPLE_PER_REQUEST } from '../src/main/talk/bridge'
+import { importTactic, readGameTactic, type GameTacticInput } from '../src/main/tacticImportService'
+import { gameClub, gameHealth, gameNames, gamePeople, gameRoleStars, gameState, gameTactic, HEALTH_BATCH, PEOPLE_PER_REQUEST, type GameState } from '../src/main/talk/bridge'
 import { WorldService } from '../src/main/worldService'
 import { buildSnapshot, HEALTH_PER_REQUEST, type RosterPlayer } from '../src/shared/club'
-import { CLUB_PLUGIN, MARKET_PLUGIN, NEEDED_PLUGIN, versionOlder, type LinkStatus } from '../src/shared/game'
+import { gameReadGate } from '../src/shared/compat'
+import { CLUB_PLUGIN, MARKET_PLUGIN, NEEDED_PLUGIN, TACTIC_PLUGIN, versionOlder, type GameStatus, type LinkStatus } from '../src/shared/game'
+import { parseRoleStars } from '../src/shared/roleStars'
+import { LEGACY_CATALOG } from '../src/shared/roleCatalog'
+import { parseTacticAnswer } from '../src/shared/tacticImport'
+import { fakeCatalogFromTactic } from './helpers/fakeGameCatalog'
 
 const fixture = <T,>(name: string): T => JSON.parse(readFileSync(join(__dirname, 'fixtures', 'plugin', `${name}.json`), 'utf8')) as T
 
@@ -30,11 +38,23 @@ const club = readFileSync(join(__dirname, 'fixtures', 'plugin', 'club.json'), 'u
 const health = readFileSync(join(__dirname, 'fixtures', 'plugin', 'health.json'), 'utf8')
 const people = readFileSync(join(__dirname, 'fixtures', 'plugin', 'people.json'), 'utf8')
 const state = readFileSync(join(__dirname, 'fixtures', 'plugin', 'state.json'), 'utf8')
+const state14 = readFileSync(join(__dirname, 'fixtures', 'plugin', 'state-0.14.json'), 'utf8')
+const tacticText = readFileSync(join(__dirname, 'fixtures', 'plugin', 'tactic.json'), 'utf8')
+const roleStarsText = readFileSync(join(__dirname, 'fixtures', 'plugin', 'rolestars.json'), 'utf8')
+/** 0.13.0 플러그인의 /state: 게임 버전을 모른다(0.11.0 녹화본에서 버전만 바꾼 것) */
+const state13 = JSON.stringify({ ...JSON.parse(state), version: '0.13.0' })
 const roster = fixture<RosterEntry[]>('roster')
 const TEAM = 9001
 
 let server: Server
 let oldPlugin = false
+/** 가짜 플러그인의 판: 0.14.0이면 /tactic과 /rolestars에 견본으로 답한다 */
+let plugin: '0.11.0' | '0.13.0' | '0.14.0' = '0.11.0'
+/** /tactic이 "player not found"(404)로 답할 선수 번호들, 그리고 게임이 바빠 모두 503으로 답하는지 */
+let missing = new Set<number>()
+let busy = false
+/** /tactic의 답을 견본 대신 이 글자로 돌려준다(null이면 견본) */
+let tacticOverride: string | null = null
 const asked: string[] = []
 
 beforeAll(async () => {
@@ -44,7 +64,14 @@ beforeAll(async () => {
     const json = (body: string): void => void response.writeHead(200, { 'content-type': 'application/json' }).end(body)
     if (request.headers['x-bridge-token'] !== 'secret') response.writeHead(401).end('bad token')
     else if (url === '/ping') response.end('fm-bojwagwan-bridge 0.9.0')
-    else if (url === '/state') (oldPlugin ? response.writeHead(404).end('unknown path') : json(state))
+    else if (url === '/state') (oldPlugin ? response.writeHead(404).end('unknown path') : json(plugin === '0.14.0' ? state14 : plugin === '0.13.0' ? state13 : state))
+    else if (plugin === '0.14.0' && url.startsWith('/tactic?')) {
+      const query = new URL(url, 'http://localhost').searchParams
+      if (busy) response.writeHead(503).end('game busy')
+      else if (missing.has(Number(query.get('uid')))) response.writeHead(404).end('player not found')
+      else if (tacticOverride !== null) json(tacticOverride)
+      else json(query.get('roles') === '1' ? tacticText : JSON.stringify({ ip: JSON.parse(tacticText).ip, oop: JSON.parse(tacticText).oop }))
+    } else if (plugin === '0.14.0' && url.startsWith('/rolestars?')) json(roleStarsText)
     else if (url.startsWith('/club?')) json(club)
     else if (url.startsWith('/health?')) json(health)
     else if (url.startsWith('/people?')) json(people)
@@ -257,5 +284,389 @@ describe('앱이 아직 읽지 않는 녹화본: roles(게임의 역할과 별�
       }
     }
     expect(roles.filter((each) => each.tactic).length).toBeGreaterThan(0)
+  })
+})
+
+// ---------- 플러그인 0.14.0: 게임 판 확인, 게임 전술(/tactic), 역할 별점(/rolestars) ----------
+
+/** 견본의 문자 값이 모두 지어낸 이름이거나 숫자·표지·버전 글자인지(실제 이름이 남아 있지 않다) */
+function strangersIn(value: unknown, found: string[] = [], key = ''): string[] {
+  if (Array.isArray(value)) value.forEach((each) => strangersIn(each, found, key))
+  else if (value && typeof value === 'object') Object.entries(value).forEach(([k, each]) => strangersIn(each, found, k))
+  else if (typeof value === 'string' && !/^(\d+|True|False|ok|ip|oop|가상.*|선수\d\d|\d+\.\d+\.\d+(\+\d+)?)$/.test(value)) found.push(`${key}: ${value}`)
+  return found
+}
+
+describe('0.14.0 견본 자체의 점검', () => {
+  it('이름 자리는 모두 지어낸 값이고, 선수 번호는 9000xxxx 꼴이다', () => {
+    expect(strangersIn(JSON.parse(state14))).toEqual([])
+    expect(strangersIn(JSON.parse(tacticText))).toEqual([])
+    expect(strangersIn(JSON.parse(roleStarsText))).toEqual([])
+    const ids: number[] = []
+    const walk = (value: unknown, key = ''): void => {
+      if (Array.isArray(value)) value.forEach((each) => walk(each, key))
+      else if (value && typeof value === 'object') Object.entries(value).forEach(([k, each]) => walk(each, k))
+      else if (typeof value === 'number' && (key === 'id' || key === 'uid')) ids.push(value)
+    }
+    walk(JSON.parse(tacticText))
+    walk(JSON.parse(roleStarsText))
+    expect(ids.length).toBeGreaterThan(20)
+    expect(ids.every((id) => id >= 90_000_001 && id <= 90_000_999)).toBe(true)
+  })
+})
+
+/** 게임 연결 상태(앱이 /state를 읽어 만드는 GameStatus와 같은 꼴) */
+async function gameStatusNow(): Promise<GameStatus> {
+  const read = (await gameState()) as GameState
+  return {
+    connected: true,
+    pluginVersion: read.version,
+    pluginOld: versionOlder(read.version, NEEDED_PLUGIN),
+    loaded: read.loaded,
+    manager: read.manager,
+    team: read.team,
+    teamShort: read.teamShort,
+    ...(read.gameVersion === undefined ? {} : { gameVersion: read.gameVersion })
+  }
+}
+
+describe('플러그인 0.14.0 문(N-02): 새 기능만 열고 닫는다', () => {
+  it('0.14.0의 /state는 게임 버전을 주고, 게임 전술 가져오기와 별점 대조의 문이 열린다', async () => {
+    plugin = '0.14.0'
+    try {
+      const read = await gameState()
+      expect(read?.version).toBe('0.14.0')
+      expect(read?.gameVersion).toBe('26.3.2+2329565')
+      const status = await gameStatusNow()
+      for (const feature of ['tactic', 'stars'] as const) {
+        const gate = gameReadGate(status, feature)
+        expect(gate.open, feature).toBe(true)
+        expect(gate.row?.game).toBe('26.3.2')
+      }
+    } finally {
+      plugin = '0.11.0'
+    }
+  })
+
+  it('0.13.0이면 두 문이 닫히고(까닭에 0.14.0이 적힌다), 구단·건강·시장·이름은 그대로 읽힌다', async () => {
+    plugin = '0.13.0'
+    try {
+      const read = await gameState()
+      expect(read?.version).toBe('0.13.0')
+      // 게임 버전 칸이 아예 없다(0.14.0에서 빈 글자로 오는 것과 다르다)
+      expect(read).not.toHaveProperty('gameVersion')
+      const status = await gameStatusNow()
+      expect(status.pluginOld).toBe(false)
+      for (const feature of ['tactic', 'stars'] as const) {
+        const gate = gameReadGate(status, feature)
+        expect(gate.open, feature).toBe(false)
+        expect(gate.reason).toContain('0.14.0 이상')
+        expect(gate.reason).toContain('0.13.0')
+      }
+      // 새 창구는 모르는 길이라 null이다(다른 기능은 막지 않는다)
+      expect(await gameTactic(TEAM, roster[0].uid)).toBeNull()
+      expect(await gameRoleStars(TEAM, [roster[0].uid])).toBeNull()
+      expect(versionOlder('0.13.0', TACTIC_PLUGIN)).toBe(true)
+      // 나머지 창구는 그대로다
+      expect((await gameClub(TEAM))?.records).toHaveLength(1)
+      expect((await gameHealth(rosterPlayers.map((each) => each.uid), TEAM))?.records).toHaveLength(8)
+      expect(await gamePeople(roster.map((each) => each.uid))).toHaveLength(25)
+      expect(await gameNames('team', [7, 9])).toHaveLength(2)
+    } finally {
+      plugin = '0.11.0'
+    }
+  })
+
+  it('0.14.0이어도 게임 판이 표에 없거나 읽지 못했으면 문이 닫힌다', async () => {
+    plugin = '0.14.0'
+    try {
+      const status = await gameStatusNow()
+      expect(gameReadGate({ ...status, gameVersion: '26.4.0' }, 'tactic').open).toBe(false)
+      expect(gameReadGate({ ...status, gameVersion: '' }, 'stars').open).toBe(false)
+      expect(gameReadGate({ ...status, gameVersion: undefined }, 'stars').reason).toContain('확인 못 함')
+    } finally {
+      plugin = '0.11.0'
+    }
+  })
+})
+
+describe('/tactic과 /rolestars: 앱 쪽 요청과 해독', () => {
+  it('/tactic: 팀과 선수 번호로 묻고 자리 11개의 두 국면을 읽는다. roles=1이면 자리별 역할 목록 22개도 온다', async () => {
+    plugin = '0.14.0'
+    try {
+      asked.length = 0
+      const plain = parseTacticAnswer(await gameTactic(TEAM, 90_000_001))
+      expect(asked).toEqual([`/tactic?team=${TEAM}&uid=90000001`])
+      expect(plain?.ip.rows).toHaveLength(11)
+      expect(plain?.oop.rows).toHaveLength(11)
+      expect(plain?.roleLists).toEqual([])
+      const withRoles = parseTacticAnswer(await gameTactic(TEAM, 90_000_001, true))
+      expect(asked.at(-1)).toBe(`/tactic?team=${TEAM}&uid=90000001&roles=1`)
+      expect(withRoles?.roleLists).toHaveLength(22)
+      // 소수는 버린다
+      await gameTactic(TEAM + 0.7, 90_000_001.9)
+      expect(asked.at(-1)).toBe(`/tactic?team=${TEAM}&uid=90000001`)
+    } finally {
+      plugin = '0.11.0'
+    }
+  })
+
+  it('/tactic: 선수를 찾지 못하거나(404) 게임이 바쁘면(503) null이다', async () => {
+    plugin = '0.14.0'
+    missing = new Set([90_000_001])
+    try {
+      expect(await gameTactic(TEAM, 90_000_001)).toBeNull()
+      expect(await gameTactic(TEAM, 90_000_002)).not.toBeNull()
+      busy = true
+      expect(await gameTactic(TEAM, 90_000_002)).toBeNull()
+    } finally {
+      plugin = '0.11.0'
+      missing = new Set()
+      busy = false
+    }
+  })
+
+  it('/rolestars: 선수 5명까지 한 번에 묻고 표를 줄로 푼다', async () => {
+    plugin = '0.14.0'
+    try {
+      asked.length = 0
+      const uids = Array.from({ length: 8 }, (_, at) => 90_000_001 + at)
+      const rows = parseRoleStars(await gameRoleStars(TEAM, uids))
+      expect(asked).toEqual([`/rolestars?team=${TEAM}&uids=90000001,90000002,90000003,90000004,90000005`])
+      expect(rows?.length).toBeGreaterThan(50)
+      expect(new Set(rows?.map((each) => each.uid)).size).toBe(5)
+      // 선수가 없으면 묻지 않는다
+      asked.length = 0
+      expect(await gameRoleStars(TEAM, [])).toEqual({ players: [] })
+      expect(asked).toEqual([])
+    } finally {
+      plugin = '0.11.0'
+    }
+  })
+})
+
+describe('게임에서 전술 가져오기(서비스): 문과 읽기 순서', () => {
+  const catalog = fakeCatalogFromTactic(JSON.parse(tacticText))
+  const uids = [90_000_001, 90_000_002, 90_000_003, 90_000_004]
+  const input = async (change: Partial<GameTacticInput> = {}): Promise<GameTacticInput> => ({
+    game: await gameStatusNow(),
+    teamId: TEAM,
+    uids,
+    catalog,
+    readRoleLists: false,
+    id: 'game:test',
+    ...change
+  })
+  const tacticCalls = (): string[] => asked.filter((url) => url.startsWith('/tactic?'))
+
+  it('게임 전술을 읽어 전술 초안을 준다(저장하지 않는다). 걸린 시간과 전술 이름이 따라온다', async () => {
+    plugin = '0.14.0'
+    try {
+      asked.length = 0
+      const result = await readGameTactic(await input())
+      expect(result.ok, result.message).toBe(true)
+      expect(result.problems).toEqual([])
+      expect(result.unknownBits).toEqual([])
+      expect(result.draft?.slots).toHaveLength(11)
+      expect(result.draft?.source).toBe('game')
+      expect(result.gameName).toBe('가상 4-3-3 전술')
+      expect(result.formationName).toBe('가상 4-1-2-3')
+      expect(result.message).toContain('읽었습니다')
+      expect(result.elapsedMs).toBeGreaterThanOrEqual(0)
+      expect(tacticCalls()).toEqual([`/tactic?team=${TEAM}&uid=90000001`])
+    } finally {
+      plugin = '0.11.0'
+    }
+  })
+
+  it('자리별 역할 목록도 읽으면(roles=1) 앱의 목록과 견주고, 읽은 곳 수를 알린다', async () => {
+    plugin = '0.14.0'
+    try {
+      asked.length = 0
+      const result = await readGameTactic(await input({ readRoleLists: true }))
+      expect(tacticCalls()).toEqual([`/tactic?team=${TEAM}&uid=90000001&roles=1`])
+      expect(result.ok).toBe(true)
+      expect(result.message).toContain('22곳')
+      expect(result.message).toContain('0곳이 앱의 목록과 달랐습니다')
+      // 앱의 목록이 다르면 어디가 다른지 문제 목록에 적힌다(ok는 전술을 읽은 결과 그대로다)
+      const edited = JSON.parse(tacticText)
+      edited.roles[12].probe.items.pop()
+      const other = await readGameTactic(await input({ readRoleLists: true, catalog: fakeCatalogFromTactic(edited) }))
+      expect(other.ok).toBe(true)
+      expect(other.message).toContain('1곳이 앱의 목록과 달랐습니다')
+      expect(other.problems).toHaveLength(1)
+      expect(other.problems[0]).toContain('게임에만 있음')
+    } finally {
+      plugin = '0.11.0'
+    }
+  })
+
+  it('첫 선수를 게임에서 찾지 못하면(404) 다음 선수로 해 보고, 세 명까지만 해 본다', async () => {
+    plugin = '0.14.0'
+    try {
+      missing = new Set([uids[0]])
+      asked.length = 0
+      const second = await readGameTactic(await input())
+      expect(second.ok).toBe(true)
+      expect(tacticCalls()).toEqual([`/tactic?team=${TEAM}&uid=${uids[0]}`, `/tactic?team=${TEAM}&uid=${uids[1]}`])
+
+      missing = new Set(uids)
+      asked.length = 0
+      const none = await readGameTactic(await input())
+      expect(none.ok).toBe(false)
+      expect(none.draft).toBeUndefined()
+      expect(none.message).toContain('게임이 바쁩니다')
+      expect(none.message).toContain('직접 만들어 주세요')
+      expect(tacticCalls()).toHaveLength(3)
+    } finally {
+      plugin = '0.11.0'
+      missing = new Set()
+    }
+  })
+
+  it('실패가 오래 걸렸으면(시간 초과, 게임이 바쁨) 다른 선수로 다시 해 보지 않는다', async () => {
+    plugin = '0.14.0'
+    missing = new Set(uids)
+    // 시계를 부를 때마다 11초씩 가게 해서, 한 번의 요청이 10초보다 오래 걸린 것처럼 만든다
+    let clock = 1_700_000_000_000
+    const now = vi.spyOn(Date, 'now').mockImplementation(() => (clock += 11_000))
+    try {
+      asked.length = 0
+      const result = await readGameTactic(await input())
+      expect(result.ok).toBe(false)
+      expect(result.message).toContain('게임이 바쁩니다')
+      expect(tacticCalls()).toHaveLength(1)
+    } finally {
+      now.mockRestore()
+      plugin = '0.11.0'
+      missing = new Set()
+    }
+  })
+
+  it('게임이 날짜를 넘기는 중이면(503) "게임이 바쁩니다"로 끝나고 오류를 던지지 않는다', async () => {
+    plugin = '0.14.0'
+    busy = true
+    try {
+      const result = await readGameTactic(await input())
+      expect(result).toMatchObject({ ok: false, problems: [], unknownBits: [] })
+      expect(result.message).toContain('게임이 바쁩니다')
+    } finally {
+      plugin = '0.11.0'
+      busy = false
+    }
+  })
+
+  it('답을 읽을 수 없으면(숫자로 온 역할 번호, 모양이 틀림) 읽지 못했다고 알리고 전술을 만들지 않는다', async () => {
+    plugin = '0.14.0'
+    try {
+      const broken = JSON.parse(tacticText)
+      broken.ip.items[0].PositionRole = 4096
+      for (const body of [JSON.stringify(broken), '{"ip":1}', '[]', 'json이 아님']) {
+        tacticOverride = body
+        const result = await readGameTactic(await input())
+        expect(result.ok, body.slice(0, 20)).toBe(false)
+        expect(result.draft).toBeUndefined()
+        expect(result.message).toMatch(/읽지 못했습니다|게임이 바쁩니다/)
+      }
+    } finally {
+      plugin = '0.11.0'
+      tacticOverride = null
+    }
+  })
+
+  it('앱이 모르는 역할이 오면 초안 없이 모르는 값을 알린다(저장하지 않는다)', async () => {
+    plugin = '0.14.0'
+    try {
+      const unknownRole = JSON.parse(tacticText)
+      unknownRole.oop.items[3].PositionRole = '77'
+      tacticOverride = JSON.stringify(unknownRole)
+      const result = await readGameTactic(await input())
+      expect(result.ok).toBe(false)
+      expect(result.draft).toBeUndefined()
+      expect(result.unknownBits).toEqual(['비점유 시 역할 77'])
+      expect(result.message).toContain('직접 만들어 주세요')
+    } finally {
+      plugin = '0.11.0'
+      tacticOverride = null
+    }
+  })
+
+  it('게임이 꺼져 있거나 플러그인이 낮거나 게임 판이 표에 없으면 게임에 묻지 않고 그 까닭을 알린다', async () => {
+    plugin = '0.14.0'
+    try {
+      const base = await input()
+      const cases: Array<[string, Partial<GameTacticInput>, string]> = [
+        ['꺼짐', { game: { connected: false, pluginVersion: '', gameVersion: undefined } }, 'FM이 켜져'],
+        ['플러그인 0.13.0', { game: { ...base.game, pluginVersion: '0.13.0', gameVersion: undefined } }, '0.14.0 이상'],
+        ['게임 판 26.4.0', { game: { ...base.game, gameVersion: '26.4.0' } }, '26.4.0'],
+        ['게임 판 읽지 못함', { game: { ...base.game, gameVersion: '' } }, '확인 못 함'],
+        ['옛 14역할 목록', { catalog: LEGACY_CATALOG }, '옛 14역할']
+      ]
+      for (const [name, change, reason] of cases) {
+        asked.length = 0
+        const result = await readGameTactic({ ...base, ...change })
+        expect(result.ok, name).toBe(false)
+        expect(result.message, name).toContain(reason)
+        expect(tacticCalls(), name).toEqual([])
+      }
+    } finally {
+      plugin = '0.11.0'
+    }
+  })
+})
+
+describe('게임에서 전술 가져오기(창구): 읽기 전에 보는 조건', () => {
+  const players = roster.map((each, at) => ({ ...each, at }))
+  const world = {
+    count: players.length,
+    teamId: TEAM,
+    teamIds: new Uint32Array(players.length).fill(TEAM),
+    names: players.map((each) => each.name),
+    uids: Uint32Array.from(players, (each) => each.uid),
+    positions: new Uint8Array(players.length * POSITION_COUNT).fill(1)
+  } as unknown as SaveWorld
+  const connected: GameStatus = { connected: true, pluginVersion: '0.14.0', pluginOld: false, loaded: true, manager: '가상 감독', team: '가상 FC', teamShort: '가상', gameVersion: '26.3.2+2329565' }
+  const deps = (game: GameStatus, overrides: { world?: SaveWorld | null; path?: string | null; catalog?: string } = {}): Parameters<typeof importTactic>[0] =>
+    ({
+      settings: { get: () => ({ catalog: overrides.catalog ?? 'fm26', customRoles: [] }) },
+      world: { world: overrides.world === undefined ? world : overrides.world, path: overrides.path === undefined ? '가상.fm' : overrides.path },
+      link: { status: () => ({ game, data: { club: '가상 FC' }, busy: false }) }
+    }) as never
+
+  it('세이브가 없거나 내 팀을 모르거나 게임에 세이브가 없거나 다른 팀이면 게임에 묻지 않는다', async () => {
+    plugin = '0.14.0'
+    try {
+      asked.length = 0
+      expect((await importTactic(deps(connected, { world: null, path: null }))).message).toContain('세이브를 골라')
+      expect((await importTactic(deps(connected, { world: { ...world, teamId: undefined } as unknown as SaveWorld }))).message).toContain('내 팀을 아직 찾지 못했습니다')
+      expect((await importTactic(deps({ ...connected, loaded: false }))).message).toContain('세이브를 불러온 뒤')
+      expect((await importTactic(deps({ ...connected, team: '다른 FC' }))).message).toContain('다릅니다')
+      expect((await importTactic(deps({ ...connected, pluginVersion: '0.13.0', gameVersion: undefined }))).message).toContain('0.14.0 이상')
+      expect(asked.filter((url) => url.startsWith('/tactic?'))).toEqual([])
+    } finally {
+      plugin = '0.11.0'
+    }
+  })
+
+  it('내 팀의 선수 번호(앞에서 세 명까지)와 팀 번호로 게임에 묻는다. 어떤 값도 던지지 않는다', async () => {
+    plugin = '0.14.0'
+    missing = new Set(roster.map((each) => each.uid))
+    try {
+      asked.length = 0
+      const result = await importTactic(deps(connected), { readRoleLists: true })
+      expect(result.ok).toBe(false)
+      expect(asked.filter((url) => url.startsWith('/tactic?'))).toEqual([
+        `/tactic?team=${TEAM}&uid=90000001&roles=1`,
+        `/tactic?team=${TEAM}&uid=90000002&roles=1`,
+        `/tactic?team=${TEAM}&uid=90000003&roles=1`
+      ])
+      // 지금 쓰는 역할 목록이 옛 14역할이면 게임 전술은 풀 수 없어 묻지 않고 알린다
+      asked.length = 0
+      expect((await importTactic(deps(connected, { catalog: 'legacy14' }))).message).toContain('옛 14역할')
+      expect(asked.filter((url) => url.startsWith('/tactic?'))).toEqual([])
+    } finally {
+      plugin = '0.11.0'
+      missing = new Set()
+    }
   })
 })

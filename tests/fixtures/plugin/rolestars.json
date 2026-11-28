@@ -1,0 +1,825 @@
+{
+ "players": [
+  {
+   "uid": 90000001,
+   "ip": {
+    "id": 90000001,
+    "notes": {
+     "PositionMask": "ok",
+     "InPossession": "ok"
+    },
+    "fields": {
+     "Age": "27"
+    },
+    "list": "가상 별점 표",
+    "count": 16,
+    "items": [
+     {
+      "TacticsRoleID": "144115188075855872",
+      "IsInPossession": "True",
+      "CurrentAbilityStars.MinValue": "16",
+      "CurrentAbilityStars.MaxValue": "16"
+     },
+     {
+      "TacticsRoleID": "32",
+      "IsInPossession": "True",
+      "CurrentAbilityStars.MinValue": "16",
+      "CurrentAbilityStars.MaxValue": "16"
+     },
+     {
+      "TacticsRoleID": "281474976710656",
+      "IsInPossession": "True",
+      "CurrentAbilityStars.MinValue": "16",
+      "CurrentAbilityStars.MaxValue": "16"
+     },
+     {
+      "TacticsRoleID": "131072",
+      "IsInPossession": "True",
+      "CurrentAbilityStars.MinValue": "16",
+      "CurrentAbilityStars.MaxValue": "16"
+     },
+     {
+      "TacticsRoleID": "32768",
+      "IsInPossession": "True",
+      "CurrentAbilityStars.MinValue": "16",
+      "CurrentAbilityStars.MaxValue": "16"
+     },
+     {
+      "TacticsRoleID": "131072",
+      "IsInPossession": "True",
+      "CurrentAbilityStars.MinValue": "16",
+      "CurrentAbilityStars.MaxValue": "16"
+     },
+     {
+      "TacticsRoleID": "70368744177664",
+      "IsInPossession": "True",
+      "CurrentAbilityStars.MinValue": "16",
+      "CurrentAbilityStars.MaxValue": "16"
+     },
+     {
+      "TacticsRoleID": "72057594037927936",
+      "IsInPossession": "True",
+      "CurrentAbilityStars.MinValue": "16",
+      "CurrentAbilityStars.MaxValue": "16"
+     },
+     {
+      "TacticsRoleID": "65536",
+      "IsInPossession": "True",
+      "CurrentAbilityStars.MinValue": "15",
+      "CurrentAbilityStars.MaxValue": "15"
+     },
+     {
+      "TacticsRoleID": "512",
+      "IsInPossession": "True",
+      "CurrentAbilityStars.MinValue": "15",
+      "CurrentAbilityStars.MaxValue": "15"
+     },
+     {
+      "TacticsRoleID": "16",
+      "IsInPossession": "True",
+      "CurrentAbilityStars.MinValue": "15",
+      "CurrentAbilityStars.MaxValue": "15"
+     },
+     {
+      "TacticsRoleID": "72057594037927936",
+      "IsInPossession": "True",
+      "CurrentAbilityStars.MinValue": "15",
+      "CurrentAbilityStars.MaxValue": "15"
+     },
+     {
+      "TacticsRoleID": "4294967296",
+      "IsInPossession": "True",
+      "CurrentAbilityStars.MinValue": "15",
+      "CurrentAbilityStars.MaxValue": "15"
+     },
+     {
+      "TacticsRoleID": "512",
+      "IsInPossession": "True",
+      "CurrentAbilityStars.MinValue": "15",
+      "CurrentAbilityStars.MaxValue": "15"
+     },
+     {
+      "TacticsRoleID": "2199023255552",
+      "IsInPossession": "True",
+      "CurrentAbilityStars.MinValue": "15",
+      "CurrentAbilityStars.MaxValue": "15"
+     },
+     {
+      "TacticsRoleID": "34359738368",
+      "IsInPossession": "True",
+      "CurrentAbilityStars.MinValue": "14",
+      "CurrentAbilityStars.MaxValue": "14"
+     }
+    ]
+   },
+   "oop": {
+    "id": 90000001,
+    "notes": {
+     "PositionMask": "ok",
+     "InPossession": "ok"
+    },
+    "fields": {
+     "Age": "27"
+    },
+    "list": "가상 별점 표",
+    "count": 13,
+    "items": [
+     {
+      "TacticsRoleID": "1048576",
+      "IsInPossession": "False",
+      "CurrentAbilityStars.MinValue": "16",
+      "CurrentAbilityStars.MaxValue": "16"
+     },
+     {
+      "TacticsRoleID": "1073741824",
+      "IsInPossession": "False",
+      "CurrentAbilityStars.MinValue": "16",
+      "CurrentAbilityStars.MaxValue": "16"
+     },
+     {
+      "TacticsRoleID": "134217728",
+      "IsInPossession": "False",
+      "CurrentAbilityStars.MinValue": "16",
+      "CurrentAbilityStars.MaxValue": "16"
+     },
+     {
+      "TacticsRoleID": "2147483648",
+      "IsInPossession": "False",
+      "CurrentAbilityStars.MinValue": "16",
+      "CurrentAbilityStars.MaxValue": "16"
+     },
+     {
+      "TacticsRoleID": "268435456",
+      "IsInPossession": "False",
+      "CurrentAbilityStars.MinValue": "15",
+      "CurrentAbilityStars.MaxValue": "15"
+     },
+     {
+      "TacticsRoleID": "536870912",
+      "IsInPossession": "False",
+      "CurrentAbilityStars.MinValue": "15",
+      "CurrentAbilityStars.MaxValue": "15"
+     },
+     {
+      "TacticsRoleID": "32768",
+      "IsInPossession": "False",
+      "CurrentAbilityStars.MinValue": "15",
+      "CurrentAbilityStars.MaxValue": "15"
+     },
+     {
+      "TacticsRoleID": "131072",
+      "IsInPossession": "False",
+      "CurrentAbilityStars.MinValue": "15",
+      "CurrentAbilityStars.MaxValue": "15"
+     },
+     {
+      "TacticsRoleID": "262144",
+      "IsInPossession": "False",
+      "CurrentAbilityStars.MinValue": "15",
+      "CurrentAbilityStars.MaxValue": "15"
+     },
+     {
+      "TacticsRoleID": "524288",
+      "IsInPossession": "False",
+      "CurrentAbilityStars.MinValue": "15",
+      "CurrentAbilityStars.MaxValue": "15"
+     },
+     {
+      "TacticsRoleID": "8589934592",
+      "IsInPossession": "False",
+      "CurrentAbilityStars.MinValue": "15",
+      "CurrentAbilityStars.MaxValue": "15"
+     },
+     {
+      "TacticsRoleID": "4294967296",
+      "IsInPossession": "False",
+      "CurrentAbilityStars.MinValue": "15",
+      "CurrentAbilityStars.MaxValue": "15"
+     },
+     {
+      "TacticsRoleID": "65536",
+      "IsInPossession": "False",
+      "CurrentAbilityStars.MinValue": "15",
+      "CurrentAbilityStars.MaxValue": "15"
+     }
+    ]
+   }
+  },
+  {
+   "uid": 90000002,
+   "ip": {
+    "id": 90000002,
+    "notes": {
+     "PositionMask": "ok",
+     "InPossession": "ok"
+    },
+    "fields": {
+     "Age": "27"
+    },
+    "list": "가상 별점 표",
+    "count": 26,
+    "items": [
+     {
+      "TacticsRoleID": "72057594037927936",
+      "IsInPossession": "True",
+      "CurrentAbilityStars.MinValue": "18",
+      "CurrentAbilityStars.MaxValue": "18"
+     },
+     {
+      "TacticsRoleID": "512",
+      "IsInPossession": "True",
+      "CurrentAbilityStars.MinValue": "18",
+      "CurrentAbilityStars.MaxValue": "18"
+     },
+     {
+      "TacticsRoleID": "131072",
+      "IsInPossession": "True",
+      "CurrentAbilityStars.MinValue": "18",
+      "CurrentAbilityStars.MaxValue": "18"
+     },
+     {
+      "TacticsRoleID": "144115188075855872",
+      "IsInPossession": "True",
+      "CurrentAbilityStars.MinValue": "18",
+      "CurrentAbilityStars.MaxValue": "18"
+     },
+     {
+      "TacticsRoleID": "512",
+      "IsInPossession": "True",
+      "CurrentAbilityStars.MinValue": "18",
+      "CurrentAbilityStars.MaxValue": "18"
+     },
+     {
+      "TacticsRoleID": "72057594037927936",
+      "IsInPossession": "True",
+      "CurrentAbilityStars.MinValue": "18",
+      "CurrentAbilityStars.MaxValue": "18"
+     },
+     {
+      "TacticsRoleID": "70368744177664",
+      "IsInPossession": "True",
+      "CurrentAbilityStars.MinValue": "18",
+      "CurrentAbilityStars.MaxValue": "18"
+     },
+     {
+      "TacticsRoleID": "131072",
+      "IsInPossession": "True",
+      "CurrentAbilityStars.MinValue": "18",
+      "CurrentAbilityStars.MaxValue": "18"
+     },
+     {
+      "TacticsRoleID": "8796093022208",
+      "IsInPossession": "True",
+      "CurrentAbilityStars.MinValue": "18",
+      "CurrentAbilityStars.MaxValue": "18"
+     },
+     {
+      "TacticsRoleID": "134217728",
+      "IsInPossession": "True",
+      "CurrentAbilityStars.MinValue": "18",
+      "CurrentAbilityStars.MaxValue": "18"
+     },
+     {
+      "TacticsRoleID": "562949953421312",
+      "IsInPossession": "True",
+      "CurrentAbilityStars.MinValue": "18",
+      "CurrentAbilityStars.MaxValue": "18"
+     },
+     {
+      "TacticsRoleID": "4294967296",
+      "IsInPossession": "True",
+      "CurrentAbilityStars.MinValue": "18",
+      "CurrentAbilityStars.MaxValue": "18"
+     },
+     {
+      "TacticsRoleID": "65536",
+      "IsInPossession": "True",
+      "CurrentAbilityStars.MinValue": "18",
+      "CurrentAbilityStars.MaxValue": "18"
+     },
+     {
+      "TacticsRoleID": "32768",
+      "IsInPossession": "True",
+      "CurrentAbilityStars.MinValue": "18",
+      "CurrentAbilityStars.MaxValue": "18"
+     },
+     {
+      "TacticsRoleID": "2199023255552",
+      "IsInPossession": "True",
+      "CurrentAbilityStars.MinValue": "18",
+      "CurrentAbilityStars.MaxValue": "18"
+     },
+     {
+      "TacticsRoleID": "32",
+      "IsInPossession": "True",
+      "CurrentAbilityStars.MinValue": "17",
+      "CurrentAbilityStars.MaxValue": "17"
+     },
+     {
+      "TacticsRoleID": "281474976710656",
+      "IsInPossession": "True",
+      "CurrentAbilityStars.MinValue": "16",
+      "CurrentAbilityStars.MaxValue": "16"
+     },
+     {
+      "TacticsRoleID": "35184372088832",
+      "IsInPossession": "True",
+      "CurrentAbilityStars.MinValue": "16",
+      "CurrentAbilityStars.MaxValue": "16"
+     },
+     {
+      "TacticsRoleID": "16",
+      "IsInPossession": "True",
+      "CurrentAbilityStars.MinValue": "15",
+      "CurrentAbilityStars.MaxValue": "15"
+     },
+     {
+      "TacticsRoleID": "128",
+      "IsInPossession": "True",
+      "CurrentAbilityStars.MinValue": "15",
+      "CurrentAbilityStars.MaxValue": "15"
+     },
+     {
+      "TacticsRoleID": "36028797018963968",
+      "IsInPossession": "True",
+      "CurrentAbilityStars.MinValue": "15",
+      "CurrentAbilityStars.MaxValue": "15"
+     },
+     {
+      "TacticsRoleID": "17592186044416",
+      "IsInPossession": "True",
+      "CurrentAbilityStars.MinValue": "15",
+      "CurrentAbilityStars.MaxValue": "15"
+     },
+     {
+      "TacticsRoleID": "8",
+      "IsInPossession": "True",
+      "CurrentAbilityStars.MinValue": "15",
+      "CurrentAbilityStars.MaxValue": "15"
+     },
+     {
+      "TacticsRoleID": "34359738368",
+      "IsInPossession": "True",
+      "CurrentAbilityStars.MinValue": "15",
+      "CurrentAbilityStars.MaxValue": "15"
+     },
+     {
+      "TacticsRoleID": "4",
+      "IsInPossession": "True",
+      "CurrentAbilityStars.MinValue": "14",
+      "CurrentAbilityStars.MaxValue": "14"
+     },
+     {
+      "TacticsRoleID": "4503599627370496",
+      "IsInPossession": "True",
+      "CurrentAbilityStars.MinValue": "14",
+      "CurrentAbilityStars.MaxValue": "14"
+     }
+    ]
+   },
+   "oop": {
+    "id": 90000002,
+    "notes": {
+     "PositionMask": "ok",
+     "InPossession": "ok"
+    },
+    "fields": {
+     "Age": "27"
+    },
+    "list": "가상 별점 표",
+    "count": 20,
+    "items": [
+     {
+      "TacticsRoleID": "1073741824",
+      "IsInPossession": "False",
+      "CurrentAbilityStars.MinValue": "16",
+      "CurrentAbilityStars.MaxValue": "16"
+     },
+     {
+      "TacticsRoleID": "1048576",
+      "IsInPossession": "False",
+      "CurrentAbilityStars.MinValue": "16",
+      "CurrentAbilityStars.MaxValue": "16"
+     },
+     {
+      "TacticsRoleID": "2147483648",
+      "IsInPossession": "False",
+      "CurrentAbilityStars.MinValue": "16",
+      "CurrentAbilityStars.MaxValue": "16"
+     },
+     {
+      "TacticsRoleID": "134217728",
+      "IsInPossession": "False",
+      "CurrentAbilityStars.MinValue": "16",
+      "CurrentAbilityStars.MaxValue": "16"
+     },
+     {
+      "TacticsRoleID": "536870912",
+      "IsInPossession": "False",
+      "CurrentAbilityStars.MinValue": "16",
+      "CurrentAbilityStars.MaxValue": "16"
+     },
+     {
+      "TacticsRoleID": "131072",
+      "IsInPossession": "False",
+      "CurrentAbilityStars.MinValue": "15",
+      "CurrentAbilityStars.MaxValue": "15"
+     },
+     {
+      "TacticsRoleID": "524288",
+      "IsInPossession": "False",
+      "CurrentAbilityStars.MinValue": "15",
+      "CurrentAbilityStars.MaxValue": "15"
+     },
+     {
+      "TacticsRoleID": "32768",
+      "IsInPossession": "False",
+      "CurrentAbilityStars.MinValue": "15",
+      "CurrentAbilityStars.MaxValue": "15"
+     },
+     {
+      "TacticsRoleID": "8589934592",
+      "IsInPossession": "False",
+      "CurrentAbilityStars.MinValue": "15",
+      "CurrentAbilityStars.MaxValue": "15"
+     },
+     {
+      "TacticsRoleID": "65536",
+      "IsInPossession": "False",
+      "CurrentAbilityStars.MinValue": "15",
+      "CurrentAbilityStars.MaxValue": "15"
+     },
+     {
+      "TacticsRoleID": "268435456",
+      "IsInPossession": "False",
+      "CurrentAbilityStars.MinValue": "15",
+      "CurrentAbilityStars.MaxValue": "15"
+     },
+     {
+      "TacticsRoleID": "4294967296",
+      "IsInPossession": "False",
+      "CurrentAbilityStars.MinValue": "15",
+      "CurrentAbilityStars.MaxValue": "15"
+     },
+     {
+      "TacticsRoleID": "262144",
+      "IsInPossession": "False",
+      "CurrentAbilityStars.MinValue": "15",
+      "CurrentAbilityStars.MaxValue": "15"
+     },
+     {
+      "TacticsRoleID": "1099511627776",
+      "IsInPossession": "False",
+      "CurrentAbilityStars.MinValue": "15",
+      "CurrentAbilityStars.MaxValue": "15"
+     },
+     {
+      "TacticsRoleID": "274877906944",
+      "IsInPossession": "False",
+      "CurrentAbilityStars.MinValue": "15",
+      "CurrentAbilityStars.MaxValue": "15"
+     },
+     {
+      "TacticsRoleID": "549755813888",
+      "IsInPossession": "False",
+      "CurrentAbilityStars.MinValue": "15",
+      "CurrentAbilityStars.MaxValue": "15"
+     },
+     {
+      "TacticsRoleID": "2199023255552",
+      "IsInPossession": "False",
+      "CurrentAbilityStars.MinValue": "14",
+      "CurrentAbilityStars.MaxValue": "14"
+     },
+     {
+      "TacticsRoleID": "1024",
+      "IsInPossession": "False",
+      "CurrentAbilityStars.MinValue": "13",
+      "CurrentAbilityStars.MaxValue": "13"
+     },
+     {
+      "TacticsRoleID": "2048",
+      "IsInPossession": "False",
+      "CurrentAbilityStars.MinValue": "13",
+      "CurrentAbilityStars.MaxValue": "13"
+     },
+     {
+      "TacticsRoleID": "512",
+      "IsInPossession": "False",
+      "CurrentAbilityStars.MinValue": "13",
+      "CurrentAbilityStars.MaxValue": "13"
+     }
+    ]
+   }
+  },
+  {
+   "uid": 90000003,
+   "ip": {
+    "id": 90000003,
+    "notes": {
+     "PositionMask": "ok",
+     "InPossession": "ok"
+    },
+    "fields": {
+     "Age": "27"
+    },
+    "list": "가상 별점 표",
+    "count": 3,
+    "items": [
+     {
+      "TacticsRoleID": "4096",
+      "IsInPossession": "True",
+      "CurrentAbilityStars.MinValue": "18",
+      "CurrentAbilityStars.MaxValue": "18"
+     },
+     {
+      "TacticsRoleID": "9007199254740992",
+      "IsInPossession": "True",
+      "CurrentAbilityStars.MinValue": "18",
+      "CurrentAbilityStars.MaxValue": "18"
+     },
+     {
+      "TacticsRoleID": "1",
+      "IsInPossession": "True",
+      "CurrentAbilityStars.MinValue": "18",
+      "CurrentAbilityStars.MaxValue": "18"
+     }
+    ]
+   },
+   "oop": {
+    "id": 90000003,
+    "notes": {
+     "PositionMask": "ok",
+     "InPossession": "ok"
+    },
+    "fields": {
+     "Age": "27"
+    },
+    "list": "가상 별점 표",
+    "count": 3,
+    "items": [
+     {
+      "TacticsRoleID": "1",
+      "IsInPossession": "False",
+      "CurrentAbilityStars.MinValue": "18",
+      "CurrentAbilityStars.MaxValue": "18"
+     },
+     {
+      "TacticsRoleID": "2",
+      "IsInPossession": "False",
+      "CurrentAbilityStars.MinValue": "18",
+      "CurrentAbilityStars.MaxValue": "18"
+     },
+     {
+      "TacticsRoleID": "4",
+      "IsInPossession": "False",
+      "CurrentAbilityStars.MinValue": "16",
+      "CurrentAbilityStars.MaxValue": "16"
+     }
+    ]
+   }
+  },
+  {
+   "uid": 90000004,
+   "ip": {
+    "id": 90000004,
+    "notes": {
+     "PositionMask": "ok",
+     "InPossession": "ok"
+    },
+    "fields": {
+     "Age": "27"
+    },
+    "list": "가상 별점 표",
+    "count": 3,
+    "items": [
+     {
+      "TacticsRoleID": "9007199254740992",
+      "IsInPossession": "True",
+      "CurrentAbilityStars.MinValue": "14",
+      "CurrentAbilityStars.MaxValue": "14"
+     },
+     {
+      "TacticsRoleID": "1",
+      "IsInPossession": "True",
+      "CurrentAbilityStars.MinValue": "13",
+      "CurrentAbilityStars.MaxValue": "13"
+     },
+     {
+      "TacticsRoleID": "4096",
+      "IsInPossession": "True",
+      "CurrentAbilityStars.MinValue": "13",
+      "CurrentAbilityStars.MaxValue": "13"
+     }
+    ]
+   },
+   "oop": {
+    "id": 90000004,
+    "notes": {
+     "PositionMask": "ok",
+     "InPossession": "ok"
+    },
+    "fields": {
+     "Age": "27"
+    },
+    "list": "가상 별점 표",
+    "count": 3,
+    "items": [
+     {
+      "TacticsRoleID": "1",
+      "IsInPossession": "False",
+      "CurrentAbilityStars.MinValue": "14",
+      "CurrentAbilityStars.MaxValue": "14"
+     },
+     {
+      "TacticsRoleID": "4",
+      "IsInPossession": "False",
+      "CurrentAbilityStars.MinValue": "13",
+      "CurrentAbilityStars.MaxValue": "13"
+     },
+     {
+      "TacticsRoleID": "2",
+      "IsInPossession": "False",
+      "CurrentAbilityStars.MinValue": "13",
+      "CurrentAbilityStars.MaxValue": "13"
+     }
+    ]
+   }
+  },
+  {
+   "uid": 90000005,
+   "ip": {
+    "id": 90000005,
+    "notes": {
+     "PositionMask": "ok",
+     "InPossession": "ok"
+    },
+    "fields": {
+     "Age": "27"
+    },
+    "list": "가상 별점 표",
+    "count": 14,
+    "items": [
+     {
+      "TacticsRoleID": "128",
+      "IsInPossession": "True",
+      "CurrentAbilityStars.MinValue": "16",
+      "CurrentAbilityStars.MaxValue": "16"
+     },
+     {
+      "TacticsRoleID": "35184372088832",
+      "IsInPossession": "True",
+      "CurrentAbilityStars.MinValue": "16",
+      "CurrentAbilityStars.MaxValue": "16"
+     },
+     {
+      "TacticsRoleID": "274877906944",
+      "IsInPossession": "True",
+      "CurrentAbilityStars.MinValue": "16",
+      "CurrentAbilityStars.MaxValue": "16"
+     },
+     {
+      "TacticsRoleID": "134217728",
+      "IsInPossession": "True",
+      "CurrentAbilityStars.MinValue": "15",
+      "CurrentAbilityStars.MaxValue": "15"
+     },
+     {
+      "TacticsRoleID": "562949953421312",
+      "IsInPossession": "True",
+      "CurrentAbilityStars.MinValue": "15",
+      "CurrentAbilityStars.MaxValue": "15"
+     },
+     {
+      "TacticsRoleID": "8",
+      "IsInPossession": "True",
+      "CurrentAbilityStars.MinValue": "15",
+      "CurrentAbilityStars.MaxValue": "15"
+     },
+     {
+      "TacticsRoleID": "8",
+      "IsInPossession": "True",
+      "CurrentAbilityStars.MinValue": "15",
+      "CurrentAbilityStars.MaxValue": "15"
+     },
+     {
+      "TacticsRoleID": "8796093022208",
+      "IsInPossession": "True",
+      "CurrentAbilityStars.MinValue": "15",
+      "CurrentAbilityStars.MaxValue": "15"
+     },
+     {
+      "TacticsRoleID": "36028797018963968",
+      "IsInPossession": "True",
+      "CurrentAbilityStars.MinValue": "15",
+      "CurrentAbilityStars.MaxValue": "15"
+     },
+     {
+      "TacticsRoleID": "36028797018963968",
+      "IsInPossession": "True",
+      "CurrentAbilityStars.MinValue": "14",
+      "CurrentAbilityStars.MaxValue": "14"
+     },
+     {
+      "TacticsRoleID": "17592186044416",
+      "IsInPossession": "True",
+      "CurrentAbilityStars.MinValue": "14",
+      "CurrentAbilityStars.MaxValue": "14"
+     },
+     {
+      "TacticsRoleID": "4",
+      "IsInPossession": "True",
+      "CurrentAbilityStars.MinValue": "14",
+      "CurrentAbilityStars.MaxValue": "14"
+     },
+     {
+      "TacticsRoleID": "17592186044416",
+      "IsInPossession": "True",
+      "CurrentAbilityStars.MinValue": "14",
+      "CurrentAbilityStars.MaxValue": "14"
+     },
+     {
+      "TacticsRoleID": "4503599627370496",
+      "IsInPossession": "True",
+      "CurrentAbilityStars.MinValue": "14",
+      "CurrentAbilityStars.MaxValue": "14"
+     }
+    ]
+   },
+   "oop": {
+    "id": 90000005,
+    "notes": {
+     "PositionMask": "ok",
+     "InPossession": "ok"
+    },
+    "fields": {
+     "Age": "27"
+    },
+    "list": "가상 별점 표",
+    "count": 10,
+    "items": [
+     {
+      "TacticsRoleID": "1024",
+      "IsInPossession": "False",
+      "CurrentAbilityStars.MinValue": "15",
+      "CurrentAbilityStars.MaxValue": "15"
+     },
+     {
+      "TacticsRoleID": "8192",
+      "IsInPossession": "False",
+      "CurrentAbilityStars.MinValue": "15",
+      "CurrentAbilityStars.MaxValue": "15"
+     },
+     {
+      "TacticsRoleID": "274877906944",
+      "IsInPossession": "False",
+      "CurrentAbilityStars.MinValue": "15",
+      "CurrentAbilityStars.MaxValue": "15"
+     },
+     {
+      "TacticsRoleID": "4096",
+      "IsInPossession": "False",
+      "CurrentAbilityStars.MinValue": "15",
+      "CurrentAbilityStars.MaxValue": "15"
+     },
+     {
+      "TacticsRoleID": "549755813888",
+      "IsInPossession": "False",
+      "CurrentAbilityStars.MinValue": "15",
+      "CurrentAbilityStars.MaxValue": "15"
+     },
+     {
+      "TacticsRoleID": "512",
+      "IsInPossession": "False",
+      "CurrentAbilityStars.MinValue": "15",
+      "CurrentAbilityStars.MaxValue": "15"
+     },
+     {
+      "TacticsRoleID": "2048",
+      "IsInPossession": "False",
+      "CurrentAbilityStars.MinValue": "15",
+      "CurrentAbilityStars.MaxValue": "15"
+     },
+     {
+      "TacticsRoleID": "16384",
+      "IsInPossession": "False",
+      "CurrentAbilityStars.MinValue": "15",
+      "CurrentAbilityStars.MaxValue": "15"
+     },
+     {
+      "TacticsRoleID": "2199023255552",
+      "IsInPossession": "False",
+      "CurrentAbilityStars.MinValue": "14",
+      "CurrentAbilityStars.MaxValue": "14"
+     },
+     {
+      "TacticsRoleID": "1099511627776",
+      "IsInPossession": "False",
+      "CurrentAbilityStars.MinValue": "14",
+      "CurrentAbilityStars.MaxValue": "14"
+     }
+    ]
+   }
+  }
+ ]
+}
