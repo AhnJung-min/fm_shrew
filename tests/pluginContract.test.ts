@@ -504,6 +504,42 @@ describe('게임에서 전술 가져오기(서비스): 문과 읽기 순서', ()
     }
   })
 
+  it('자리별 역할 목록을 받았어도 자리를 찾지 못해 견주지 못한 것은 "다른 곳 없음"으로 알리지 않는다(견준 수를 적고 문제로 남긴다)', async () => {
+    plugin = '0.14.0'
+    try {
+      // 목록 2곳의 포지션을 앱이 모르는 값으로: 22곳을 받았지만 20곳만 견준다
+      const some = JSON.parse(tacticText)
+      some.roles[0].probe.fields['Team.Tactic.PositionValue'] = '3'
+      some.roles[1].probe.fields['Team.Tactic.PositionValue'] = '3'
+      tacticOverride = JSON.stringify(some)
+      const partial = await readGameTactic(await input({ readRoleLists: true }))
+      expect(partial.ok).toBe(true)
+      expect(partial.message).toContain('22곳(전체 22곳)을 읽어 20곳을 견주었고, 그 가운데 0곳이 앱의 목록과 달랐습니다')
+      expect(partial.problems).toEqual(['자리별 역할 목록 2곳은 자리를 찾지 못해 견주지 못했습니다.'])
+
+      // 목록의 포지션이 하나도 오지 않았으면 하나도 견주지 못했다고 알린다(0곳이 달랐다고 하지 않는다)
+      const none = JSON.parse(tacticText)
+      for (const list of none.roles) delete list.probe.fields['Team.Tactic.PositionValue']
+      tacticOverride = JSON.stringify(none)
+      const nothing = await readGameTactic(await input({ readRoleLists: true }))
+      expect(nothing.ok).toBe(true)
+      expect(nothing.message).toContain('하나도 견주지 못했습니다(읽은 목록 22곳, 전체 22곳)')
+      expect(nothing.message).not.toContain('달랐습니다')
+      expect(nothing.problems).toEqual(['자리별 역할 목록 22곳은 자리를 찾지 못해 견주지 못했습니다.'])
+
+      // 게임이 바빠 중간에 멈춰 일부만 받았고 받은 것을 모두 견주었으면, 견주지 못했다는 문제는 만들지 않는다(받은 수와 전체 수로 알린다)
+      const early = JSON.parse(tacticText)
+      early.roles = early.roles.slice(0, 10)
+      tacticOverride = JSON.stringify(early)
+      const stopped = await readGameTactic(await input({ readRoleLists: true }))
+      expect(stopped.message).toContain('10곳(전체 22곳)을 읽어 10곳을 견주었고')
+      expect(stopped.problems).toEqual([])
+    } finally {
+      tacticOverride = null
+      plugin = '0.11.0'
+    }
+  })
+
   it('첫 선수를 게임에서 찾지 못하면(404) 다음 선수로 해 보고, 세 명까지만 해 본다', async () => {
     plugin = '0.14.0'
     try {

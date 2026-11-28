@@ -24,6 +24,12 @@ const ROLE_LISTS_EXPECTED = 22
 
 const BUSY_MESSAGE = '게임이 바쁩니다. 날짜를 넘기는 중이거나 경기 중이면 끝난 뒤에 다시 눌러 주세요. 계속 안 되면 게임에서 이 세이브를 불러왔는지 확인해 주세요. 지금은 전술을 직접 만들어 주세요.'
 
+/** 자리별 역할 목록을 견준 결과 한 줄(안내 글 뒤에 붙는다). 읽은 수와 견준 수와 다른 수를 모두 적어, 견주지 못한 것이 "다른 곳 없음"으로 읽히지 않게 한다 */
+function roleListNote(received: number, compared: number, different: number): string {
+  if (compared === 0) return ` 자리별 역할 목록은 하나도 견주지 못했습니다(읽은 목록 ${received}곳, 전체 ${ROLE_LISTS_EXPECTED}곳).`
+  return ` 자리별 역할 목록은 ${received}곳(전체 ${ROLE_LISTS_EXPECTED}곳)을 읽어 ${compared}곳을 견주었고, 그 가운데 ${different}곳이 앱의 목록과 달랐습니다.`
+}
+
 export interface GameTacticInput {
   /** 게임 연결 상태(게임 판과 플러그인 버전을 본다) */
   game: Pick<GameStatus, 'connected' | 'pluginVersion' | 'gameVersion'>
@@ -68,10 +74,15 @@ export async function readGameTactic(input: GameTacticInput): Promise<TacticImpo
   const report = input.readRoleLists && converted.tactic ? roleListReport(answer, input.catalog, gate.row, converted.tactic) : null
   const gameName = answer.ip.name || answer.oop.name
   const formationName = answer.ip.formation || answer.oop.formation
-  const problems = [...converted.problems, ...(report?.lines ?? [])]
-  const listNote = report
-    ? ` 자리별 역할 목록은 ${answer.roleLists.length}곳(전체 ${ROLE_LISTS_EXPECTED}곳)을 읽어 ${report.different}곳이 앱의 목록과 달랐습니다.`
-    : ''
+  // 받은 목록 가운데 자리를 찾지 못해 견주지 못한 것은 "다른 곳 없음"으로 읽히지 않게 따로 알린다(U4 자료의 "확인 전" 칸을 이 결과로 고친다)
+  const received = answer.roleLists.length
+  const notCompared = report ? received - report.compared : 0
+  const problems = [
+    ...converted.problems,
+    ...(report?.lines ?? []),
+    ...(notCompared > 0 ? [`자리별 역할 목록 ${notCompared}곳은 자리를 찾지 못해 견주지 못했습니다.`] : [])
+  ]
+  const listNote = report ? roleListNote(received, report.compared, report.different) : ''
   const message = converted.tactic
     ? converted.ok
       ? `게임의 지금 전술${gameName ? ` “${gameName}”` : ''}을 읽었습니다. 편집기에서 확인한 뒤 저장해 주세요.${listNote}`
