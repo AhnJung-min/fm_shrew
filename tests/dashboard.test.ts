@@ -12,11 +12,14 @@ import {
   surplusScore,
   type FirstTeamPlayer
 } from '@shared/dashboard'
+import { FM26_CATALOG } from '@shared/catalogFm26'
 import type { RoleNorm, RoleNorms } from '@shared/norms'
 import { POSITION_KEYS, positionsLabel } from '@shared/positions'
+import { LEGACY_CATALOG } from '@shared/roleCatalog'
 import { ROLES } from '@shared/roles'
 import type { SeasonMatch, SeasonTableRow } from '@shared/season'
 import { analyseTactic } from '@shared/tactic'
+import { presetTactic } from '@shared/tacticModel'
 import type { PlayerRow } from '@shared/types'
 import { loanLender, loanParent, type SaveContract } from '../src/main/save/contracts'
 import { mockSquad } from '../src/renderer/src/lib/mockWorld'
@@ -486,6 +489,22 @@ describe('정리 후보 고르기(목업 선수단)', () => {
     const keepers = players.filter((each) => each.position.startsWith('GK'))
     const top3 = new Set([...keepers].sort((a, b) => (b.ca ?? 0) - (a.ca ?? 0)).slice(0, 3).map((each) => each.uid))
     for (const row of report.rows) expect(top3.has(row.uid)).toBe(false)
+  })
+
+  it('분석을 만든 카탈로그와 다른 카탈로그로 부르면 멈춘다(catalog를 빼먹은 FM26 분석이 조용히 옛 14역할로 계산되지 않는다)', () => {
+    const input = { players, rows: squad.rows, columns: squad.columns, roleWeights: {} }
+    expect(analysis.catalogId).toBe('legacy14')
+    // 옛 분석은 catalog를 빼도(기본이 옛 14역할) 같은 카탈로그를 넘겨도 통과한다
+    expect(() => surplusReport({ ...input, analysis })).not.toThrow()
+    expect(() => surplusReport({ ...input, analysis, catalog: LEGACY_CATALOG })).not.toThrow()
+    // FM26 분석: catalog를 빼면(옛 14역할이 기본) 멈추고, 까닭에 두 카탈로그 이름이 적힌다. 같은 카탈로그를 넘기면 통과한다
+    const fm26 = analyseTactic({ rows: squad.rows, columns: squad.columns, today: squad.today, tactic: presetTactic('4-2-3-1', FM26_CATALOG), catalog: FM26_CATALOG, roleWeights: {} })!
+    expect(fm26.catalogId).toBe('fm26')
+    expect(() => surplusReport({ ...input, analysis: fm26 })).toThrow(/fm26.*legacy14/)
+    expect(() => surplusReport({ ...input, analysis: fm26, catalog: LEGACY_CATALOG })).toThrow(/fm26.*legacy14/)
+    expect(() => surplusReport({ ...input, analysis: fm26, catalog: FM26_CATALOG })).not.toThrow()
+    // 반대로 옛 분석에 FM26 카탈로그를 넘겨도 멈춘다
+    expect(() => surplusReport({ ...input, analysis, catalog: FM26_CATALOG })).toThrow(/legacy14.*fm26/)
   })
 })
 
