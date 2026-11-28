@@ -13,7 +13,7 @@
 import { describe, expect, it } from 'vitest'
 import { bestRolesOf, buildDepth, buildDepthFor, depthObjective, FORMATION_BY_ID, shapeOfTactic, slotRatingsOf } from '../src/shared/depth'
 import { recommendSlotOf, surplusReport, type FirstTeamPlayer } from '../src/shared/dashboard'
-import { groupKeyAttributes, keyAttributesOf, POSITION_GROUPS, profileKeyAttributes } from '../src/shared/keyAttributes'
+import { groupKeyAttributes, keyAttributesOf, KEY_WEIGHT_MIN, POSITION_GROUPS, profileKeyAttributes } from '../src/shared/keyAttributes'
 import { K } from '../src/shared/ledger'
 import { posPenaltySigma, POSITION_KEYS } from '../src/shared/positions'
 import { fitNoteOf, recommend, type RecommendContext, type RecommendInput } from '../src/shared/recommend'
@@ -821,13 +821,14 @@ describe('최적 역할과 주요 능력치: 국면마다 하나씩, 합성 가�
     expect(bestRolesOf(row, COLUMNS.filter((col) => col.field !== 'position'), { catalog: FAKE, overrides: {} })).toEqual({ ip: null, oop: null })
   })
 
-  it('주요 능력치: 섞은 표를 역할의 눈금(0~5)으로 되돌려 적고, 섞지 않으면 그 역할의 값 그대로다(옛 keyAttributesOf와 같다)', () => {
+  it('주요 능력치: 섞은 표를 역할의 눈금(0~5)으로 되돌려 적되 핵심은 어느 한 국면의 역할에서 핵심이면 핵심이고, 섞지 않으면 그 역할의 값 그대로다(옛 keyAttributesOf와 같다)', () => {
     const at = (sharePct: number): SlotProfile => ({ ip: { position: 'AMC', roleId: 'ip.finisher' }, oop: { position: 'AMC', roleId: 'oop.stopper' }, sharePct })
     // 비중 60: 합성 가중치 1920·960·960·480·480 × (6.8 / 4800) = 2.72, 1.36, 1.36, 0.68, 0.68. 같으면 게임 화면 순서(드리블, 태클 / 대인 방어, 지구력)
+    // 섞은 값은 순서와 설명에만 쓴다. 핵심은 한 국면의 역할에서 4(문턱 3 이상)인 마무리(점유 시 역할)와 태클(비점유 시 역할)이고, 나머지는 어느 쪽에서도 2다
     expect(profileKeyAttributes(FAKE, at(60), {})).toEqual([
-      { id: 'finishing', weight: 2.7, core: false },
+      { id: 'finishing', weight: 2.7, core: true },
       { id: 'dribbling', weight: 1.4, core: false },
-      { id: 'tackling', weight: 1.4, core: false },
+      { id: 'tackling', weight: 1.4, core: true },
       { id: 'marking', weight: 0.7, core: false },
       { id: 'stamina', weight: 0.7, core: false }
     ])
@@ -842,6 +843,25 @@ describe('최적 역할과 주요 능력치: 국면마다 하나씩, 합성 가�
     expect(profileKeyAttributes(LEGACY_CATALOG, centre, {})).toEqual(keyAttributesOf('cb', {}))
     const edited = { cb: { marking: 5, tackling: 0 } }
     expect(profileKeyAttributes(LEGACY_CATALOG, centre, edited)).toEqual(keyAttributesOf('cb', edited))
+  })
+
+  it('핵심은 비중과 상관없이 한 국면의 역할에서 핵심이면 핵심이고, 어느 쪽에서도 핵심이 아니면 아니다(섞은 가중치가 문턱 아래여도)', () => {
+    const at = (sharePct: number): SlotProfile => ({ ip: { position: 'AMC', roleId: 'ip.finisher' }, oop: { position: 'AMC', roleId: 'oop.stopper' }, sharePct })
+    const coreOf = (profile: SlotProfile, overrides = {}): string[] =>
+      profileKeyAttributes(FAKE, profile, overrides)
+        .filter((key) => key.core)
+        .map((key) => key.id)
+        .sort()
+    // 마무리(점유 시 4)와 태클(비점유 시 4)은 비중이 1이든 99든 핵심이다. 섞은 가중치는 비중에 따라 크게 달라진다
+    for (const share of [1, 10, 35, 60, 90, 99]) expect(coreOf(at(share)), `비중 ${share}`).toEqual(['finishing', 'tackling'])
+    const light = profileKeyAttributes(FAKE, at(10), {}).find((key) => key.id === 'finishing')!
+    expect(light.weight).toBeLessThan(KEY_WEIGHT_MIN)
+    expect(light.core).toBe(true)
+    // 사용자가 고친 가중치도 따른다: 점유 시 역할의 드리블을 3으로 올리면 핵심이 되고, 비점유 시 역할의 태클을 2로 내리면 핵심이 아니다
+    expect(coreOf(at(60), { 'ip.finisher': { dribbling: 3 }, 'oop.stopper': { tackling: 2 } })).toEqual(['dribbling', 'finishing'])
+    // 섞지 않는 비중(100, 0)은 그 역할의 표 그대로다
+    expect(coreOf(at(100))).toEqual(['finishing'])
+    expect(coreOf(at(0))).toEqual(['tackling'])
   })
 
   it('포지션 묶음 보기의 주요 능력치: 그 묶음에서 고를 수 있는 점유 시 역할만 평균한다(비점유 시 역할과 못 고르는 역할은 넣지 않는다)', () => {
