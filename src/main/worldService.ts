@@ -739,7 +739,8 @@ export class WorldService {
     const female = this.femaleMask(world)
     // 전술의 한 자리를 기준으로 찾으면 그 자리의 프로파일(두 국면의 역할과 비중)·주전·두 번째 선수·보강 필요도를 쓴다(스쿼드 전술판과 같은 계산)
     const table = this.squadOf(world)
-    const slotQuery = query.slot ?? null
+    // 화면이 보낸 요청이라 모양이 틀린 자리 요청(객체가 아님)은 자리를 고르지 않은 것으로 본다
+    const slotQuery = query.slot && typeof query.slot === 'object' ? query.slot : null
     let analysis: TacticAnalysis | null = null
     if (slotQuery && isTacticSlot(slotQuery)) {
       // 새 꼴(전술)은 화면이 보낸 값이라 믿지 않고 다시 검사한다: 쓰는 카탈로그에서 막는 문제가 있으면 찾지 않는다
