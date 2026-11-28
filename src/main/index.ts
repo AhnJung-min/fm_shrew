@@ -24,7 +24,7 @@ import { TalkController } from './talk/controller'
 import { KeyStore } from './talk/keyStore'
 import { trayIconFor } from './trayIcon'
 import { SaveWatcher } from './watcher'
-import { WorldService } from './worldService'
+import { NO_TEAM_MESSAGE, WorldService } from './worldService'
 
 // 검증용 환경 변수: 데이터 폴더와 세이브 폴더를 바꾸고, 화면을 PNG로 찍은 뒤 종료한다
 const SMOKE_OUT = process.env.FMB_SMOKE_OUT
@@ -285,6 +285,8 @@ function registerIpc(): void {
       if (!world.world) return normsFailed('먼저 시작 화면에서 세이브를 골라 적용해 주세요.')
       const blocked = world.blocked()
       if (blocked) return normsFailed(blocked)
+      // 내 팀을 모르면 기준 능력(C*)이 가장 낮은 값으로 떨어져, 팀이 정해진 뒤와 눈금이 다른 기준 분포가 나온다. 스쿼드와 후보 찾기처럼 막는다
+      if (world.world.teamId === undefined) return normsFailed(NO_TEAM_MESSAGE)
       // 화면이 한 번에 묻는 것은 전술 몇 개의 프로파일이다(전술 하나가 11개). 그 이상은 화면의 잘못이라 계산하지 않는다
       if (profiles.length > NORMS_PROFILES_MAX) return normsFailed('한 번에 구할 수 있는 자리 수를 넘었습니다.')
       return { ok: true, norms: world.normsFor(profiles) }
