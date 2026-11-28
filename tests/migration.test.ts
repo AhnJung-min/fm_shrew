@@ -10,11 +10,11 @@ import { activeCatalog } from '../src/shared/catalogs'
 import raw from '../src/shared/data/fm26-roles.json'
 import { FORMATIONS } from '../src/shared/formations'
 import { migrateSettings, migrationVersion, needsMigration, withBackupNote, type MigrationContext } from '../src/shared/migration'
-import { effectiveRoleWeights, LEGACY_CATALOG, type RoleCatalog } from '../src/shared/roleCatalog'
+import { effectiveRoleWeights, LEGACY_CATALOG, withCustomRoles, type CustomRole, type RoleCatalog } from '../src/shared/roleCatalog'
 import { DEFAULT_ROLE, ROLES, rolesFor } from '../src/shared/roles'
 import { analyseTactic } from '../src/shared/tactic'
 import type { MigrationNote } from '../src/shared/tacticApi'
-import { blockingProblems, cellPosition, resolveMainTactic, slotKindOf, validateTactic, validateTacticSet } from '../src/shared/tacticModel'
+import { blockingProblems, cellPosition, legacyTactic, resolveMainTactic, slotKindOf, validateTactic, validateTacticSet, type TacticSet } from '../src/shared/tacticModel'
 import type { Settings } from '../src/shared/types'
 import { SQUAD_COLUMNS, SYNTHETIC_TODAY, syntheticSquad } from './helpers/syntheticWorld'
 
@@ -240,6 +240,108 @@ describe('전술: 옛 포메이션이 주 전술이고, 고친 포메이션이 �
     const { settings, notes } = migrate(oldSettings({ tacticsDefault: kept, formation: '4-3-3', slotRoles: bpdAt('4-3-3') }))
     expect(settings.tacticsDefault).toBe(kept)
     expect(notes.find((note) => note.text.includes('이미 저장해 둔 전술'))?.kind).toBe('slot')
+  })
+
+  describe('저장해 둔 묶음을 FM26에서 쓸 수 없으면 옛 포메이션과 자리 역할로 새로 만들고 알린다', () => {
+    /** 주 전술 4-3-3에 최전방(순번 0)은 타깃맨, 가운데 수비(순번 7)는 볼 플레잉 센터백을 고른 옛 설정 */
+    const EDITED = { formation: '4-3-3', slotRoles: { '4-3-3:0': 'tm', '4-3-3:7': 'bpd' } }
+    const REPLACED_NOTE = '저장해 둔 전술 묶음을 FM26에서 쓸 수 없어 옛 포메이션과 자리 역할로 새로 만들었습니다'
+    const KEPT_NOTE = '이미 저장해 둔 전술이 있어 옛 포메이션과 자리 역할은 옮기지 않았습니다'
+
+    /** 옛 14역할을 쓰는 동안 저장 검사를 통과해 저장된 묶음(옛 전술 하나) */
+    const legacySet = (): TacticSet => {
+      const tactic = legacyTactic('4-3-3', EDITED.slotRoles)
+      return { catalog: 'legacy14', tactics: [tactic], mainId: tactic.id }
+    }
+    /** 저장 검사를 통과하는 FM26 묶음(전술 둘) */
+    const fm26Set = (): TacticSet => structuredClone(migrate(oldSettings({ formation: '4-3-3', slotRoles: bpdAt('4-3-3', '4-4-2') })).settings.tacticsDefault!)
+    const damaged = (change: (set: TacticSet) => void): TacticSet => {
+      const set = fm26Set()
+      change(set)
+      return set
+    }
+
+    const UNUSABLE: Array<[string, unknown]> = [
+      ['옛 14역할 때 저장한 묶음(역할 목록이 legacy14)', legacySet()],
+      ['글자', 'abc'],
+      ['빈 객체', {}],
+      ['배열', []],
+      ['숫자', 5],
+      ['거짓 값(0)', 0],
+      ['모양이 틀린 FM26 묶음', { catalog: 'fm26', tactics: 'x', mainId: 1 }],
+      ['FM26 묶음인데 전술이 비었다', { catalog: 'fm26', tactics: [], mainId: 'x' }],
+      ['카탈로그에 없는 역할이 든 FM26 묶음', damaged((set) => void (set.tactics[0].slots[0].ip.roleId = 'ip.없는역할'))],
+      ['주 전술이 목록에 없는 FM26 묶음', damaged((set) => void (set.mainId = '없는 전술'))],
+      ['전술이 4개인 FM26 묶음', damaged((set) => void set.tactics.push({ ...structuredClone(set.tactics[0]), id: 'x1' }, { ...structuredClone(set.tactics[0]), id: 'x2' }))],
+      ['이름이 빈 전술이 든 FM26 묶음', damaged((set) => void (set.tactics[1].name = ' '))]
+    ]
+
+    it.each(UNUSABLE)('%s: 쓰지 않고 옛 설정에서 새로 만들며 알린다', (_name, value) => {
+      const { settings, notes } = migrate(deepFreeze(oldSettings({ ...EDITED, tacticsDefault: value as TacticSet })))
+      // 주 전술을 고르는 함수가 프리셋으로 물러서지 않고 옮긴 전술(고친 자리 역할이 든 것)을 쓴다
+      const main = resolveMainTactic({ ...settings, catalog: 'fm26' }, null, FM26_CATALOG)
+      expect(main.id).toBe('migrated:4-3-3')
+      expect(main.slots[0].ip.roleId).toBe('ip.TargetMan')
+      expect(main.slots[7].ip.roleId).toBe('ip.BallPlayingDefender')
+      expect(validateTacticSet(settings.tacticsDefault!, FM26_CATALOG)).toEqual([])
+      expect(settings.tacticsDefault).not.toBe(value)
+      // 바뀐 것은 알림에 적힌다: 새로 만들었다는 말이 옮겼다는 말보다 앞에 있고, 지켰다는 말은 없다
+      const texts = notes.map((note) => note.text)
+      expect(texts[0]).toBe(REPLACED_NOTE)
+      expect(texts[1]).toContain('옛 설정의 포메이션(4-3-3)')
+      expect(texts).not.toContain(KEPT_NOTE)
+      expect(notes.filter((note) => note.text === REPLACED_NOTE)).toHaveLength(1)
+    })
+
+    it('쓸 수 있는 FM26 묶음은 같은 설정에서도 지킨다(고친 자리 역할이 든 새 전술은 만들지 않는다)', () => {
+      const own = fm26Set()
+      const { settings, notes } = migrate(oldSettings({ ...EDITED, tacticsDefault: own }))
+      expect(settings.tacticsDefault).toBe(own)
+      expect(notes.map((note) => note.text)).toContain(KEPT_NOTE)
+      expect(notes.map((note) => note.text)).not.toContain(REPLACED_NOTE)
+      expect(notes.some((note) => note.text.startsWith('옛 설정의 포메이션'))).toBe(false)
+    })
+
+    it('값이 없던(undefined, null) 묶음은 바뀐 것이 아니라서 새로 만들었다는 말을 적지 않는다', () => {
+      for (const none of [undefined, null]) {
+        const { settings, notes } = migrate(oldSettings({ ...EDITED, tacticsDefault: none as unknown as undefined }))
+        expect(settings.tacticsDefault?.mainId, String(none)).toBe('migrated:4-3-3')
+        expect(notes.map((note) => note.text), String(none)).not.toContain(REPLACED_NOTE)
+        expect(notes[0].text).toContain('옛 설정의 포메이션(4-3-3)')
+      }
+    })
+
+    it('저장해 둔 묶음이 사용자 역할을 쓰면 설정의 사용자 역할을 얹어 검사한다: 정의가 있으면 지키고, 정의가 없으면 쓸 수 없는 묶음이다', () => {
+      const custom: CustomRole = { id: 'user.target', phase: 'ip', name: '내 타깃', positions: ['ST'], weights: { heading: 5 } }
+      const own = fm26Set()
+      own.tactics[0].slots[0].ip.roleId = 'user.target'
+      expect(validateTacticSet(own, withCustomRoles(FM26_CATALOG, [custom]))).toEqual([])
+      const kept = migrate(oldSettings({ ...EDITED, tacticsDefault: own, customRoles: [custom] }))
+      expect(kept.settings.tacticsDefault).toBe(own)
+      expect(kept.notes.map((note) => note.text)).toContain(KEPT_NOTE)
+      const lost = migrate(oldSettings({ ...EDITED, tacticsDefault: own }))
+      expect(lost.settings.tacticsDefault).not.toBe(own)
+      expect(lost.notes[0].text).toBe(REPLACED_NOTE)
+      // 사용자 역할 칸이 배열이 아니어도 멈추지 않는다
+      expect(migrate(oldSettings({ ...EDITED, tacticsDefault: own, customRoles: 'x' as never })).notes[0].text).toBe(REPLACED_NOTE)
+    })
+
+    it('옮긴 전술을 만들 수 없는 경우(자료가 어긋났다)에는 새로 만들었다고 적지 않고, 있던 값은 그대로 둔다', () => {
+      const noStriker: RoleCatalog = createFm26Catalog({ ...data, slotKinds: Object.fromEntries(Object.entries(data.slotKinds).filter(([kind]) => !kind.startsWith('ST.'))) })
+      const { settings, notes } = migrate(oldSettings({ ...EDITED, tacticsDefault: 'abc' as never }), { ...CONTEXT, fm26: noStriker })
+      expect(settings.tacticsDefault).toBe('abc')
+      expect(notes.some((note) => note.kind === 'problem')).toBe(true)
+      expect(notes.map((note) => note.text)).not.toContain(REPLACED_NOTE)
+    })
+
+    it('다시 돌려도 같다: 새로 만든 묶음은 이미 쓸 수 있어서 다음에는 지켜진다', () => {
+      const first = migrate(oldSettings({ ...EDITED, tacticsDefault: legacySet() })).settings
+      const { settingsVersion: _version, migration: _migration, ...stripped } = first
+      const again = migrate(stripped as Settings, { ...CONTEXT, now: new Date('2030-01-01T00:00:00Z') })
+      expect(again.settings.tacticsDefault).toEqual(first.tacticsDefault)
+      expect(again.notes.map((note) => note.text)).toContain(KEPT_NOTE)
+      expect(again.notes.map((note) => note.text)).not.toContain(REPLACED_NOTE)
+    })
   })
 })
 

@@ -1,7 +1,7 @@
 import { FORMATION_BY_ID, FORMATIONS, type Formation } from './formations'
 import { hasBatchim, withJosa } from './korean'
 import { TACTICS_PER_SAVE } from './limits'
-import type { CatalogId, RoleCatalog } from './roleCatalog'
+import { withCustomRoles, type CatalogId, type RoleCatalog } from './roleCatalog'
 import { DEFAULT_ROLE, type PositionKey } from './roles'
 import { defaultSharePct, shareLabel } from './slotProfile'
 import { POSITION_LABEL } from './tactic'
@@ -19,6 +19,8 @@ import { SAVE_ATTRIBUTE_ORDER } from './world'
  *   settings.catalog를 'legacy14'로 두면 이전 전과 정밀하게 같은 옛 계산이 돈다.
  * - 전술: 옛 포메이션이 주 전술이다. 자리 역할을 고친 적이 있는 다른 포메이션은 FORMATIONS 순서로 최대 (TACTICS_PER_SAVE - 1)개까지 더 전술로 옮기고,
  *   넘치는 것은 알림에 적는다. 옮긴 묶음은 모든 세이브가 쓰는 tacticsDefault에 둔다(옛 설정이 세이브마다 다르지 않았다).
+ *   이미 FM26에서 쓸 수 있는 tacticsDefault가 있으면(판 표시만 잃은 설정) 그것은 덮어쓰지 않는다. 쓸 수 없는 값(옛 14역할 때 저장한 묶음, 손으로 고쳐 깨진 값)이면
+ *   없는 것으로 보고 옛 포메이션과 자리 역할에서 새로 만들며, 바뀐 것을 알림에 적는다.
  * - 자리 역할: 옛 역할의 대응 역할을 그 칸 종류에서 고를 수 있으면 쓰고, 아니면 그 칸의 기본 역할로 바꾼다. 바꾼 자리는 알림에 자리마다가 아니라 한 줄로 묶어 적는다
  *   (옛 박스 투 박스와 딥라잉 플레이메이커를 중앙 미드 자리에 둔 것이 그렇다: FM26에서 둘은 수비형 미드 줄의 역할이다).
  *   공 미소유 시 역할은 칸의 기본 역할이고, 공 소유 시 비중은 적지 않는다(null, 대장의 기본값). 비중은 알림에 한 번 적는다.
@@ -59,6 +61,14 @@ export interface MigrationResult {
 }
 
 const isRecord = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value)
+
+/**
+ * 저장해 둔 전술 묶음을 FM26에서 그대로 쓸 수 있는가: 객체이고, 역할 목록이 FM26이고, 저장할 때 거는 검사(validateTacticSet)를 통과한다.
+ * 사용자 역할은 설정에 있는 것을 얹어 본다(저장 검사도 사용자 역할을 얹은 카탈로그로 한다). 값이 객체가 아니어도(손으로 고친 설정) 멈추지 않는다.
+ */
+function isUsableSet(value: unknown, fm26: RoleCatalog, customRoles: Settings['customRoles']): boolean {
+  return isRecord(value) && value.catalog === fm26.id && validateTacticSet(value as unknown as TacticSet, withCustomRoles(fm26, customRoles ?? [])).length === 0
+}
 
 /** 모르는 포메이션은 맨 앞(FORMATIONS[0])으로 본다(옛 분석과 같다) */
 const formationOf = (id: unknown): Formation => (typeof id === 'string' && Object.hasOwn(FORMATION_BY_ID, id) ? FORMATION_BY_ID[id] : FORMATIONS[0])
@@ -193,7 +203,7 @@ function carryWeights(raw: unknown, fm26: RoleCatalog, legacy: RoleCatalog): Wei
 /**
  * 옛 설정을 FM26 역할 체계의 설정으로 옮긴다. 판(settingsVersion)이 이미 이전 판 이상이면 아무것도 바꾸지 않고 입력을 그대로 돌려준다(changed가 거짓).
  * 결과 설정은 옛 칸을 그대로 두고, 전술 묶음(tacticsDefault), 판(settingsVersion), 이전 기록(migration)을 더하며, 옮길 가중치가 있으면 roleWeights에 새 id 항목을 더한다.
- * 이미 tacticsDefault가 있으면(판 표시만 잃은 설정) 그 전술은 덮어쓰지 않는다.
+ * FM26에서 쓸 수 있는 tacticsDefault가 이미 있으면(판 표시만 잃은 설정) 그 전술은 덮어쓰지 않는다. 있지만 쓸 수 없으면(옛 카탈로그 묶음, 깨진 값) 옛 설정에서 새로 만들고 알린다.
  * 부르는 쪽은 쓰는 카탈로그가 FM26일 때만 부른다(needsMigration). 사본과 쓰기는 부르는 쪽이 한다.
  */
 export function migrateSettings(saved: Settings, context: MigrationContext): MigrationResult {
@@ -204,7 +214,7 @@ export function migrateSettings(saved: Settings, context: MigrationContext): Mig
   const notes: MigrationNote[] = []
   let tacticsDefault: TacticSet | undefined
 
-  if (saved.tacticsDefault) {
+  if (isUsableSet(saved.tacticsDefault, fm26, saved.customRoles)) {
     notes.push({ kind: 'slot', text: '이미 저장해 둔 전술이 있어 옛 포메이션과 자리 역할은 옮기지 않았습니다' })
   } else {
     const main = formationOf(saved.formation)
@@ -220,6 +230,10 @@ export function migrateSettings(saved: Settings, context: MigrationContext): Mig
       notes.push({ kind: 'problem', text: `옮긴 전술이 올바르지 않아 전술은 옮기지 못했습니다: ${problems[0].message}` })
     } else {
       tacticsDefault = set
+      // 값이 바뀌는 열쇠는 알림에 적는다: 있던 묶음을 쓸 수 없어 새로 만든 것이다(없던 것을 만든 것은 아래 줄이 말한다)
+      if (saved.tacticsDefault !== undefined && saved.tacticsDefault !== null) {
+        notes.push({ kind: 'slot', text: '저장해 둔 전술 묶음을 FM26에서 쓸 수 없어 옛 포메이션과 자리 역할로 새로 만들었습니다' })
+      }
       notes.push({ kind: 'slot', text: `옛 설정의 포메이션(${main.label})과 자리 역할을 FM26 역할로 옮겨 주 전술로 두었습니다` })
       if (extras.length > 0) notes.push({ kind: 'slot', text: `자리 역할을 고친 적이 있는 포메이션(${extras.map((formation) => formation.label).join(', ')})도 전술로 옮겼습니다` })
       if (dropped.length > 0) {

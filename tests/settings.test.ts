@@ -13,7 +13,7 @@ import { defaultSettings, SettingsStore } from '../src/main/settings'
 import { ackMigration, saveTactics } from '../src/main/tacticStore'
 import { FM26_CATALOG } from '../src/shared/catalogFm26'
 import { DEFAULT_CATALOG } from '../src/shared/catalogs'
-import { presetTactic, resolveMainTactic, validateTactic, type Tactic, type TacticSet } from '../src/shared/tacticModel'
+import { legacyTactic, presetTactic, resolveMainTactic, validateTactic, type Tactic, type TacticSet } from '../src/shared/tacticModel'
 import type { Settings } from '../src/shared/types'
 
 const DOCS = 'D:/가상 폴더/문서'
@@ -231,6 +231,29 @@ describe('FM26을 쓰면 읽을 때 한 번 이전하고 한 번 쓴다(N-05)', 
     rmSync(file('settings.json.tmp'), { recursive: true })
     store.set({ theme: 'blue' })
     expect(json().settingsVersion).toBe(2)
+  })
+
+  it('옛 14역할을 쓰는 동안 저장한 전술 묶음은 FM26에서 쓸 수 없어서, 옛 포메이션과 자리 역할로 새로 만들고 알린다', () => {
+    // 옛 카탈로그를 쓰는 동안에는 저장 검사가 옛 카탈로그 묶음을 받아들인다
+    write(oldFile({ catalog: 'legacy14' }))
+    const before = open()
+    const legacy = legacyTactic('4-3-3', before.get().slotRoles)
+    expect(saveTactics({ settings: before }, null, { catalog: 'legacy14', tactics: [legacy], mainId: legacy.id }).ok).toBe(true)
+    expect(before.get().tacticsDefault?.catalog).toBe('legacy14')
+    // FM26을 쓰게 되면(catalog 칸을 바꿔 다시 켠다) 그 묶음을 쓰지 못하고 옛 설정에서 새로 만든다
+    const original = write({ ...json(), catalog: 'fm26' })
+    const store = open(LATER)
+    const main = resolveMainTactic(store.get(), SAVE_KEY, FM26_CATALOG)
+    expect(main.id).toBe('migrated:4-3-3')
+    expect(main.slots[0].ip.roleId).toBe('ip.TargetMan')
+    expect(main.slots[7].ip.roleId).toBe('ip.BallPlayingDefender')
+    expect(store.get().tacticsDefault?.catalog).toBe('fm26')
+    const notes = store.get().migration?.notes.map((note) => note.text) ?? []
+    expect(notes).toContain('저장해 둔 전술 묶음을 FM26에서 쓸 수 없어 옛 포메이션과 자리 역할로 새로 만들었습니다')
+    expect(notes).not.toContain('이미 저장해 둔 전술이 있어 옛 포메이션과 자리 역할은 옮기지 않았습니다')
+    // 사본에는 옛 묶음이 그대로 있다
+    expect(text('settings.v1.json')).toBe(original)
+    expect(JSON.parse(text('settings.v1.json')).tacticsDefault.catalog).toBe('legacy14')
   })
 
   it('이전 알림 확인(ackMigration)이 파일에 남아 새 저장소로 읽어도 확인한 채이고, 다시 확인해도 파일을 쓰지 않는다', () => {
