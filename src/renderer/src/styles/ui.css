@@ -1,0 +1,331 @@
+/*
+  공용 부품의 모양: Tag, EmptyState, Loading, Toggle, NumberInput, HelpTip, StepPath, ScoreCell(디자인 적용 1차, 단위 F).
+  접두어는 `.ui-`(점수 칸만 `.score-cell`)이고, 규칙마다 접두어 클래스 하나로 고른다. 요소 이름이나 id로 고르지 않고 !important를 쓰지 않는다.
+  색, 굵기, 간격은 tokens.css의 이름만 쓰고, 글자는 12.5px(--fs-micro) 아래로 내리지 않는다.
+  이 파일을 쓰는 부품 TSX가 import한다(app.css 목록에는 더하지 않는다). 숫자 모양(.num, .money, .score-num)은 base.css의 몫이다.
+*/
+
+/* 화면 낭독에만 읽히는 글(눈에는 보이지 않는다) */
+.ui-sr {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  border: 0;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+/* ---------- 태그: 누르지 않는 표지. 글자, 옅은 바탕, 테두리가 한 짝이다 ---------- */
+
+.ui-tag {
+  --tag-ink: var(--neutral-ink);
+  --tag-soft: var(--neutral-soft);
+  --tag-edge: var(--neutral-edge);
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 22px;
+  padding: 0 8px;
+  border: 1px solid var(--tag-edge);
+  border-radius: var(--radius-xs);
+  background: var(--tag-soft);
+  color: var(--tag-ink);
+  font-size: var(--fs-micro);
+  font-weight: var(--fw-strong);
+  line-height: 1;
+  white-space: nowrap;
+}
+.ui-tag-neutral {
+  --tag-ink: var(--neutral-ink);
+  --tag-soft: var(--neutral-soft);
+  --tag-edge: var(--neutral-edge);
+}
+.ui-tag-gold,
+.ui-tag-edited {
+  --tag-ink: var(--gold);
+  --tag-soft: var(--gold-soft);
+  --tag-edge: var(--gold-edge);
+}
+.ui-tag-good {
+  --tag-ink: var(--good);
+  --tag-soft: var(--good-soft);
+  --tag-edge: var(--good-edge);
+}
+.ui-tag-warn {
+  --tag-ink: var(--warn);
+  --tag-soft: var(--warn-soft);
+  --tag-edge: var(--warn-edge);
+}
+.ui-tag-bad {
+  --tag-ink: var(--bad);
+  --tag-soft: var(--bad-soft);
+  --tag-edge: var(--bad-edge);
+}
+/* 내 팀, 적용됨: 흰색(화면의 뼈대 색) */
+.ui-tag-mine {
+  --tag-ink: var(--text);
+  --tag-soft: var(--accent-soft);
+  --tag-edge: var(--line-strong);
+}
+
+/* ---------- 빈 화면: 왜 비었는지 한 줄과 다음 할 일 단추 하나 ---------- */
+
+.ui-empty {
+  --empty-icon: var(--text-3);
+  display: grid;
+  justify-items: center;
+  gap: var(--sp-2);
+  padding: var(--sp-6) var(--sp-4);
+  color: var(--text-2);
+  text-align: center;
+}
+.ui-empty-compact {
+  justify-items: start;
+  padding: var(--sp-3) 0;
+  text-align: left;
+}
+/* 진짜 문제만 주의색(아이콘과 함께). 게임이 필요한 칸이나 걸러진 표는 중립색 그대로 */
+.ui-empty-problem {
+  --empty-icon: var(--warn);
+}
+.ui-empty-title {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  margin: 0;
+  color: var(--text);
+  font-size: var(--fs-h3);
+  font-weight: var(--fw-title);
+  line-height: var(--lh-short);
+}
+.ui-empty-icon {
+  flex: none;
+  color: var(--empty-icon);
+}
+.ui-empty-body {
+  max-width: 56ch;
+  line-height: var(--lh-para);
+}
+.ui-empty-actions {
+  margin-top: var(--sp-2);
+}
+
+/* ---------- 읽는 중: "○○ 읽는 중입니다" 한 꼴. 움직이는 장식은 두지 않는다 ---------- */
+
+.ui-loading {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-2);
+  color: var(--text-2);
+  font-size: var(--fs-small);
+  line-height: var(--lh-short);
+}
+.ui-loading-compact {
+  color: inherit;
+  font-size: inherit;
+}
+
+/* ---------- 켬/끔: 켬과 끔을 글자로도 적는다 ---------- */
+
+.ui-toggle {
+  display: grid;
+  gap: var(--sp-1);
+}
+.ui-toggle-switch {
+  --track: var(--bg);
+  --track-edge: var(--line-strong);
+  --knob: var(--text-3);
+  --knob-shift: 0px;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-3);
+  min-height: 36px;
+  padding: 0 var(--sp-3);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-s);
+  background: var(--raised);
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+  transition: background-color var(--dur-fast) ease, border-color var(--dur-fast) ease;
+}
+.ui-toggle-switch:hover:not(:disabled) {
+  border-color: var(--line-hover);
+  background: var(--hover);
+}
+.ui-toggle-switch:disabled {
+  border-color: var(--line);
+  color: var(--text-3);
+  cursor: not-allowed;
+}
+.ui-toggle-switch[aria-checked='true'] {
+  --track: var(--accent);
+  --track-edge: var(--accent);
+  --knob: var(--accent-ink);
+  --knob-shift: 14px;
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+.ui-toggle-label {
+  flex: 1;
+  min-width: 0;
+  font-weight: var(--fw-strong);
+}
+.ui-toggle-track {
+  position: relative;
+  flex: none;
+  width: 34px;
+  height: 20px;
+  border: 1px solid var(--track-edge);
+  border-radius: 10px;
+  background: var(--track);
+}
+.ui-toggle-track::after {
+  content: '';
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--knob);
+  transform: translateX(var(--knob-shift));
+  transition: transform var(--dur-fast) ease;
+}
+.ui-toggle-state {
+  min-width: 2ch;
+  font-size: var(--fs-small);
+  font-weight: var(--fw-title);
+}
+.ui-toggle-hint {
+  margin: 0;
+  color: var(--text-2);
+  font-size: var(--fs-small);
+  line-height: var(--lh-para);
+}
+
+/* ---------- 숫자 칸: .field(칸 모양)와 .num(자릿수 맞춤) 위에 얹는다 ---------- */
+
+.ui-number {
+  width: 72px;
+  text-align: right;
+}
+
+/* ---------- 물음표: 마우스를 올리거나 초점이 닿으면 풍선(data-tip)이 뜬다. 누를 곳 크기를 32px로 채운다 ---------- */
+
+.ui-help {
+  display: inline-grid;
+  place-items: center;
+  flex: none;
+  width: 32px;
+  height: 32px;
+  margin-block: -4px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--text-3);
+  cursor: help;
+}
+.ui-help:hover {
+  background: var(--hover);
+  color: var(--text);
+}
+
+/* ---------- 점선 길: 번호 붙은 걸음들을 점선으로 잇는다. 끝난 걸음은 색과 함께 체크 아이콘 ---------- */
+
+.ui-steps {
+  display: grid;
+  gap: var(--sp-4);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.ui-step {
+  --step-edge: var(--line-strong);
+  --step-ink: var(--text-2);
+  --step-soft: var(--surface);
+  --step-line: var(--line-strong);
+  position: relative;
+  display: grid;
+  grid-template-columns: 34px minmax(0, 1fr);
+  gap: 0 var(--sp-4);
+  align-items: start;
+}
+.ui-step:not(:last-child)::before {
+  content: '';
+  position: absolute;
+  left: 16px;
+  top: 38px;
+  bottom: -12px;
+  border-left: 2px dashed var(--step-line);
+}
+.ui-step-current {
+  --step-edge: var(--accent);
+  --step-ink: var(--text);
+}
+.ui-step-done {
+  --step-edge: var(--good);
+  --step-ink: var(--good);
+  --step-soft: var(--good-soft);
+  --step-line: var(--good);
+}
+.ui-step-mark {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border: 2px solid var(--step-edge);
+  border-radius: 50%;
+  background: var(--step-soft);
+  color: var(--step-ink);
+  font-size: var(--fs-body);
+  font-weight: var(--fw-heavy);
+  font-variant-numeric: tabular-nums;
+}
+.ui-step-body {
+  display: grid;
+  gap: var(--sp-2);
+  min-width: 0;
+}
+.ui-step-title {
+  display: flex;
+  align-items: center;
+  min-height: 34px;
+  margin: 0;
+  font-size: var(--fs-h3);
+  font-weight: var(--fw-title);
+  line-height: var(--lh-short);
+}
+
+/* ---------- 점수 칸: 오른쪽 맞춘 굵은 숫자 + 낱말 하나(등급 태그 또는 역할 이름). 막대는 없다 ---------- */
+
+.score-cell {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--sp-2);
+  max-width: 100%;
+}
+.score-cell-value {
+  min-width: 3ch;
+  text-align: right;
+}
+.score-cell-wide {
+  min-width: 5ch;
+}
+/* 범위에서 나온 값이면 숫자에 점선 밑줄(앞에 물결표를 붙이지 않는다) */
+.score-cell-estimate {
+  text-decoration: underline dotted;
+  text-underline-offset: 4px;
+}
+.score-cell-word {
+  overflow: hidden;
+  color: var(--text-2);
+  font-size: var(--fs-micro);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
