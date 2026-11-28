@@ -242,6 +242,18 @@ describe('withCustomRoles: 사용자 역할 얹기', () => {
     expect(withCustomRoles(LEGACY_CATALOG, undefined as unknown as CustomRole[])).toBe(LEGACY_CATALOG)
   })
 
+  it('배열이 아닌 값(손으로 고친 설정)이 와도 죽지 않고 사용자 역할이 없는 것으로 본다', () => {
+    const one = custom('user.a', 'ip', ['MC'])
+    for (const garbage of [null, {}, { 0: one }, { length: 1, 0: one }, 7, true, 'user.a']) {
+      expect(() => withCustomRoles(LEGACY_CATALOG, garbage as unknown as CustomRole[]), JSON.stringify(garbage)).not.toThrow()
+      expect(withCustomRoles(LEGACY_CATALOG, garbage as unknown as CustomRole[]), JSON.stringify(garbage)).toBe(LEGACY_CATALOG)
+    }
+    // 설정에서 오는 길(activeCatalog)도 같다. 배열 안의 틀린 항목은 그 항목만 건너뛴다
+    expect(activeCatalog({ customRoles: {} as unknown as CustomRole[] })).toBe(catalogOf(DEFAULT_CATALOG))
+    expect(activeCatalog({ catalog: 'legacy14', customRoles: 5 as unknown as CustomRole[] })).toBe(LEGACY_CATALOG)
+    expect(activeCatalog({ catalog: 'legacy14', customRoles: [null, 3, one] as unknown as CustomRole[] }).roles.map((role) => role.id)).toEqual([...ROLES.map((role) => role.id), 'user.a'])
+  })
+
   it('위쪽 카탈로그를 고르는 한 곳(catalogs.ts): 기본은 옛 14역할이고, 설정의 catalog와 customRoles를 따른다', () => {
     // 전환 묶음(기본 카탈로그를 FM26으로 바꾸는 한 줄의 커밋)에서 고칠 곳은 이 한 줄뿐이다. 아래는 모두 DEFAULT_CATALOG를 따라 읽는다
     expect(DEFAULT_CATALOG).toBe('legacy14')

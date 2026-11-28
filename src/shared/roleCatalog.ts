@@ -207,13 +207,15 @@ export function weightEntries(
  * 카탈로그에 사용자 역할을 얹는다. 사용자 역할은 그 국면과 포지션의 "고를 수 있는 역할" 끝에 근거 'user'로 더해지고,
  * 다른 역할과 모든 나머지 규칙(기본 역할, 풀, 기준 분포 열쇠, 대응 표)은 바탕 카탈로그 그대로다. 사용자 역할이 없으면 바탕 카탈로그를 그대로 돌려준다.
  * 이미 있는 역할 id와 겹치거나 앞의 사용자 역할과 id가 같은 것은 건너뛴다(먼저 온 것이 이긴다).
+ * 설정은 손으로 고칠 수 있어서 배열이 아닌 값(객체, 숫자 등)이 오면 사용자 역할이 없는 것으로 본다.
  */
 export function withCustomRoles(catalog: RoleCatalog, roles: readonly CustomRole[]): RoleCatalog {
   const taken = new Set(catalog.roles.map((role) => role.id))
   const custom: CatalogRole[] = []
   const weightsOf = new Map<string, Weights>()
   const references: ReferenceProfile[] = []
-  for (const role of roles ?? []) {
+  const list: readonly CustomRole[] = Array.isArray(roles) ? (roles as readonly CustomRole[]) : []
+  for (const role of list) {
     if (!role || typeof role.id !== 'string' || taken.has(role.id)) continue
     taken.add(role.id)
     const positions = (Array.isArray(role.positions) ? role.positions : []).filter((position) => POSITION_NAMES.has(position))
