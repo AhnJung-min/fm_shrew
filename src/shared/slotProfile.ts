@@ -54,8 +54,10 @@ function sameWeights(a: Weights, b: Weights): boolean {
 
 /**
  * 점유 시 표와 비점유 시 표를 비중으로 섞은 가중치.
- * 짧은 길(섞지 않고 그 표 객체를 그대로 돌려준다): 비중이 가득(SHARE_SCALE 이상)이거나 두 표가 같으면 점유 시 표, 비중이 0 이하이면 비점유 시 표,
- * 한쪽 합이 0이면 다른 쪽 표. 둘 다 0이면 빈 표(적합도가 나오지 않는다). 음수 가중치는 0으로 본다.
+ * 짧은 길(섞지 않고 그 표 객체를 그대로 돌려준다)을 이 차례로 본다: 비중이 가득(SHARE_SCALE 이상)이면 점유 시 표, 두 표가 같으면 점유 시 표,
+ * 비중이 0 이하이면 비점유 시 표, 한쪽 합이 0이면 다른 쪽 표. 음수 가중치는 0으로 본다.
+ * 끝값은 이 차례를 따른다(표의 합이 0인지보다 비중을 먼저 본다): 비중이 가득이면 점유 시 표의 합이 0이어도 그 표를 돌려주고(그 자리는 적합도가 나오지 않는다),
+ * 비중 99면 점유 시 합이 0이라 비점유 시 표를 돌려준다. 비중 0과 비점유 시 표, 비중 1도 같은 식이다. 두 표의 합이 모두 0이면 두 표가 같은 것으로 보아 점유 시 표를 돌려준다.
  */
 export function compositeWeights(ip: Weights, oop: Weights, sharePct: number): Weights {
   if (!(sharePct < SHARE_SCALE)) return ip
@@ -63,7 +65,6 @@ export function compositeWeights(ip: Weights, oop: Weights, sharePct: number): W
   if (!(sharePct > 0)) return oop
   const sumIp = positiveSum(ip)
   const sumOop = positiveSum(oop)
-  if (sumIp <= 0 && sumOop <= 0) return {}
   if (sumIp <= 0) return oop
   if (sumOop <= 0) return ip
   const mixed: Record<string, number> = {}

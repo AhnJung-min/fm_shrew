@@ -156,9 +156,9 @@ describe('compositeWeights: 점유 시와 비점유 시 가중치를 정수로 �
     expect(scored).toBeGreaterThan(5_000)
   })
 
-  it('(라) 반올림 전 값이 요구서 식(두 역할의 가중치를 합 1로 맞춰 섞는다)과 1e-9 안이다', () => {
+  it('(라) 반올림 전 값이 요구서 식(두 역할의 가중치를 합 1로 맞춰 섞는다)과 1e-9 안이다(무작위 1만 쌍)', () => {
     const random = random32(5)
-    for (let n = 0; n < 5_000; n++) {
+    for (let n = 0; n < 10_000; n++) {
       const ip = randomWeights(random)
       const oop = randomWeights(random)
       const values = randomValues(random)
@@ -185,10 +185,10 @@ describe('compositeWeights: 점유 시와 비점유 시 가중치를 정수로 �
     }
   })
 
-  it('(마) 능력치가 1 오르면 적합도가 줄지 않는다', () => {
+  it('(마) 능력치가 1 오르면 적합도가 줄지 않는다(무작위 1만 쌍)', () => {
     const random = random32(6)
     let raised = 0
-    for (let n = 0; n < 3_000; n++) {
+    for (let n = 0; n < 10_000; n++) {
       const ip = randomWeights(random)
       const oop = randomWeights(random)
       const values = randomValues(random)
@@ -201,10 +201,10 @@ describe('compositeWeights: 점유 시와 비점유 시 가중치를 정수로 �
       expect(after, `${id} 비중 ${share}`).toBeGreaterThanOrEqual(before)
       raised++
     }
-    expect(raised).toBeGreaterThan(2_000)
+    expect(raised).toBeGreaterThan(8_000)
   })
 
-  it('(바) 한쪽 합이 0이면 다른 쪽만 쓰고, 둘 다 0이면 빈 표(적합도 없음)다', () => {
+  it('(바) 한쪽 합이 0이면 다른 쪽만 쓰고, 둘 다 0이면 양수 항목이 없는 표(적합도 없음)다', () => {
     const random = random32(7)
     for (let n = 0; n < 200; n++) {
       const some = randomWeights(random)
@@ -223,6 +223,25 @@ describe('compositeWeights: 점유 시와 비점유 시 가중치를 정수로 �
     expect(Object.values(compositeWeights({ a: 0 }, { b: 2 }, 60)).filter((weight) => weight > 0)).toEqual([2])
     expect(fitness(compositeWeights({}, {}, 60), playerOf(randomValues(random32(8))))).toBeNull()
     expect(fitness(compositeWeights({ [ATTRIBUTES[0]]: 0 }, { [ATTRIBUTES[1]]: -1 }, 60), playerOf(randomValues(random32(9))))).toBeNull()
+  })
+
+  it('끝값은 짧은 길의 차례를 따른다: 표의 합이 0인지보다 비중을 먼저 본다', () => {
+    const some = { [ATTRIBUTES[2]]: 3, [ATTRIBUTES[5]]: 1 }
+    const zeros = { [ATTRIBUTES[0]]: 0, [ATTRIBUTES[1]]: -2 }
+    const player = playerOf(randomValues(random32(10)))
+    // 비중이 가득이면 점유 시 표의 합이 0이어도 그 표를 쓰고(적합도 없음), 99면 점유 시 합이 0이라 비점유 시 표를 쓴다
+    expect(compositeWeights(zeros, some, SHARE_SCALE)).toBe(zeros)
+    expect(fitness(compositeWeights(zeros, some, SHARE_SCALE), player)).toBeNull()
+    expect(compositeWeights(zeros, some, SHARE_SCALE - 1)).toBe(some)
+    // 비중 0이면 비점유 시 표의 합이 0이어도 그 표를 쓰고(적합도 없음), 1이면 비점유 시 합이 0이라 점유 시 표를 쓴다
+    expect(compositeWeights(some, zeros, 0)).toBe(zeros)
+    expect(fitness(compositeWeights(some, zeros, 0), player)).toBeNull()
+    expect(compositeWeights(some, zeros, 1)).toBe(some)
+    // 두 표의 합이 모두 0이면 같은 표로 보아 어느 비중에서든 점유 시 표이고, 적합도가 나오지 않는다
+    for (const share of [0, 1, 50, 99, SHARE_SCALE]) {
+      expect(compositeWeights(zeros, { 다른능력치: 0 }, share), `비중 ${share}`).toBe(zeros)
+      expect(fitness(compositeWeights(zeros, { 다른능력치: 0 }, share), player), `비중 ${share}`).toBeNull()
+    }
   })
 
   it('음수와 0 가중치는 합성에 들어가지 않고, 입력 표를 바꾸지 않는다', () => {
