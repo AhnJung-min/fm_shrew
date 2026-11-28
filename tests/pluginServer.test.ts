@@ -121,6 +121,58 @@ describe('새 읽기 창구(TacticInfo.cs)', () => {
   })
 })
 
+/** `header`로 시작하는 catch 블록의 본문({ … })을 모두 모은다. 중괄호를 세어 자른다(보간 글자의 {…}는 짝이 맞는다) */
+function catchBodies(source: string, header: string): string[] {
+  const bodies: string[] = []
+  for (let from = source.indexOf(header); from >= 0; from = source.indexOf(header, from + header.length)) {
+    const open = source.indexOf('{', from)
+    let depth = 0
+    let end = open
+    for (; end < source.length; end++) {
+      if (source[end] === '{') depth++
+      else if (source[end] === '}' && --depth === 0) break
+    }
+    bodies.push(source.slice(open, end + 1))
+  }
+  return bodies
+}
+
+describe('게임 쪽 예외의 글은 응답에 싣지 않는다(N-03)', () => {
+  // 새 창구는 처음으로 배포본 창구가 PersonInfo.Probe와 GameData.PutValue를 쓴다. 게임(Il2Cpp)의 예외 글에는 호출 경로가 여러 줄로 붙을 수 있다
+  const strip = (source: string): string => source.replace(/\/\/.*$/gm, '')
+  const info = strip(read('PersonInfo.cs'))
+  const gameData = strip(read('GameData.cs'))
+
+  it('Server.Summary(예외의 종류와 첫 줄만)를 다른 파일도 쓸 수 있게 열어 두고, 서버의 500 응답은 그것을 쓴다', () => {
+    expect(server).toMatch(/internal static string Summary\(Exception error\)/)
+    expect(server).toMatch(/body = Summary\(error\);/)
+    expect(server).toMatch(/\.Split\([^)]*\)\[0\]/)
+  })
+
+  it('게임에 묻는 조회(Run, Probe)의 일반 예외 catch는 요약만 503 응답에 싣고, 예외의 글은 기록에만 남긴다', () => {
+    const throwing = catchBodies(info, 'catch (Exception error)').filter((body) => body.includes('throw new HttpError('))
+    expect(throwing).toHaveLength(2) // Run과 Probe
+    for (const body of throwing) {
+      expect(body).toContain('throw new HttpError(503, Server.Summary(error));')
+      expect(body).toContain('Plugin.Logger.LogWarning(')
+    }
+    // 응답에 예외 객체의 글을 붙이는 곳이 없다. 예외: TimeoutException의 catch(우리 코드(MainThread)가 던지는 고정 글이다)
+    let rest = info
+    for (const body of catchBodies(info, 'catch (TimeoutException error)')) rest = rest.replace(body, '')
+    expect(rest).not.toMatch(/HttpError\([^;]*\berror\.\w+/)
+  })
+
+  it('조건 값을 올리다 실패한 알림("failed: …")도 요약만 싣는다(앱으로 가는 응답의 notes에 실린다)', () => {
+    expect(gameData).toContain('return "failed: " + Server.Summary(error);')
+    expect(gameData).not.toMatch(/return[^;]*\berror\.(Message|ToString|StackTrace)/)
+  })
+
+  it('검사기가 catch 블록을 중괄호 짝으로 자른다(보간 글자의 중괄호가 있어도)', () => {
+    const sample = 'try { a(); } catch (Exception error) { Log($"x {error.Message} {1}"); throw new HttpError(503, Server.Summary(error)); } finally { b(); } catch (Exception error) { c(); }'
+    expect(catchBodies(sample, 'catch (Exception error)')).toEqual(['{ Log($"x {error.Message} {1}"); throw new HttpError(503, Server.Summary(error)); }', '{ c(); }'])
+  })
+})
+
 describe('플러그인 버전', () => {
   it('Plugin.cs의 버전은 앱의 버전 문 표의 가장 높은 문(모든 기능이 켜지는 버전) 이상이고, 게임 전술 읽기 기능이 들어간 0.14.0이다', () => {
     const version = /public const string Version = "([^"]+)";/.exec(read('Plugin.cs'))?.[1] ?? ''

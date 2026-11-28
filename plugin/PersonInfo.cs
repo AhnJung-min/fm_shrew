@@ -202,7 +202,8 @@ internal static class PersonInfo
             {
                 Common.Value++;
                 Plugin.Logger.LogWarning($"game query ({Common.Value}/{MaxFailures}): {error.Message}");
-                throw new HttpError(503, error.Message);
+                // 응답에는 요약만 싣는다(게임 쪽 호출 경로가 여러 줄로 붙은 글을 그대로 내보내지 않는다)
+                throw new HttpError(503, Server.Summary(error));
             }
             finally
             {
@@ -340,7 +341,7 @@ internal static class PersonInfo
             {
                 failures.Value++;
                 Plugin.Logger.LogWarning($"game probe ({failures.Value}/{MaxFailures}): {error.Message}");
-                throw new HttpError(503, error.Message);
+                throw new HttpError(503, Server.Summary(error));
             }
             finally
             {
