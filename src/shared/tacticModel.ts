@@ -183,6 +183,8 @@ const formationOf = (id: string): Formation => (Object.hasOwn(FORMATION_BY_ID, i
  * 옛 설정(포메이션 + 자리별 역할)을 전술로 바꾼다. 지금 분석 규칙 그대로다: 모르는 포메이션은 FORMATIONS[0],
  * 그 포지션의 역할이 아니거나 모르는 역할 id는 그 포지션의 기본 역할(DEFAULT_ROLE). 두 국면이 같은 칸·같은 역할이고 비중은 100이다
  * (대장의 비중 기본값을 읽지 않는다). 자리 순서는 옛 포메이션 그대로다.
+ * 주의: 옛 분석의 화면 줄(DepthSlot.row)은 이 전술의 칸 배치(layoutRows)가 아니라 옛 포메이션의 줄(FORMATION_BY_ID[preset].rows)이다.
+ * 5개 가운데 3-4-3만 다르다(옛 줄은 측면 공격 둘과 최전방이 같은 줄이고, 칸 배치는 공격 줄과 최전방 줄로 나뉜다). 옛 결과를 그대로 내려면 옛 줄을 쓴다.
  */
 export function legacyTactic(formationId: string, slotRoles: Record<string, string>): Tactic {
   const formation = formationOf(formationId)
@@ -352,16 +354,19 @@ function usable(set: TacticSet | undefined, catalog: RoleCatalog): set is Tactic
 
 /**
  * 화면이 고치는 전술 묶음. 쓰는 카탈로그가 옛 것이면 옛 설정(formation, slotRoles)에서 만든 전술 하나뿐이다.
- * FM26이면 그 세이브의 묶음, 없으면 모든 세이브의 기본 묶음(tacticsDefault), 그것도 없으면 옛 포메이션의 프리셋 하나.
- * 저장한 묶음이 깨져 분석을 돌릴 수 없으면 쓰지 않는다(본체가 저장할 때 검사하므로 손으로 고친 설정에서만 일어난다).
+ * FM26이면 그 세이브의 묶음, 없거나 쓸 수 없으면 모든 세이브의 기본 묶음(tacticsDefault), 그것도 없거나 쓸 수 없으면 옛 포메이션의 프리셋 하나.
+ * 저장한 묶음이 깨져 분석을 돌릴 수 없으면(다른 카탈로그 것이거나 모양이 깨짐) 없는 것으로 보고 다음 것으로 넘어간다
+ * (본체가 저장할 때 검사하므로 손으로 고친 설정이나 카탈로그 자료가 바뀐 뒤에만 일어난다).
  */
 export function currentSet(settings: Settings, saveKey: string | null, catalog: RoleCatalog): TacticSet {
   if (catalog.id === 'legacy14') {
     const tactic = legacyTactic(settings.formation, settings.slotRoles ?? {})
     return { catalog: catalog.id, tactics: [tactic], mainId: tactic.id }
   }
-  const stored = (saveKey !== null && Object.hasOwn(settings.tactics ?? {}, saveKey) ? settings.tactics?.[saveKey] : undefined) ?? settings.tacticsDefault
-  if (usable(stored, catalog)) return stored
+  const own = saveKey !== null && Object.hasOwn(settings.tactics ?? {}, saveKey) ? settings.tactics?.[saveKey] : undefined
+  if (usable(own, catalog)) return own
+  const shared = settings.tacticsDefault
+  if (usable(shared, catalog)) return shared
   const preset = presetTactic(settings.formation, catalog)
   return { catalog: catalog.id, tactics: [preset], mainId: preset.id }
 }

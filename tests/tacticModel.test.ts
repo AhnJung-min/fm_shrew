@@ -231,6 +231,25 @@ describe('프리셋과 옛 설정에서 전술 만들기', () => {
     expect(legacyTactic('constructor', { '4-2-3-1:4': 'constructor', '4-2-3-1:5': '__proto__' }).slots.slice(4, 6).map((slot) => slot.ip.roleId)).toEqual(['dm', 'dm'])
   })
 
+  it('옛 분석의 화면 줄(DepthSlot.row)과 legacyTactic의 칸 배치(layoutRows)는 3-4-3만 다르다(옛 결과를 그대로 내려면 옛 포메이션의 줄을 쓴다)', () => {
+    const rowsFromLayout = (tactic: Tactic): number[] => {
+      const rows = new Array<number>(tactic.slots.length)
+      layoutRows(tactic, 'ip').forEach((line, row) => line.forEach((index) => (rows[index] = row)))
+      return rows
+    }
+    for (const formation of FORMATIONS) {
+      const old = buildDepth([], [], formation, {}, {}).map((slot) => slot.row)
+      const layout = rowsFromLayout(legacyTactic(formation.id, {}))
+      if (formation.id === '3-4-3') {
+        // 옛 줄은 측면 공격 둘과 최전방이 한 줄(0), 칸 배치는 최전방이 맨 위 줄(0), 측면 공격이 다음 줄(1)이다
+        expect(old).toEqual([0, 0, 0, 1, 1, 2, 2, 3, 3, 3, 4])
+        expect(layout).toEqual([1, 0, 1, 2, 2, 3, 3, 4, 4, 4, 5])
+      } else {
+        expect(layout, formation.id).toEqual(old)
+      }
+    }
+  })
+
   it('canonicalOrder: 점유 시 줄 위(공격) → 아래, 칸 왼쪽 → 오른쪽. 프리셋은 3-4-3만 다르다', () => {
     for (const id of ['4-2-3-1', '4-3-3', '4-4-2', '3-5-2']) expect(canonicalOrder(preset(id)).slots, id).toEqual(preset(id).slots)
     expect(positionsOf(preset('3-4-3'))).toEqual(['AML', 'ST', 'AMR', 'MC', 'MC', 'WBL', 'WBR', 'DC', 'DC', 'DC', 'GK'])
@@ -566,6 +585,26 @@ describe('저장 열쇠와 주 전술 고르기', () => {
     expect(resolveMainTactic(settingsOf({ tacticsDefault: { catalog: 'fm26', tactics: [oddRole], mainId: 'x' } }), null, FAKE_FM26)).toEqual(oddRole)
     // 모양이 아예 틀려도 죽지 않는다
     expect(() => resolveMainTactic(settingsOf({ tacticsDefault: { catalog: 'fm26', tactics: 'x' } as never }), null, FAKE_FM26)).not.toThrow()
+  })
+
+  it('그 세이브의 묶음을 쓸 수 없으면 기본 묶음을, 그것도 쓸 수 없으면 프리셋을 쓴다(세이브 묶음 → 기본 묶음 → 프리셋)', () => {
+    const tenSlots = { catalog: 'fm26', tactics: [mutated(preset('4-4-2', FAKE_FM26, 'bad'), (copy) => copy.slots.pop())], mainId: 'bad' } satisfies TacticSet
+    const wrongCatalog = { catalog: 'legacy14', tactics: [preset('4-4-2', LEGACY_CATALOG, 'old')], mainId: 'old' } satisfies TacticSet
+    const lostMain = { catalog: 'fm26', tactics: [preset('4-4-2', FAKE_FM26, 'x')], mainId: '없는 전술' } satisfies TacticSet
+    const empty = { catalog: 'fm26', tactics: [], mainId: 'x' } satisfies TacticSet
+    const fallback = { catalog: 'fm26', tactics: [preset('4-3-3', FAKE_FM26, 'def')], mainId: 'def' } satisfies TacticSet
+    const healthy = { catalog: 'fm26', tactics: [preset('4-4-2', FAKE_FM26, 'own')], mainId: 'own' } satisfies TacticSet
+    for (const [name, own] of Object.entries({ tenSlots, wrongCatalog, lostMain, empty, nothing: null as never, text: 'x' as never })) {
+      const settings = settingsOf({ formation: '3-5-2', tactics: { 'a.fm': own }, tacticsDefault: fallback })
+      expect(currentSet(settings, 'a.fm', FAKE_FM26), name).toBe(fallback)
+      // 기본 묶음도 쓸 수 없거나 없으면 옛 포메이션의 프리셋이다
+      expect(resolveMainTactic({ ...settings, tacticsDefault: tenSlots }, 'a.fm', FAKE_FM26), name).toEqual(preset('3-5-2', FAKE_FM26))
+      expect(resolveMainTactic({ ...settings, tacticsDefault: undefined }, 'a.fm', FAKE_FM26), name).toEqual(preset('3-5-2', FAKE_FM26))
+    }
+    // 멀쩡한 세이브 묶음은 기본 묶음보다 먼저다
+    expect(currentSet(settingsOf({ tactics: { 'a.fm': healthy }, tacticsDefault: fallback }), 'a.fm', FAKE_FM26)).toBe(healthy)
+    // 다른 세이브의 묶음이 깨져 있어도 이 세이브에는 상관없다
+    expect(currentSet(settingsOf({ tactics: { 'a.fm': tenSlots }, tacticsDefault: fallback }), 'b.fm', FAKE_FM26)).toBe(fallback)
   })
 
   it('legacySlotRolePatch: 옛 화면이 하던 대로 slotRoles의 `포메이션:순번` 칸을 고치는 조각이다', () => {
