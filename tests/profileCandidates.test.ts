@@ -56,7 +56,7 @@ describe('옛 14역할: 새 꼴 질의({ tactic, index })는 옛 꼴 질의와 �
       }
     }
     expect(checked).toBeGreaterThan(300)
-  })
+  }, 30_000) // 혼자 돌리면 2초 안팎이지만, 다른 시험·작업과 겹치면 기본 5초를 넘을 수 있다(시간 문이 아니라 결과 대조 시험)
 
   it('자리 하나씩 다른 옛 역할로 바꾼 전술도 같다(고른 역할이 자리 역할이 된다)', () => {
     const variants = alternativeRoleVariants(FORMATIONS)
