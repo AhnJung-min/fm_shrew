@@ -128,6 +128,17 @@ describe('옛 설정의 열쇠는 하나도 사라지지 않는다(N-05)', () =>
     expect(settings.migration?.backupFile).toBeUndefined()
     expect(withBackupNote(OLD, 'settings.v1.json')).toBe(OLD)
   })
+
+  it('사본 알림은 두 번 불러도 한 줄이고, 이전 기록이 올바른 꼴이 아니어도(손으로 고친 설정) 던지지 않고 그대로 돌려준다', () => {
+    const { settings } = migrate(OLD)
+    const once = withBackupNote(settings, 'settings.v1.json')
+    expect(withBackupNote(once, 'settings.v1.json')).toBe(once)
+    expect(once.migration?.notes.filter((note) => note.kind === 'backup')).toHaveLength(1)
+    for (const migration of ['손으로 쓴 글', 5, [], { acknowledged: false }, { notes: 'x' }, null]) {
+      const odd = { ...settings, migration } as unknown as Settings
+      expect(withBackupNote(odd, 'settings.v1.json'), JSON.stringify(migration)).toBe(odd)
+    }
+  })
 })
 
 describe('전술: 옛 포메이션이 주 전술이고, 고친 포메이션이 더해진다', () => {

@@ -129,18 +129,16 @@ export class SettingsStore {
       // 새로 시작했으면 이전할 옛 설정이 없다. FM26 체계로 시작하는 설정이라는 표시만 한다
       if (activeCatalog(current).id === 'fm26') current = { ...current, settingsVersion: migrationVersion() }
     } else if (needsMigration(current, activeCatalog(current).id)) {
-      // 설정을 읽을 때 한 번 이전하고 한 번 쓴다. 쓰기 전에 옛 파일을 settings.v1.json으로 남긴다(이미 있으면 두지 않는다)
-      const backup = this.makeBackup()
-      const migrated = migrateSettings(current, { fm26: FM26_CATALOG, legacy: LEGACY_CATALOG, now: this.now() })
-      current = backup ? withBackupNote(migrated.settings, backup) : migrated.settings
-      this.backupDue = backup === null
+      // 설정을 읽을 때 한 번 이전하고 한 번 쓴다. 쓰기 전에(writeOut) 옛 파일을 settings.v1.json으로 남기고 이전 기록에 사본 알림을 더한다(사본이 이미 있으면 그대로 둔다)
+      current = migrateSettings(current, { fm26: FM26_CATALOG, legacy: LEGACY_CATALOG, now: this.now() }).settings
+      this.backupDue = true
       dirty = true
     }
 
     this.current = current
     if (dirty) {
       try {
-        this.writeOut(current)
+        this.current = this.writeOut(current)
       } catch (error) {
         // 쓰지 못해도 앱은 켠다. 이번에는 메모리의 설정으로 돌고, 다음에 쓸 때(또는 다음에 켤 때) 다시 쓴다. 옛 파일은 그대로다
         console.error('[settings] 설정을 쓰지 못했습니다', error)
@@ -152,12 +150,11 @@ export class SettingsStore {
     return this.current
   }
 
-  /** 설정을 합쳐 쓴다. 쓰기가 실패하면 던지고, 옛 파일과 메모리의 설정은 그대로다 */
+  /** 설정을 합쳐 쓰고, 쓴 설정을 돌려준다. 쓰기가 실패하면 던지고, 옛 파일과 메모리의 설정은 그대로다 */
   set(patch: Partial<Settings>): Settings {
-    const next = { ...this.current, ...patch }
-    this.writeOut(next)
-    this.current = next
-    return next
+    const written = this.writeOut({ ...this.current, ...patch })
+    this.current = written
+    return written
   }
 
   /** 설정 파일 옆 파일의 경로: `settings.json` → `settings.<꼬리>.json` */
@@ -207,12 +204,20 @@ export class SettingsStore {
     return basename(target)
   }
 
-  /** 설정 파일에 쓴다. 이전 때문에 사본이 아직 필요하면 먼저 남기고, 못 남겼으면 쓰지 않고 던진다(옛 파일을 지키려는 것이다) */
-  private writeOut(next: Settings): void {
-    if (this.backupDue) {
-      if (existsSync(this.file) && this.makeBackup() === null) throw new Error('settings backup failed')
-      this.backupDue = false
+  /**
+   * 설정 파일에 쓰고, 실제로 쓴 설정을 돌려준다. 이전 때문에 사본(settings.v1.json)을 아직 못 남겼으면 쓰기 전에 남긴다(옛 파일을 지키려는 것이다).
+   * 남기면 쓰는 설정의 이전 기록에 사본 알림을 더하고, 못 남기면 쓰지 않고 던진다(그때는 아무것도 바뀌지 않는다).
+   * 사본이 이미 있어도 같은 결과라서, 쓰기가 실패한 뒤에 다시 해도 알림이 빠지지 않는다. 했다는 표시는 쓰기가 끝난 뒤에만 지운다.
+   */
+  private writeOut(wanted: Settings): Settings {
+    let next = wanted
+    if (this.backupDue && existsSync(this.file)) {
+      const backup = this.makeBackup()
+      if (backup === null) throw new Error('settings backup failed')
+      next = withBackupNote(next, backup)
     }
     writeFileAtomic(this.file, JSON.stringify(next, null, 2))
+    this.backupDue = false
+    return next
   }
 }

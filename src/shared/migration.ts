@@ -275,10 +275,13 @@ export function migrateSettings(saved: Settings, context: MigrationContext): Mig
   return { settings, record, changed: true }
 }
 
-/** 쓰기 전에 사본을 남겼다는 알림을 이전 기록에 더한다(사본은 쓰는 쪽이 남기므로 이전 함수가 아니라 쓰는 쪽이 부른다). 이전 기록이 없으면 그대로 돌려준다 */
+/**
+ * 쓰기 전에 사본을 남겼다는 알림을 이전 기록에 더한다(사본은 쓰는 쪽이 남기므로 이전 함수가 아니라 쓰는 쪽이 부른다).
+ * 이전 기록이 없거나(손으로 고쳐) 올바른 꼴이 아니거나 이미 사본 알림이 있으면 그대로 돌려준다(두 번 불러도 알림은 한 줄이다).
+ */
 export function withBackupNote(settings: Settings, file: string): Settings {
   const record = settings.migration
-  if (!record) return settings
+  if (!isRecord(record) || !Array.isArray(record.notes) || record.backupFile) return settings
   const note: MigrationNote = { kind: 'backup', text: `이전하기 전의 설정은 따로 남겨 두었습니다: ${file}` }
   return { ...settings, migration: { ...record, backupFile: file, notes: [...record.notes, note] } }
 }

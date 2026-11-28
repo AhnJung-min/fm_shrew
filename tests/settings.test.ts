@@ -216,6 +216,44 @@ describe('FM26을 쓰면 읽을 때 한 번 이전하고 한 번 쓴다(N-05)', 
     expect(json().theme).toBe('blue')
   })
 
+  it('시작할 때 못 남긴 사본을 나중에 남기면 이전 기록에도 사본 알림 한 줄과 사본 파일 이름이 적힌다(메모리와 파일 모두)', () => {
+    write(oldFile())
+    mkdirSync(file('settings.v1.json'))
+    quiet()
+    const store = open()
+    expect(store.get().migration?.notes.some((note) => note.kind === 'backup')).toBe(false)
+    expect(store.get().migration?.backupFile).toBeUndefined()
+    rmSync(file('settings.v1.json'), { recursive: true })
+    const next = store.set({ theme: 'blue' })
+    expect(next).toBe(store.get())
+    for (const settings of [next, json() as Settings]) {
+      expect(settings.migration?.backupFile).toBe('settings.v1.json')
+      expect(settings.migration?.notes.filter((note) => note.kind === 'backup')).toEqual([{ kind: 'backup', text: expect.stringContaining('settings.v1.json') }])
+      expect(settings.migration?.notes.at(-1)?.kind).toBe('backup')
+    }
+    // 더 써도 다시 켜도 알림은 한 줄이고 그대로다
+    store.set({ theme: 'black' })
+    expect(json().migration.notes.filter((note: { kind: string }) => note.kind === 'backup')).toHaveLength(1)
+    expect(open(LATER).get().migration).toEqual(store.get().migration)
+  })
+
+  it('알림 확인이 사본을 남기기 전에 만든 이전 기록(사본 알림이 없다)으로 덮어도 사본 알림이 빠지지 않는다', () => {
+    write(oldFile())
+    mkdirSync(file('settings.v1.json'))
+    quiet()
+    const store = open()
+    // 사본이 막힌 동안에는 확인도 쓰지 못한다
+    expect(ackMigration({ settings: store }).ok).toBe(false)
+    expect(store.get().migration?.acknowledged).toBe(false)
+    rmSync(file('settings.v1.json'), { recursive: true })
+    const result = ackMigration({ settings: store })
+    expect(result.ok).toBe(true)
+    expect(result.settings?.migration).toMatchObject({ acknowledged: true, backupFile: 'settings.v1.json' })
+    expect(json().migration).toMatchObject({ acknowledged: true, backupFile: 'settings.v1.json' })
+    expect(json().migration.notes.at(-1).kind).toBe('backup')
+    expect(open(LATER).get().migration).toEqual(store.get().migration)
+  })
+
   it('이전한 설정을 쓰다 실패해도 옛 파일이 그대로이고 앱은 켜진다. 다시 켜면 같은 결과로 이전한다', () => {
     const original = write(oldFile())
     mkdirSync(file('settings.json.tmp'))
