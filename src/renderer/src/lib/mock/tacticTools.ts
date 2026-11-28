@@ -15,6 +15,9 @@ import { mockSquad } from '../mockWorld'
  * 가져오기는 지어낸 초안(공 미소유 시에 한 자리가 다른 칸으로 가는 4-2-3-1)과 앱이 모르는 게임 값 하나를 준다. 실제 게임을 읽지 않는다.
  */
 
+/** 미리보기 결과 글에 덧붙이는 말(화면 글이라 내부 낱말인 "기준 분포" 대신 다른 화면 글처럼 "비교 기준"이라 쓴다) */
+const PREVIEW_NOTE = '미리보기라 지어낸 선수단과 고정한 비교 기준으로 계산했습니다.'
+
 /** 미리보기의 대신 기준 분포: 모든 프로파일에 같은 고정 기준 */
 function previewNorms(profiles: SlotProfile[], key: (profile: SlotProfile) => string): RoleNorms {
   return Object.fromEntries(profiles.map((profile) => [key(profile), { mu: FALLBACK_NORM.mu, sigma: FALLBACK_NORM.sigma, beta: FALLBACK_NORM.beta, n: 0, caRef: FALLBACK_NORM.caRef }]))
@@ -72,7 +75,7 @@ export function mockTacticToolsApi(state: { getSettings(): Settings; setSettings
         normsFor: (profiles) => previewNorms(profiles, catalog.normKey),
         maxRounds: SEARCH_MAX_ROUNDS
       })
-      return { ok: true, message: `${RECOMMEND_NOTE} 미리보기라 지어낸 선수단과 대신 기준 분포로 계산했습니다.`, ranked: out.ranked, suggestions: out.suggestions, elapsedMs: Date.now() - started }
+      return { ok: true, message: `${RECOMMEND_NOTE} ${PREVIEW_NOTE}`, ranked: out.ranked, suggestions: out.suggestions, elapsedMs: Date.now() - started }
     }
   }
 }

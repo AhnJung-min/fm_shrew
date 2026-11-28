@@ -27,7 +27,9 @@ describe('전술 추천 목업', () => {
     const result = await api.tacticRecommend(current)
     expect(result.ok).toBe(true)
     expect(result.message?.startsWith(RECOMMEND_NOTE)).toBe(true)
-    expect(result.message).toContain('미리보기')
+    expect(result.message).toBe(`${RECOMMEND_NOTE} 미리보기라 지어낸 선수단과 고정한 비교 기준으로 계산했습니다.`)
+    // 화면 글에는 내부 낱말(기준 분포)을 쓰지 않는다
+    expect(result.message).not.toContain('기준 분포')
     expect(result.ranked.length).toBeGreaterThan(1)
     expect(result.ranked.filter((candidate) => candidate.current)).toHaveLength(1)
     expect(result.ranked[0].objective).toBeGreaterThanOrEqual(result.ranked.find((candidate) => candidate.current)!.objective)
