@@ -6,9 +6,9 @@ import { randomBytes } from 'node:crypto'
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { constants, zstdCompressSync } from 'node:zlib'
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import { normalizeVersion } from '../src/shared/compat'
+import { HEAD, makeSave, pack, SIGNATURE, summary } from './helpers/saveBundle'
 
 // 읽은 위치를 세려고 readSync를 그대로 부르는 감시 함수로 바꾼다
 const reads: Array<{ position: number; length: number }> = []
@@ -25,51 +25,6 @@ vi.mock('node:fs', async (importOriginal) => {
 
 const { peekSaveVersion } = await import('../src/main/save/peek')
 const { openContainer, parseToc } = await import('../src/main/save/container')
-
-const SIGNATURE = Buffer.from([0x02, 0x01, 0x66, 0x6d, 0x66, 0x2e, 0x08, 0x00, 0x00])
-const HEAD = 26
-const pack = (data: Buffer): Buffer => zstdCompressSync(data, { params: { [constants.ZSTD_c_checksumFlag]: 1 } })
-const u32 = (value: number): Buffer => {
-  const out = Buffer.alloc(4)
-  out.writeUInt32LE(value)
-  return out
-}
-const u64 = (value: number): Buffer => {
-  const out = Buffer.alloc(8)
-  out.writeBigUInt64LE(BigInt(value))
-  return out
-}
-/** 요약이 담는 글자 하나: [길이 u32][UTF-8] */
-const text = (value: string): Buffer => Buffer.concat([u32(Buffer.byteLength(value)), Buffer.from(value)])
-
-interface Made {
-  data: Buffer
-  /** 파일마다 꾸러미 안의 위치(머리 26바이트를 더한 파일 위치)와 압축한 크기 */
-  places: Record<string, { at: number; size: number }>
-}
-
-/** 세이브와 같은 꾸러미를 만든다: 머리, 압축한 파일들, 둘째 머리, 목차 */
-function makeSave(files: Array<{ name: string; data: Buffer }>): Made {
-  const packed = files.map((file) => pack(file.data))
-  const parts: Buffer[] = [text('시험 세이브'), u32(files.length)]
-  const places: Made['places'] = {}
-  let offset = 0
-  files.forEach((file, i) => {
-    parts.push(text(file.name), text('.dat'), u64(offset), u64(packed[i].length), u64(file.data.length), Buffer.alloc(16, 0xee))
-    places[file.name] = { at: HEAD + offset, size: packed[i].length }
-    offset += packed[i].length
-  })
-  const body = Buffer.concat(packed)
-  const head = Buffer.alloc(HEAD)
-  SIGNATURE.copy(head)
-  head.writeBigUInt64LE(BigInt(17 + body.length), 9)
-  head[17] = 0x11
-  head[25] = 0x03
-  return { data: Buffer.concat([head, body, SIGNATURE, pack(Buffer.concat(parts))]), places }
-}
-
-/** 실제 요약처럼 글자가 아닌 바이트와 글자들이 섞인 요약 */
-const summary = (...strings: string[]): Buffer => Buffer.concat([Buffer.from([1, 2, 3, 4, 5, 6, 7, 8, 9, 10]), ...strings.map(text), Buffer.alloc(12, 0xff)])
 
 /** 데이터베이스 조각: 압축이 잘 안 되는 큰 덩어리(읽었는지 가늠하려고 크게 만든다. 내용은 상관없다) */
 const bigDatabase = randomBytes(300_000)

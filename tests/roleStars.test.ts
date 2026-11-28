@@ -195,10 +195,10 @@ describe('rankTable: 역할마다 순위 상관 표', () => {
 })
 
 describe('실제 FM26 카탈로그: 견본의 모든 역할이 찾아진다', () => {
-  const filled = FM26_CATALOG.roles.length > 0
-  // 카탈로그 자료(src/shared/data/fm26-roles.json)는 2단계의 U4가 채운다. 아직 빈 틀(역할 0개)인 동안에는 건너뛰고(까닭: 카탈로그가 빈 틀이다),
+  // 카탈로그 자료(src/shared/data/fm26-roles.json)는 2단계의 U4가 채운다. 아직 빈 틀(역할 0개)인 동안에는 건너뛰고(까닭을 알린다),
   // 채워진 뒤에는(리드가 U4를 합친 main에서) 저절로 돈다
-  it.skipIf(!filled)('견본의 역할 번호(점유 시·비점유 시 표)가 모두 실제 FM26 카탈로그에서 찾아진다', () => {
+  it('견본의 역할 번호(점유 시·비점유 시 표)가 모두 실제 FM26 카탈로그에서 찾아진다', (context) => {
+    if (FM26_CATALOG.roles.length === 0) context.skip('FM26 카탈로그가 아직 빈 틀입니다(역할 0개). U4가 data/fm26-roles.json을 채운 뒤에 돕니다.')
     const missing = parseRoleStars(fresh(), row)!.filter((each) => FM26_CATALOG.roleByGameId(each.phase, each.gameId) === undefined)
     expect(missing.map((each) => `${each.phase}:${each.gameId}`)).toEqual([])
   })

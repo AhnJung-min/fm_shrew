@@ -444,10 +444,10 @@ describe('roleListReport: 자리별 역할 목록을 앱의 목록과 견준다'
 })
 
 describe('실제 FM26 카탈로그: 견본의 모든 역할이 찾아진다', () => {
-  const filled = FM26_CATALOG.roles.length > 0
-  // 카탈로그 자료(src/shared/data/fm26-roles.json)는 2단계의 U4가 채운다. 아직 빈 틀(역할 0개)인 동안에는 이 시험을 건너뛰고,
-  // 채워진 뒤에는(리드가 U4를 합친 main에서) 저절로 돈다. 건너뛴 까닭: "카탈로그가 빈 틀이다"
-  it.skipIf(!filled)(`견본의 역할 번호(자리 ${EXPECTED.length}개 × 두 국면, 고를 수 있는 목록 포함)가 모두 실제 FM26 카탈로그에서 찾아지고, 견본이 전술 초안으로 풀린다`, () => {
+  // 카탈로그 자료(src/shared/data/fm26-roles.json)는 2단계의 U4가 채운다. 아직 빈 틀(역할 0개)인 동안에는 이 시험을 건너뛰고(까닭을 알린다),
+  // 채워진 뒤에는(리드가 U4를 합친 main에서) 저절로 돈다
+  it(`견본의 역할 번호(자리 ${EXPECTED.length}개 × 두 국면, 고를 수 있는 목록 포함)가 모두 실제 FM26 카탈로그에서 찾아지고, 견본이 전술 초안으로 풀린다`, (context) => {
+    if (FM26_CATALOG.roles.length === 0) context.skip('FM26 카탈로그가 아직 빈 틀입니다(역할 0개). U4가 data/fm26-roles.json을 채운 뒤에 돕니다.')
     const ids = new Set<string>()
     for (const phase of ['ip', 'oop'] as const) for (const item of fixture[phase].items) ids.add(`${phase}:${roleGameId(item.PositionRole, row)}`)
     for (const list of fixture.roles as Json[]) for (const item of list.probe.items) ids.add(`${list.phase}:${roleGameId(item['RowData.DisplayValue.Role'], row)}`)
