@@ -1,6 +1,9 @@
 /**
  * 자리 프로파일 위의 계산 엔진(2단계 U3): 두 국면(점유 시·비점유 시)의 포지션·역할과 비중이 있는 자리에서 배정, 필요도, 후보 판정, 묶음, 줄 요약이 맞는지.
  * 가짜 카탈로그(국면마다 역할 둘, 골키퍼 역할 하나씩)로 손 계산한 값과 견준다. 옛 14역할과 같은 결과는 tests/golden.test.ts가 본다.
+ * 정리 후보와 임대 유망주(뛸 자리가 있는 경로와 없는 경로), 후계자, "이 자리에 맞는 내 선수" 목록, 포지션 묶음 보기의 주요 능력치처럼
+ * 두 국면이 다를 때만 새로 생기는 계산도 여기서 본다(옛 14역할은 두 국면이 같아 골든과 기준 결과가 이 차이를 보지 못한다).
+ * 참조 프로파일(자리가 없는 선수)의 기준 분포 열쇠는 옛 카탈로그처럼 역할 id가 아니라 `ref:<역할 id>`다.
  *
  * 손 계산의 바탕(합성 가중치): 점유 시 역할의 가중치 합 sIp, 비점유 시 역할의 가중치 합 sOop, 비중 s(0~100 정수)일 때
  *   w_i = s · wIp_i · sOop + (100 - s) · wOop_i · sIp,   적합도 = Σ w_i·a_i / Σ w_i / 20 × 100
@@ -9,18 +12,18 @@
  */
 import { describe, expect, it } from 'vitest'
 import { bestRolesOf, buildDepth, buildDepthFor, depthObjective, FORMATION_BY_ID, shapeOfTactic, slotRatingsOf } from '../src/shared/depth'
-import { recommendSlotOf } from '../src/shared/dashboard'
-import { keyAttributesOf, profileKeyAttributes } from '../src/shared/keyAttributes'
+import { recommendSlotOf, surplusReport, type FirstTeamPlayer } from '../src/shared/dashboard'
+import { groupKeyAttributes, keyAttributesOf, POSITION_GROUPS, profileKeyAttributes } from '../src/shared/keyAttributes'
 import { K } from '../src/shared/ledger'
 import { posPenaltySigma, POSITION_KEYS } from '../src/shared/positions'
 import { fitNoteOf, recommend, type RecommendContext, type RecommendInput } from '../src/shared/recommend'
-import { LEGACY_CATALOG, profileWeights, type CatalogRole, type RoleCatalog } from '../src/shared/roleCatalog'
+import { LEGACY_CATALOG, profileWeights, type CatalogRole, type ReferenceProfile, type RoleCatalog } from '../src/shared/roleCatalog'
 import type { PositionKey } from '../src/shared/roles'
 import { groupIdOf, mixedPenaltySigma, type SlotProfile } from '../src/shared/slotProfile'
 import { analyseTactic, type TacticAnalysis } from '../src/shared/tactic'
 import { legacyTactic, presetTactic, type Lane, type Line, type Tactic } from '../src/shared/tacticModel'
 import type { CellValue, ColumnInfo, PlayerRow } from '../src/shared/types'
-import { categoriesOf, effectiveFit, effectiveScore, isTacticSlot, rotationWindowOf, type CandidateBench } from '../src/shared/world'
+import { categoriesOf, effectiveFit, effectiveScore, isTacticSlot, prospectCheck, rotationWindowOf, type CandidateBench } from '../src/shared/world'
 import { seeded, SQUAD_COLUMNS, syntheticSquad } from './helpers/syntheticWorld'
 
 // ---------- 가짜 카탈로그: 국면마다 역할 둘 ----------
@@ -37,6 +40,8 @@ const ROLE_DEFS: Array<{ id: string; phase: 'ip' | 'oop'; label: string; positio
   { id: 'oop.cover', phase: 'oop', label: '비점유 커버', positions: ['DC', 'DL', 'DR', 'WBL', 'WBR', 'DM', 'MC', 'ML', 'MR', 'AML', 'AMC', 'AMR', 'ST'], weights: { stamina: 4, pace: 1, marking: 1 } }
 ]
 const FAKE_ROLES: CatalogRole[] = ROLE_DEFS.map((def) => ({ id: def.id, phase: def.phase, label: def.label, positions: def.positions, selectable: true, goalkeeper: def.goalkeeper === true }))
+/** 참조 프로파일(역할 하나, 비중 100): 열쇠는 `ref:<역할 id>`다(FM26 카탈로그와 같은 꼴. 옛 14역할처럼 역할 id가 곧 열쇠가 아니다) */
+const FAKE_REFERENCES: ReferenceProfile[] = FAKE_ROLES.map((role) => ({ key: `ref:${role.id}`, roleId: role.id, phase: role.phase, label: role.label, positions: role.positions, goalkeeper: role.goalkeeper }))
 const FAKE: RoleCatalog = {
   id: 'fm26',
   dataVersion: 'test',
@@ -49,8 +54,8 @@ const FAKE: RoleCatalog = {
   defaultRole: (position, phase) => FAKE_ROLES.find((each) => each.phase === phase && each.positions.includes(position))!.id,
   poolOf: (profile) => [profile.ip.position],
   normKey: (profile) => `${profile.ip.position}|${profile.ip.roleId}|${profile.oop.roleId}|${profile.sharePct}`,
-  references: () => [],
-  referenceOf: () => undefined,
+  references: (phase) => FAKE_REFERENCES.filter((ref) => phase === undefined || ref.phase === phase),
+  referenceOf: (roleId) => FAKE_REFERENCES.find((ref) => ref.roleId === roleId),
   legacyMap: () => ({})
 }
 
@@ -160,6 +165,19 @@ describe('합성 가중치로 낸 적합도와 배정: 비중에 따라 같은 �
     expect([slot.slot.position, slot.slot.roleId, slot.slot.oopPosition, slot.slot.oopRoleId]).toEqual(['AMC', 'ip.finisher', 'AMC', 'oop.stopper'])
     expect([slot.roleLabel, slot.oopRoleLabel, slot.positionLabel, slot.oopPositionLabel]).toEqual(['점유 마무리', '비점유 압박', '공격형 미드', '공격형 미드'])
     expect([analysis.sharePct, analysis.catalogId, slot.starterScore]).toEqual([60, 'fm26', 70])
+  })
+
+  it('"이 자리에 맞는 내 선수" 목록은 합성 가중치의 점수 순이다(점유 시 역할만 보면 순서가 거꾸로다)', () => {
+    // 점유 시 역할(마무리)만 보면 가 90점·나 50점이라 가가 앞서지만, 비중 60의 합성 가중치로는 나 70점·가 66점이다
+    const options = analyse([ga, na], tacticOf([AMC_SLOT], 60)).slots[0].options
+    expect(options.map((each) => [each.idx, each.score, each.role, each.playable])).toEqual([
+      [na.idx, 70, 'starter', true],
+      [ga.idx, 66, 'bench', true]
+    ])
+    expect(options[1].note).toBe('지금은 주전이 아니지만 이 역할 적합도는 66점으로 주전보다 4점 낮습니다.')
+    // 비중 100이면 점유 시 역할 그대로(가 90점, 나 50점), 비중 0이면 비점유 시 역할 그대로(나 100점, 가 30점)
+    expect(analyse([ga, na], tacticOf([AMC_SLOT], 100)).slots[0].options.map((each) => [each.idx, each.score])).toEqual([[ga.idx, 90], [na.idx, 50]])
+    expect(analyse([ga, na], tacticOf([AMC_SLOT], 0)).slots[0].options.map((each) => [each.idx, each.score])).toEqual([[na.idx, 100], [ga.idx, 30]])
   })
 })
 
@@ -353,6 +371,149 @@ describe('후보 판정: 비교용 적합도에 섞은 감점이 들어가 유�
     const window = rotationWindowOf(bench, norm)
     expect(mixedFit).toBeGreaterThanOrEqual(window.floor)
     expect(categoriesOf({ ...base, rating: { ip: 20, oop: 12, sharePct: 60 } }, bench, norm)).toEqual(['rotation'])
+  })
+})
+
+// ---------- 후계자 ----------
+
+/** 오른쪽 공격(점유 시) → 오른쪽 미드(비점유 시) 자리(비중 60)의 기준 분포 열쇠 */
+const AMR_MR_KEY = FAKE.normKey({ ip: { position: 'AMR', roleId: 'ip.finisher' }, oop: { position: 'MR', roleId: 'oop.stopper' }, sharePct: 60 })
+
+describe('후계자: 23세 이하가 점유 시 포지션을 뛰고, 두 숙련을 섞은 감점을 빼고도 주전에 크게 뒤지지 않으면 이어받을 수 있다(AMR → MR 자리)', () => {
+  // 기준 분포 σ 4. 주전은 75점(숙련 20·20이라 감점 없음)이라 문턱은 75 - 2.5 · 4 = 65점이다. 후계 후보는 합성 점수 70점
+  const norms = { [AMR_MR_KEY]: { mu: 60, sigma: 4 } }
+  const starter = player({ name: '시험 주전', position: 'AM (R)', level: 15, age: 33, ratings: { AMR: 20, MR: 20 } })
+  const withKid = (ratings: Partial<Record<RatingKey, number>>) => {
+    const kid = player({ name: '시험 후계', position: 'AM (R)', level: 14, age: 21, ratings })
+    const slot = analyse([starter, kid], tacticOf([AMR_TO_MR], 60), norms).slots[0]
+    return { slot, age: slot.factors.find((factor) => factor.id === 'age')! }
+  }
+
+  it('두 숙련이 20이면 감점 없이 70점이라 문턱(65점)을 넘어 후계자가 되고, 주전(33세)의 나이 위험이 절반이 된다', () => {
+    const found = withKid({ AMR: 20, MR: 20 })
+    expect(found.slot.starterEff).toBe(75)
+    expect(found.age.note).toContain('시험 후계(21세)가 이어받을 수 있어 위험을 절반으로 줄였습니다')
+    const missing = withKid({ AMR: 20, MR: 1 })
+    expect(missing.age.note).not.toContain('이어받을 수 있어')
+    expect(found.age.points).toBeLessThan(missing.age.points)
+    expect(found.age.points).toBeCloseTo(missing.age.points * K.SUCCESSOR_RELIEF, 0)
+    expect(found.slot.need).toBeLessThan(missing.slot.need)
+  })
+
+  it('비점유 시 숙련만 낮아도 섞은 감점이 빠진다: 점유 시 20이어도 비점유 시 숙련 1이면 70 - 4 · 0.4 · 6.4 = 59.76점이라 문턱 밖이다(점유 시 숙련만 보면 70점이라 후계자가 된다)', () => {
+    expect(withKid({ AMR: 20, MR: 1 }).age.note).not.toContain('이어받을 수 있어')
+    // 경계: 비점유 시 숙련 8은 70 - 4 · 0.4 · 2.9 = 65.36점이라 넘고, 7은 70 - 4 · 0.4 · 3.4 = 64.56점이라 못 미친다
+    const edge = (oop: number): boolean => withKid({ AMR: 20, MR: oop }).age.note.includes('이어받을 수 있어')
+    expect([edge(8), edge(7)]).toEqual([true, false])
+  })
+})
+
+// ---------- 정리 후보와 임대 유망주 ----------
+
+describe('정리 후보와 임대 유망주: 자리 경로는 그 자리 프로파일(합성 가중치, 섞은 감점)로, 자리 없는 경로는 점유 시 참조 프로파일로 본다(AMR → MR 자리)', () => {
+  // 기준 분포 σ 4. 합성 가중치(비중 60)의 점수는 마무리 평균 F, 압박 평균 T일 때 5 · (0.6F + 0.4T)다
+  const sigma = 4
+  const tactic = tacticOf([AMR_TO_MR], 60)
+  const norms = {
+    [AMR_MR_KEY]: { mu: 60, sigma },
+    // 참조 프로파일의 기준 분포(열쇠는 `ref:<역할 id>`). 비점유 시 역할의 참조는 점유 시 참조를 돌 때 쓰이지 않는다: 쓰이면 압박에 강한 선수의 z가 아주 크게 나온다
+    'ref:ip.finisher': { mu: 60, sigma },
+    'ref:oop.stopper': { mu: 20, sigma: 2 }
+  }
+  // 주전 75점(숙련 20·20), 첫 후보 67점 = 5 · (0.6 · 14 + 0.4 · 12.5)
+  const starter = player({ name: '시험 주전', position: 'AM (R)', level: 15, ratings: { AMR: 20, MR: 20 } })
+  const backup = player({ name: '시험 후보', position: 'AM (R)', levels: { finishing: 14, dribbling: 14, tackling: 12, marking: 12, stamina: 14 }, ratings: { AMR: 20, MR: 20 } })
+  // 합성 66점 = 5 · (0.6 · 18 + 0.4 · 6). 점유 시 역할(마무리)만 보면 90점이다
+  const spare = (name: string, ratings: Partial<Record<RatingKey, number>>, over: Partial<Spec> = {}): PlayerRow =>
+    player({ name, position: 'AM (R)', levels: { finishing: 18, dribbling: 18, tackling: 6, marking: 6, stamina: 6 }, ratings, age: 27, ...over })
+
+  const firstTeam = (rows: PlayerRow[], pa: Record<number, number>): FirstTeamPlayer[] =>
+    rows.map((row) => ({
+      uid: row.idx,
+      name: row.name,
+      age: row.cells['나이'].num,
+      position: row.cells['포지션'].raw,
+      ca: row.cells['현재 능력'].num,
+      pa: pa[row.idx] ?? row.cells['현재 능력'].num,
+      wage: null,
+      contractEnd: null
+    }))
+  /** 정리 후보와 임대 유망주. pa는 선수 번호 → 잠재 능력(안 적으면 현재 능력과 같아 클 여지가 없다) */
+  const run = (rows: PlayerRow[], pa: Record<number, number> = {}) => {
+    const analysis = analyse(rows, tactic, norms)
+    const result = surplusReport({ players: firstTeam(rows, pa), rows, columns: COLUMNS, analysis, roleWeights: {}, catalog: FAKE, norms: context(norms).norms, minScore: 0 })
+    return { analysis, ...result }
+  }
+
+  it('자리 경로의 격차는 합성 가중치 점수에서 두 숙련을 섞은 감점을 뺀 값으로 잰다: 점유 시 20·비점유 시 12는 66 - 4 · 0.52 = 63.92점이라 첫 후보(67점)와 3.08점 차이다', () => {
+    const mixed = spare('시험 선수 가', { AMR: 20, MR: 12 })
+    const alike = spare('시험 선수 나', { AMR: 20, MR: 20 })
+    const sixteen = spare('시험 선수 다', { AMR: 16, MR: 16 })
+    const { analysis, rows } = run([starter, backup, mixed, alike, sixteen])
+    expect(analysis.slots[0].starterScore).toBe(75)
+    expect(analysis.slots[0].slot.backups[0]).toMatchObject({ name: '시험 후보', effScore: 67 })
+    const rowOf = (name: string) => rows.find((each) => each.name === name)!
+
+    // 두 숙련이 다르면 섞은 감점(4 · 0.52 = 2.08점)을 빼고, 풀이 글에 두 숙련을 적는다
+    expect(rowOf('시험 선수 가')).toMatchObject({ fit: 'slot', slotLabel: '오른쪽 공격', fitGap: 3.1, fitGapSigma: 0.8 })
+    expect(rowOf('시험 선수 가').reason).toContain('가장 가까운 오른쪽 공격 자리에서도 첫 후보 시험 후보보다 적합도가 3.1점(이 역할의 보통 점수 차이의 약 0.8배) 낮')
+    expect(rowOf('시험 선수 가').reason).toContain('그 자리 포지션 숙련(점유 시 20, 비점유 시 12)에 따라 2.1점 뺐')
+    // 두 숙련이 20으로 같으면 감점이 없어 격차는 67 - 66 = 1점이고, 숙련 문장이 없다
+    expect(rowOf('시험 선수 나')).toMatchObject({ fit: 'slot', fitGap: 1 })
+    expect(rowOf('시험 선수 나').reason).not.toContain('포지션 숙련')
+    // 두 숙련이 16으로 같으면 섞지 않고 지금 문장 그대로다: 4 · 0.32 = 1.28점을 빼 격차 2.28점
+    expect(rowOf('시험 선수 다')).toMatchObject({ fit: 'slot', fitGap: 2.3 })
+    expect(rowOf('시험 선수 다').reason).toContain('그 자리 포지션 숙련이 16이라 1.3점 뺐')
+    expect(rowOf('시험 선수 다').reason).not.toContain('점유 시 16')
+  })
+
+  it('임대 유망주도 같은 감점을 쓴다: 20세(현재 능력 86, 잠재 150)가 점유 시 20·비점유 시 12면 63.92 + 9.12 = 73.04점이라 기준선(74.0점)에 못 미치고, 20·20이면 75.12점이라 넘는다', () => {
+    const mixed = spare('시험 유망주 가', { AMR: 20, MR: 12 }, { age: 20, ca: 86 })
+    const alike = spare('시험 유망주 나', { AMR: 20, MR: 20 }, { age: 20, ca: 86 })
+    const { analysis, rows, prospects } = run([starter, backup, mixed, alike], { [mixed.idx]: 150, [alike.idx]: 150 })
+    // 기준선: 주전 75점 - 0.25 · 4 = 74.0점. 성장 이득: 0.25 · 0.57 · 64 = 9.12점
+    expect(prospects.map((each) => each.name)).toEqual(['시험 유망주 나'])
+    expect(prospects[0]).toMatchObject({ room: 64, gain: 9.1 })
+    expect(prospects[0].reason).toContain('20세, 현재 능력 86에 잠재 능력 150으로 64만큼 더 큽니다. 다 크면 적합도가 약 9.1점 오를 것으로 봅니다.')
+    const lost = rows.find((each) => each.name === '시험 유망주 가')!
+    expect(lost.reason).toContain('클 여지(+9.1점)는 있지만 다 커도 오른쪽 공격 자리 기준(74.0점)에 못 미칩니다(예상 73.0점).')
+    // 같은 판정을 후보 찾기도 쓴다(prospectCheck): 두 숙련을 주면 같은 결과다
+    const { group, norm } = analysis.slots[0]
+    const asked = (rating: { ip: number; oop: number; sharePct: number }) => prospectCheck({ score: 66, age: 20, ca: 86, pa: 150, rating }, group.bench, norm)
+    expect(asked({ ip: 20, oop: 12, sharePct: 60 }).margin).toBeCloseTo(73.04 - 74, 6)
+    expect(asked({ ip: 20, oop: 20, sharePct: 60 }).margin).toBeCloseTo(75.12 - 74, 6)
+  })
+
+  it('전술에 뛸 자리가 없는 선수는 점유 시 참조 프로파일(열쇠 ref:…)의 기준 분포로 가장 맞는 역할을 찾는다', () => {
+    // 최전방만 뛰는 선수: 이 전술(오른쪽 공격 한 자리)에는 뛸 자리가 없다. 마무리 평균 12라 참조 점수 60점(z 0), 압박 평균 18이라 비점유 시 참조로 보면 z가 35나 된다
+    const striker = player({ name: '시험 공격수', position: 'ST (C)', age: 28, levels: { finishing: 12, dribbling: 12, tackling: 18, marking: 18, stamina: 18 }, ratings: { ST: 20 } })
+    const { analysis, rows } = run([starter, backup, striker])
+    const row = rows.find((each) => each.name === '시험 공격수')!
+    // 가장 약한 주전의 z는 (75 - 60) / 4 = 3.75라 격차 3.75 + 0.5가 FIT_GAP_SIGMAS(3)를 넘어 적합도 위험이 가득이다
+    expect(analysis.slots[0].starterZ).toBe(3.75)
+    expect(row).toMatchObject({ fit: 'noSlot', bestRole: '점유 마무리', slotLabel: null, fitGap: null })
+    expect(row.parts.fit).toBe(50)
+    expect(row.reason).toContain('가장 잘 맞는 역할(점유 마무리)')
+  })
+
+  it('전술에 뛸 자리가 없는 어린 선수의 임대 유망주 판정도 점유 시 참조 프로파일의 기준 분포를 쓴다', () => {
+    // 둘 다 19세, 현재 능력 100에 잠재 160: 성장 이득 0.25 · 0.635 · 60 = 9.525점. 가장 약한 주전의 z는 3.75라 기준선은 3.75 - 0.25 = 3.5σ다
+    // 다는 마무리 평균 16이라 참조 점수 80점: (80 + 9.525 - 60) / 4 = 7.38σ라 넘는다
+    const strong = player({ name: '시험 유망주 다', position: 'ST (C)', age: 19, ca: 100, level: 10, levels: { finishing: 16, dribbling: 16 }, ratings: { ST: 20 } })
+    // 라는 마무리 평균 8이라 참조 점수 40점: (40 + 9.525 - 60) / 4 = -2.62σ라 못 미친다. 압박 평균이 18이라 비점유 시 참조(평균 20·σ 2)로 보면 넘어 버린다
+    const weak = player({
+      name: '시험 유망주 라',
+      position: 'ST (C)',
+      age: 19,
+      ca: 100,
+      level: 10,
+      levels: { finishing: 8, dribbling: 8, tackling: 18, marking: 18, stamina: 18 },
+      ratings: { ST: 20 }
+    })
+    const { prospects, rows } = run([starter, backup, strong, weak], { [strong.idx]: 160, [weak.idx]: 160 })
+    expect(prospects.map((each) => each.name)).toEqual(['시험 유망주 다'])
+    expect(prospects[0].reason).toContain('19세, 현재 능력 100에 잠재 능력 160으로 60만큼 더 큽니다. 다 크면 적합도가 약 9.5점 오를 것으로 봅니다.')
+    expect(rows.find((each) => each.name === '시험 유망주 라')!.reason).toContain('클 여지(+9.5점)는 있지만 다 커도 지금 전술의 가장 약한 주전 수준에 못 미칩니다.')
   })
 })
 
@@ -613,5 +774,23 @@ describe('최적 역할과 주요 능력치: 국면마다 하나씩, 합성 가�
     expect(profileKeyAttributes(LEGACY_CATALOG, centre, {})).toEqual(keyAttributesOf('cb', {}))
     const edited = { cb: { marking: 5, tackling: 0 } }
     expect(profileKeyAttributes(LEGACY_CATALOG, centre, edited)).toEqual(keyAttributesOf('cb', edited))
+  })
+
+  it('포지션 묶음 보기의 주요 능력치: 그 묶음에서 고를 수 있는 점유 시 역할만 평균한다(비점유 시 역할과 못 고르는 역할은 넣지 않는다)', () => {
+    const group = (id: string) => POSITION_GROUPS.find((each) => each.id === id)!
+    // 골키퍼: 점유 시 골키퍼(손 4·반사신경 2)만 센다. 비점유 시 골키퍼(3·3)까지 평균하면 3.5·2.5가 된다
+    expect(groupKeyAttributes(group('gk'), {}, FAKE)).toEqual([
+      { id: 'handling', weight: 4, core: true },
+      { id: 'reflexes', weight: 2, core: false }
+    ])
+    // 수비: 점유 시 수비(DC·DL·DR·WBL·WBR)와 점유 시 측면(WBL·WBR 포함) 둘의 평균이다. 태클 (3 + 0) / 2 = 1.5, 속력 (0 + 4) / 2 = 2라 기준(2)을 넘는 것은 속력뿐이다
+    // 비점유 시 역할 둘까지 네 역할로 평균하면 지구력 (0 + 2 + 2 + 4) / 4 = 2만 남아 다른 능력치가 된다
+    expect(groupKeyAttributes(group('def'), {}, FAKE)).toEqual([{ id: 'pace', weight: 2, core: false }])
+    // 사용자가 고친 가중치가 평균에 들어간다: 점유 시 측면의 속력을 0으로 낮추면 평균 0이라 기준을 넘는 능력치가 없다
+    expect(groupKeyAttributes(group('def'), { 'ip.runner': { pace: 0 } }, FAKE)).toEqual([])
+    // 고를 수 없는 역할(selectable이 거짓)은 평균에 넣지 않는다
+    const hidden: CatalogRole = { id: 'ip.hidden', phase: 'ip', label: '숨은 골키퍼', positions: ['GK'], selectable: false, goalkeeper: true }
+    const withHidden: RoleCatalog = { ...FAKE, roles: [...FAKE.roles, hidden], baseWeights: (id) => (id === 'ip.hidden' ? { handling: 5 } : FAKE.baseWeights(id)) }
+    expect(groupKeyAttributes(group('gk'), {}, withHidden)).toEqual(groupKeyAttributes(group('gk'), {}, FAKE))
   })
 })
