@@ -363,7 +363,7 @@ export interface TacticSlotQuery {
   index: number
 }
 
-/** 자리를 기준으로 찾는 두 꼴. 새 꼴을 받는 것은 본체(WorldService)가 새 꼴을 처리하게 된 뒤다(CandidateQuery.slot의 주석) */
+/** 자리를 기준으로 찾는 두 꼴. 읽는 쪽(본체 WorldService와 미리보기 목업)은 isTacticSlot으로 가른다 */
 export type CandidateSlotQuery = LegacySlotQuery | TacticSlotQuery
 
 /** 새 꼴(`{ tactic, index }`)인가. 옛 꼴은 formation과 slotRoles가 있다 */
@@ -389,16 +389,13 @@ export interface CandidateQuery {
   /** 계약이 이 개월 수 안에 끝나는 선수만. 제한이 없으면 null */
   expiringWithinMonths: number | null
   /**
-   * 전술의 한 자리를 기준으로 찾을 때: 그 자리의 포메이션·자리별 역할과 자리 순번.
+   * 전술의 한 자리를 기준으로 찾을 때: 그 자리를 가리키는 두 꼴 가운데 하나다(CandidateSlotQuery).
+   * 옛 꼴(LegacySlotQuery)은 포메이션·자리별 역할·자리 순번이고, 새 꼴(TacticSlotQuery)은 전술 하나와 자리 순번이다. 읽는 쪽은 isTacticSlot으로 가른다.
    * 같은 포지션·같은 역할의 자리(예: 4-2-3-1의 중앙 수비 두 자리)는 한 그룹으로 보므로, 그룹의 어느 자리를 골라도 결과가 같다.
    * 가장 약한 주전·그룹의 첫 후보·그룹의 보강 필요도(자리들 가운데 최대)를 기준으로 하고, 역할(roleId)은 자리의 역할로 본다.
    * 없으면 고른 역할(roleId)만으로 찾는다.
-   *
-   * 지금 타입은 옛 꼴(LegacySlotQuery)뿐이다: 본체(worldService.ts)와 미리보기(mockWorld.ts)가 slot.formation과 slot.slotRoles를 읽어서,
-   * 여기를 CandidateSlotQuery(옛 꼴 | `{ tactic, index }`)로 넓히면 두 곳이 함께 고쳐질 때까지 컴파일되지 않는다.
-   * 본체가 새 꼴을 처리하는 단위(U5)가 이 한 줄을 `slot?: CandidateSlotQuery | null`로 바꾸고 두 곳에서 갈라 읽는다.
    */
-  slot?: LegacySlotQuery | null
+  slot?: CandidateSlotQuery | null
 }
 
 export interface CandidateRow {
