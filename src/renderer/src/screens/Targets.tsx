@@ -1,6 +1,7 @@
 import { PencilRuler, Search } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { FIELDS } from '@shared/fields'
+import { keyAttributesOf } from '@shared/keyAttributes'
 import { formatPounds as pounds, shortRange, WON_RATE_TEXT } from '@shared/playerView'
 import { RECOMMEND_TIER_LABEL, REALISM_LABEL, TERM_HELP } from '@shared/recommend'
 import { ROLE_BY_ID, ROLES } from '@shared/roles'
@@ -35,7 +36,7 @@ const info = (header: string, field: string, label: string, numeric: boolean): C
 })
 
 const NAME = info('이름', 'name', '이름', false)
-const KIND: ColumnInfo = { ...info('유형', 'candidateKind', '이 선수가 드는 유형(영입 현실성이 낮으면 표지가 붙습니다)', false), width: 250 }
+const KIND: ColumnInfo = { ...info('유형', 'candidateKind', '이 선수가 드는 유형(즉시 전력, 로테이션 자원, 유망주, 자유 계약)', false), width: 170 }
 const RECO: ColumnInfo = { ...info('추천 점수', 'recommend', TERM_HELP.recommend, true), width: 160 }
 const SCORE = info('적합도', 'roleScore', TERM_HELP.fit, true)
 const GAP = info(
@@ -46,7 +47,7 @@ const GAP = info(
 )
 const AGE = info('나이', 'age', '나이', true)
 const POSITION = info('포지션', 'position', '포지션', false)
-const CLUB: ColumnInfo = { ...info('소속 구단', 'club', '소속 구단. 임대 중이면 원 소속 구단(이적료를 받는 쪽)입니다', false), width: 250 }
+const CLUB: ColumnInfo = { ...info('소속 구단', 'club', '소속 구단. 임대 중이면 원 소속 구단(이적료를 받는 쪽)입니다', false), width: 220 }
 // 너비를 고정한다: 열 너비는 앞쪽 줄의 글자 수로 어림하는데, 게임이 범위로 적어 주는 몸값("170억 원 - 185억 원")은 나중에 도착해 더 길어서 잘렸다
 const VALUE: ColumnInfo = {
   ...info(
@@ -70,10 +71,51 @@ const ATTRIBUTE_COLUMNS: Array<{ column: ColumnInfo; index: number }> = FIELDS.f
   index: SAVE_ATTRIBUTE_ORDER.indexOf(field.id as (typeof SAVE_ATTRIBUTE_ORDER)[number])
 }))
 
-const COLUMNS: ColumnInfo[] = [
-  NAME, RECO, KIND, SCORE, GAP, AGE, POSITION, CLUB, VALUE, WAGE, CONTRACT, STATUS, NATION, ABILITY, POTENTIAL,
-  ...ATTRIBUTE_COLUMNS.map((each) => each.column)
-]
+/** 이름·추천 점수 다음에 데려오는 데 드는 것(소속 구단, 몸값, 주급)을 먼저 보여 준다(사용자 요청) */
+const LEAD: ColumnInfo[] = [NAME, RECO, CLUB, VALUE, WAGE, KIND, SCORE, GAP]
+const TRAIL: ColumnInfo[] = [AGE, POSITION, CONTRACT, STATUS, NATION, ABILITY, POTENTIAL]
+
+const COLUMNS: ColumnInfo[] = [...LEAD, ...TRAIL, ...ATTRIBUTE_COLUMNS.map((each) => each.column)]
+
+const ATTRIBUTE_BY_ID = new Map(ATTRIBUTE_COLUMNS.map((each) => [each.column.field, each.column]))
+
+/**
+ * "주요 능력치만" 볼 때의 열: 고른 역할에서 가중치가 걸린 능력치(핵심 → 도움, 무거운 것부터)를 점수 열 바로 뒤에 놓는다.
+ * 능력치 열이 30개 넘게 이어지면 표를 옆으로 한참 밀어야 하고 어느 것이 이 자리에 중요한지 보이지 않았다.
+ */
+function keyColumns(roleId: string, overrides: Settings['roleWeights']): ColumnInfo[] {
+  const keys: ColumnInfo[] = []
+  for (const key of keyAttributesOf(roleId, overrides)) {
+    const column = ATTRIBUTE_BY_ID.get(key.id)
+    if (column) {
+      keys.push({
+        ...column,
+        group: key.core ? 'key' : 'support',
+        hint: `${column.label}: 이 역할의 ${key.core ? '핵심' : '도움'} 능력치(가중치 ${key.weight})`
+      })
+    }
+  }
+  return [...LEAD, ...keys, ...TRAIL]
+}
+
+/** "주요 능력치만" 보기를 이 PC에 기억해 두는 이름(브라우저 저장소. 못 읽으면 켠 채로 시작한다) */
+const KEY_ONLY_STORE = 'fmb.targets.keyOnly'
+
+function readKeyOnly(): boolean {
+  try {
+    return window.localStorage.getItem(KEY_ONLY_STORE) !== 'false'
+  } catch {
+    return true
+  }
+}
+
+function writeKeyOnly(on: boolean): void {
+  try {
+    window.localStorage.setItem(KEY_ONLY_STORE, on ? 'true' : 'false')
+  } catch {
+    // 기억하지 못해도 이번에는 고른 대로 보인다
+  }
+}
 
 /** "계약 만료 임박"으로 보는 기간 */
 const EXPIRING_MONTHS = 12
@@ -151,6 +193,8 @@ export function Targets(props: {
   const [loading, setLoading] = useState(true)
   const [sort, setSort] = useState<SortState | null>(null)
   const [selectedIdx, setSelectedIdx] = useState<number | null>(null)
+  /** 고른 역할의 주요 능력치만 볼지(끄면 모든 능력치) */
+  const [keyOnly, setKeyOnly] = useState(readKeyOnly)
   /** 게임에서 받은 몸값·주급·계약(선수 번호별). 받는 대로 채워진다 */
   const [market, setMarket] = useState<Map<number, PlayerMarket>>(new Map())
   const [marketNote, setMarketNote] = useState('')
@@ -201,6 +245,15 @@ export function Targets(props: {
     : null
   const queryRole = activeSlot ? activeSlot.roleId : roleId
   const slotIndex = activeSlot ? activeSlot.slots[0] : -1
+
+  const tableColumns = useMemo(
+    () => (keyOnly ? keyColumns(queryRole, settings.roleWeights) : COLUMNS),
+    [keyOnly, queryRole, settings.roleWeights]
+  )
+  // 보이지 않게 된 열로 정렬해 두었으면 정렬을 푼다(안 보이는 기준으로 줄이 섞여 보이지 않게)
+  useEffect(() => {
+    if (sort && !tableColumns.some((column) => column.header === sort.header)) setSort(null)
+  }, [sort, tableColumns])
 
   const query: CandidateQuery = useMemo(
     () => ({
@@ -291,8 +344,12 @@ export function Targets(props: {
     if (!candidate) return null
     if (col.field === 'recommend') {
       const tier = { id: candidate.tier, label: RECOMMEND_TIER_LABEL[candidate.tier] }
+      // 영입 현실성이 낮은 선수는 표에 표지를 달지 않고(사용자 요청), 등급이 왜 고려까지인지 마우스 설명에만 적는다
+      const realism = candidate.recommend.realism.low
+        ? ` ${REALISM_LABEL}: ${candidate.recommend.realism.reasons.join(' / ')}. 그래서 등급은 고려까지로 제한했습니다.`
+        : ''
       return (
-        <span className="reco-cell" title={`${tier.label}(${candidate.recommend.total}점). ${TERM_HELP.recommend}`}>
+        <span className="reco-cell" title={`${tier.label}(${candidate.recommend.total}점).${realism} ${TERM_HELP.recommend}`}>
           <span className="reco-num num">{Math.round(candidate.recommend.total)}</span>
           <span className={`reco-bar ${tier.id}`} aria-hidden="true">
             <i style={{ width: `${candidate.recommend.total}%` }} />
@@ -316,15 +373,6 @@ export function Targets(props: {
       return (
         <span title={`화면에 보이는 적합도끼리는 ${shown > 0 ? '+' : shown < 0 ? '−' : ''}${Math.abs(shown).toFixed(1)}`}>
           {row.cells[col.header]?.raw}
-        </span>
-      )
-    }
-    if (col.field === 'candidateKind' && candidate.recommend.realism.low) {
-      const text = row.cells[col.header]?.raw ?? ''
-      return (
-        <span className="club-cell" title={`${REALISM_LABEL}: ${candidate.recommend.realism.reasons.join(' / ')}. 등급은 고려까지로 제한했습니다.`}>
-          <span>{text}</span>
-          <span className="tag warn">{REALISM_LABEL}</span>
         </span>
       )
     }
@@ -507,6 +555,20 @@ export function Targets(props: {
             <input type="checkbox" checked={expiringSoon} onChange={(event) => setExpiringSoon(event.target.checked)} />
             <span>계약 1년 이내만</span>
           </label>
+          <label
+            className="inline-field"
+            title="고른 역할에서 점수에 쓰는 능력치(핵심, 도움)만 점수 열 바로 뒤에 보여 줍니다. 끄면 모든 능력치를 게임 화면 순서로 봅니다. 역할 가중치는 설정에서 고칩니다."
+          >
+            <input
+              type="checkbox"
+              checked={keyOnly}
+              onChange={(event) => {
+                setKeyOnly(event.target.checked)
+                writeKeyOnly(event.target.checked)
+              }}
+            />
+            <span>이 역할의 주요 능력치만</span>
+          </label>
           {marketNote &&
             (gameOff ? (
               <span className="note-idle" title={marketNote}>
@@ -547,7 +609,7 @@ export function Targets(props: {
             </div>
           ) : (
             <PlayerTable
-              columns={COLUMNS}
+              columns={tableColumns}
               rows={sorted}
               density={settings.density}
               sort={sort}

@@ -152,7 +152,7 @@ export function PlayerTable(props: {
                 <th
                   key={col.header}
                   className={classes.join(' ')}
-                  title={col.label === col.header ? col.label : `${col.label} (파일의 열 이름: ${col.header})`}
+                  title={col.hint ?? (col.label === col.header ? col.label : `${col.label} (파일의 열 이름: ${col.header})`)}
                   aria-sort={active ? (sort.dir === 'asc' ? 'ascending' : 'descending') : undefined}
                   onClick={() => toggleSort(col)}
                 >

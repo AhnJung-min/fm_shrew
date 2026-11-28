@@ -7,7 +7,8 @@ import type { SeasonResult } from './season'
 import type { TalkEffort, TalkStats, TalkStatus } from './talk'
 import type { CandidateQuery, CandidateResult, EditorApplyResult, EditorEdit, EditorListItem, EditorPlayer, MarketResult, PlayerProfile } from './world'
 
-export type ColumnGroup = 'info' | 'contract' | 'technical' | 'mental' | 'physical' | 'goalkeeping' | 'other'
+/** key·support는 "주요 능력치만" 볼 때 능력치 열을 핵심과 도움으로 묶는 화면용 묶음(keyAttributes.ts) */
+export type ColumnGroup = 'info' | 'contract' | 'technical' | 'mental' | 'physical' | 'goalkeeping' | 'other' | 'key' | 'support'
 
 /** 한 칸의 값. 원문과 함께, 숫자로 읽을 수 있으면 숫자도 담는다. */
 export interface CellValue {
@@ -34,6 +35,8 @@ export interface ColumnInfo {
   numeric: boolean
   /** 열 너비(px)를 직접 정할 때. 없으면 값의 길이로 어림한다 */
   width?: number
+  /** 표 머리에 마우스를 올렸을 때의 설명. 없으면 전체 이름(파일에서 읽은 열이면 파일의 열 이름도) */
+  hint?: string
 }
 
 export interface PlayerRow {
