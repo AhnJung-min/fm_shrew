@@ -109,3 +109,45 @@
   --row-h: 44px;
 }
 
+/* ---------- 디자인 적용 1차의 새 토큰: 값은 지금 쓰는 값에 이름만 붙인 것이다(쓰는 곳은 뒤 단위가 옮긴다) ---------- */
+:root {
+  /* 굵기 사다리(C-69). 이 넷과 inherit 말고는 쓰지 않는다(적용은 B) */
+  --fw-regular: 400; /* 본문, 1~10 칩 */
+  --fw-strong: 600; /* 고른 것, 핵심 능력치 이름, 11~15 칩, 태그, 표의 이름 칸 */
+  --fw-title: 700; /* 구역 제목, 고른 메뉴, 정렬된 표 머리 */
+  --fw-heavy: 800; /* 전광판 숫자, 표의 점수, 16~20 칩, 화면 제목(h1) */
+
+  /* 줄 높이(C-27): 값만 둔다. 파일은 손대는 화면부터 쓴다 */
+  --lh-num: 1.25;
+  --lh-short: 1.4;
+  --lh-para: 1.55;
+
+  /* 뜻 색 세 짝(C-27): 글자는 지금의 --good 등, 옅은 바탕은 --good-soft 등, 테두리를 새 이름으로 */
+  --gold-edge: rgba(247, 214, 90, 0.45);
+  --good-edge: rgba(95, 220, 160, 0.4); /* 지금 .backup-notice의 값 */
+  --warn-edge: rgba(245, 166, 76, 0.45);
+  --bad-edge: rgba(245, 138, 124, 0.45); /* --a1-edge와 같은 값 */
+  --neutral-ink: var(--text-2);
+  --neutral-soft: var(--info-soft);
+  --neutral-edge: var(--line-strong);
+
+  /* hover 위 단추 경계(지금 --line-strong은 --hover 위 2.72:1). 새 색이 아니라 있는 글자색의 별명 */
+  --line-hover: var(--text-3);
+
+  /* 떠 있는 것의 면(C-27). 가장 밝은 면을 새로 만들지 않는다 */
+  --float-bg: var(--raised); /* 풍선, 펼침 목록 */
+  --float-panel: var(--surface); /* 창, 선수 정보 창 */
+  --float-edge: var(--line-strong);
+  --shadow-float: 0 12px 32px color-mix(in srgb, var(--bg) 78%, transparent); /* 풍선, 펼침 목록, 창, 얹히는 선수 정보 창이 함께 쓴다. 지금 셋을 B가 이 하나로 모은다 */
+
+  /* 흐름 안의 겹침만. 풍선, 펼침 목록, 창은 맨 위 층이라 z-index가 없다 */
+  --z-sticky-col: 1;
+  --z-sticky-head: 2;
+  --z-sticky-corner: 3;
+  --z-raise: 5;
+  --z-overlay: 10; /* 얹히는 선수 정보 창 */
+  --z-overlay-top: 20; /* 지금 대시보드 서랍의 값. C가 .dash-drawer를 지우면 LF가 지운다 */
+
+  --dur-fast: 120ms;
+}
+
