@@ -192,3 +192,27 @@ describe('플러그인 버전', () => {
     expect(live).toMatch(/private static void Step\(long now\)\s*\{\s*ReadGameVersion\(\);/)
   })
 })
+
+describe('경기 평점 기록의 득점과 도움(RatingsRecorder.cs, 0.14.0)', () => {
+  const code = read('RatingsRecorder.cs').replace(/\/\/.*$/gm, '')
+
+  it('선수 줄마다 Goals와 Assists를 청하고, 도착을 기다리는 항목(RowPaths)에 들어 있다', () => {
+    expect(code).toMatch(/RowPaths = \{[^}]*"Goals"[^}]*"Assists"[^}]*\}/)
+    // 기존 항목도 그대로 있다
+    for (const path of ['Player.UniqueId', 'TotalRating', 'Position', 'IncidentType', 'MatchTime', 'PlayerTeamSelectionIndex']) expect(code, path).toContain(`"${path}"`)
+    expect(code).toContain('Goals = Int($"{item}.Goals")')
+    expect(code).toContain('Assists = Int($"{item}.Assists")')
+  })
+
+  it('줄 형식은 v:1 그대로이고, goals와 assists는 slot 뒤에 값이 온 선수에게만 선택 칸으로 붙는다(0도 적는다)', () => {
+    expect(code).toContain(String.raw`new StringBuilder("{\"v\":1")`)
+    const slot = code.indexOf(String.raw`json.Append(",\"slot\":").Append(row.Slot);`)
+    const goals = code.indexOf(String.raw`if (row.Goals != null) json.Append(",\"goals\":").Append(Num(row.Goals));`)
+    const assists = code.indexOf(String.raw`if (row.Assists != null) json.Append(",\"assists\":").Append(Num(row.Assists));`)
+    expect(slot).toBeGreaterThan(0)
+    expect(goals).toBeGreaterThan(slot)
+    expect(assists).toBeGreaterThan(goals)
+    // 값이 0이어도 적는다(0과 모름을 앱이 가른다): 0이면 건너뛰는 조건이 없다
+    expect(code).not.toMatch(/row\.(Goals|Assists) (>|!=) 0/)
+  })
+})
